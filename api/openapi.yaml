@@ -1,0 +1,952 @@
+openapi: 3.1.0
+info:
+  title: Timeliner API
+  version: 0.1.0
+  description: |
+    Contrato entre o frontend (Vue) e o backend (Go).
+    Todas as rotas ficam sob /api. Datas em ISO 8601 (UTC). Anos podem ser negativos (a.C.).
+    Autenticação por token Bearer obtido em /auth/login ou /auth/register.
+servers:
+  - url: http://localhost:8080/api
+tags:
+  - name: auth
+  - name: timelines
+  - name: events
+  - name: suggestions
+  - name: compare
+  - name: users
+
+security:
+  - bearer: []
+
+paths:
+  /auth/register:
+    post:
+      tags: [auth]
+      security: []
+      summary: Cria conta e devolve token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterInput' }
+      responses:
+        '201':
+          description: Conta criada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /auth/login:
+    post:
+      tags: [auth]
+      security: []
+      summary: Entra com e-mail e senha
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginInput' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /me:
+    get:
+      tags: [users]
+      summary: Usuário logado
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    patch:
+      tags: [users]
+      summary: Edita o próprio perfil
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateProfileInput' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /timelines:
+    get:
+      tags: [timelines]
+      security: []
+      summary: Explorar timelines públicas (rascunhos e privadas só aparecem para o dono, com owner=me)
+      parameters:
+        - { name: q, in: query, schema: { type: string }, description: 'Busca em título, descrição e tags' }
+        - { name: cat, in: query, schema: { $ref: '#/components/schemas/Category' } }
+        - { name: tag, in: query, schema: { type: string } }
+        - { name: owner, in: query, schema: { type: string }, description: Handle do dono }
+        - { name: openToContributions, in: query, schema: { type: boolean }, description: 'true = só contributions=sugestoes' }
+        - name: sort
+          in: query
+          schema: { type: string, enum: [popular, recent], default: popular }
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/PageSize' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TimelinePage' }
+    post:
+      tags: [timelines]
+      summary: Cria timeline (o slug é gerado a partir do título)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TimelineInput' }
+      responses:
+        '201':
+          description: Criada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TimelineDetail' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /timelines/{slug}:
+    parameters:
+      - { $ref: '#/components/parameters/Slug' }
+    get:
+      tags: [timelines]
+      security: []
+      summary: Detalhe da timeline com eras e eventos em ordem cronológica
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TimelineDetail' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [timelines]
+      summary: Edita timeline (só o dono)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TimelinePatch' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TimelineDetail' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [timelines]
+      summary: Apaga timeline (só o dono)
+      responses:
+        '204': { description: Apagada }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /timelines/{slug}/follow:
+    parameters:
+      - { $ref: '#/components/parameters/Slug' }
+    post:
+      tags: [timelines]
+      summary: Segue a timeline (idempotente)
+      responses:
+        '204': { description: OK }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [timelines]
+      summary: Deixa de seguir (idempotente)
+      responses:
+        '204': { description: OK }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /timelines/{slug}/events:
+    parameters:
+      - { $ref: '#/components/parameters/Slug' }
+    get:
+      tags: [events]
+      security: []
+      summary: Eventos ordenados por ano e data
+      parameters:
+        - { name: from, in: query, schema: { type: integer }, description: Ano inicial (inclusivo) }
+        - { name: to, in: query, schema: { type: integer }, description: Ano final (inclusivo) }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Event' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [events]
+      summary: Adiciona evento direto (dono, ou convidado quando contributions=convidados)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EventInput' }
+      responses:
+        '201':
+          description: Criado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Event' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /timelines/{slug}/events/{eventId}:
+    parameters:
+      - { $ref: '#/components/parameters/Slug' }
+      - { $ref: '#/components/parameters/EventId' }
+    patch:
+      tags: [events]
+      summary: Edita evento (só o dono)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EventPatch' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Event' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [events]
+      summary: Remove evento (só o dono)
+      responses:
+        '204': { description: Removido }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /timelines/{slug}/suggestions:
+    parameters:
+      - { $ref: '#/components/parameters/Slug' }
+    get:
+      tags: [suggestions]
+      security: []
+      summary: Sugestões da timeline (tela de revisar)
+      parameters:
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/SuggestionStatus' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Suggestion' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [suggestions]
+      summary: Sugere um evento novo ou uma correção (tela contribuir)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SuggestionInput' }
+      responses:
+        '201':
+          description: Criada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Suggestion' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: Timeline não aceita sugestões (contributions diferente de sugestoes)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /suggestions/{suggestionId}:
+    parameters:
+      - { $ref: '#/components/parameters/SuggestionId' }
+    patch:
+      tags: [suggestions]
+      summary: Quem sugeriu reenvia após um pedido de ajuste (status volta a pendente)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                event: { $ref: '#/components/schemas/EventInput' }
+                note: { type: string, maxLength: 1000 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Suggestion' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /suggestions/{suggestionId}/review:
+    parameters:
+      - { $ref: '#/components/parameters/SuggestionId' }
+    post:
+      tags: [suggestions]
+      summary: Aprova, recusa ou pede ajuste (só o dono da timeline)
+      description: |
+        approve aplica a mudança: cria o evento (new_event) ou corrige o existente
+        guardando o estado anterior em previous. request_changes deixa status=ajuste
+        e grava feedback. Só sugestões pendentes podem ser revisadas.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReviewInput' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Suggestion' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Sugestão não está pendente
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /suggestions/{suggestionId}/reopen:
+    parameters:
+      - { $ref: '#/components/parameters/SuggestionId' }
+    post:
+      tags: [suggestions]
+      summary: Desfaz a revisão (só o dono) e volta para pendente
+      description: |
+        Se estava aprovada, desfaz o efeito: remove o evento criado (new_event)
+        ou restaura previous (correções). Limpa feedback.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Suggestion' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Sugestão já está pendente
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /compare:
+    get:
+      tags: [compare]
+      security: []
+      summary: Duas a quatro timelines no mesmo eixo de anos
+      parameters:
+        - name: slugs
+          in: query
+          required: true
+          description: Slugs separados por vírgula, na ordem das trilhas (2 a 4)
+          schema: { type: string, example: 'historia-do-brasil,escandalos-politicos' }
+        - { name: start, in: query, schema: { type: integer }, description: Padrão = menor ano entre as trilhas }
+        - { name: end, in: query, schema: { type: integer }, description: Padrão = maior ano entre as trilhas }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Comparison' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /me/comparisons:
+    get:
+      tags: [compare]
+      summary: Comparações salvas do usuário logado (mais recentes primeiro)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/SavedComparison' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [compare]
+      summary: Salva uma comparação
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SavedComparisonInput' }
+      responses:
+        '201':
+          description: Criada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SavedComparison' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /me/comparisons/{comparisonId}:
+    parameters:
+      - { name: comparisonId, in: path, required: true, schema: { type: string } }
+    delete:
+      tags: [compare]
+      summary: Apaga comparação salva
+      responses:
+        '204': { description: Apagada }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /users/{handle}:
+    parameters:
+      - { $ref: '#/components/parameters/Handle' }
+    get:
+      tags: [users]
+      security: []
+      summary: Perfil público com estatísticas
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Profile' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /users/{handle}/follow:
+    parameters:
+      - { $ref: '#/components/parameters/Handle' }
+    post:
+      tags: [users]
+      summary: Segue o usuário (idempotente)
+      responses:
+        '204': { description: OK }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [users]
+      summary: Deixa de seguir (idempotente)
+      responses:
+        '204': { description: OK }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /users/{handle}/following:
+    parameters:
+      - { $ref: '#/components/parameters/Handle' }
+    get:
+      tags: [users]
+      security: []
+      summary: O que o usuário segue
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [users, timelines]
+                properties:
+                  users:
+                    type: array
+                    items: { $ref: '#/components/schemas/UserSummary' }
+                  timelines:
+                    type: array
+                    items: { $ref: '#/components/schemas/Timeline' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /users/{handle}/contributions:
+    parameters:
+      - { $ref: '#/components/parameters/Handle' }
+    get:
+      tags: [users]
+      security: []
+      summary: Sugestões enviadas pelo usuário (aba de contribuições do perfil)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Suggestion' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /tags:
+    get:
+      tags: [timelines]
+      security: []
+      summary: Tags mais usadas (chips da tela explorar)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required: [tag, count]
+                      properties:
+                        tag: { type: string }
+                        count: { type: integer }
+
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+
+  parameters:
+    Slug:
+      { name: slug, in: path, required: true, schema: { type: string, pattern: '^[a-z0-9-]+$' } }
+    SuggestionId:
+      { name: suggestionId, in: path, required: true, schema: { type: string } }
+    EventId:
+      { name: eventId, in: path, required: true, schema: { type: string } }
+    Handle:
+      { name: handle, in: path, required: true, schema: { type: string } }
+    Page:
+      { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+    PageSize:
+      { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+
+  responses:
+    BadRequest:
+      description: Dados inválidos
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Unauthorized:
+      description: Sem token ou token inválido
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Forbidden:
+      description: Sem permissão
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    NotFound:
+      description: Não encontrado
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Conflict:
+      description: Conflito
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string, example: not_found }
+            message: { type: string }
+            fields:
+              type: object
+              additionalProperties: { type: string }
+              description: Erros por campo, para mostrar no TlField
+
+    TrackColor:
+      type: string
+      enum: [a, b, c, d]
+
+    Tint:
+      type: string
+      enum: [a, b, c, d, neutral]
+
+    Visibility:
+      type: string
+      enum: [publica, link, privada]
+
+    ContributionMode:
+      type: string
+      enum: [sugestoes, convidados, fechada]
+
+    Category:
+      type: string
+      enum: [História, Política, Esporte, Ciência e tecnologia, Cultura, Pessoal]
+
+    UserSummary:
+      type: object
+      required: [handle, name, tint]
+      properties:
+        handle: { type: string, example: ana }
+        name: { type: string, example: Ana Souza }
+        tint: { $ref: '#/components/schemas/Tint' }
+
+    User:
+      allOf:
+        - $ref: '#/components/schemas/UserSummary'
+        - type: object
+          required: [email, bio, memberSince]
+          properties:
+            email: { type: string, format: email }
+            bio: { type: string }
+            memberSince: { type: string, format: date-time }
+
+    Profile:
+      allOf:
+        - $ref: '#/components/schemas/UserSummary'
+        - type: object
+          required: [bio, memberSince, following, stats]
+          properties:
+            bio: { type: string }
+            memberSince: { type: string, format: date-time }
+            following: { type: boolean, description: Se o usuário logado segue este perfil }
+            stats:
+              type: object
+              required: [timelines, events, approvedContributions, followers]
+              properties:
+                timelines: { type: integer }
+                events: { type: integer, description: Eventos criados pelo usuário }
+                approvedContributions: { type: integer }
+                followers: { type: integer }
+
+    RegisterInput:
+      type: object
+      required: [handle, name, email, password]
+      properties:
+        handle: { type: string, pattern: '^[a-z0-9_]{3,30}$' }
+        name: { type: string, minLength: 1, maxLength: 80 }
+        email: { type: string, format: email }
+        password: { type: string, minLength: 8 }
+
+    LoginInput:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string }
+
+    AuthResponse:
+      type: object
+      required: [token, user]
+      properties:
+        token: { type: string }
+        user: { $ref: '#/components/schemas/User' }
+
+    UpdateProfileInput:
+      type: object
+      properties:
+        name: { type: string, minLength: 1, maxLength: 80 }
+        bio: { type: string, maxLength: 500 }
+        tint: { $ref: '#/components/schemas/Tint' }
+
+    Era:
+      type: object
+      required: [name, start]
+      properties:
+        name: { type: string, example: Ditadura militar }
+        start: { type: integer, example: 1964 }
+        end: { type: [integer, 'null'], example: 1985 }
+
+    Timeline:
+      type: object
+      description: Resumo usado em listas e cartões (sem eventos)
+      required:
+        [slug, title, description, category, color, owner, visibility, contributions, draft, eras, tags,
+         startYear, endYear, eventCount, contributorCount, pendingSuggestions, followers, following,
+         points, createdAt, updatedAt]
+      properties:
+        slug: { type: string, example: historia-do-brasil }
+        title: { type: string, example: História do Brasil }
+        description: { type: string }
+        category: { $ref: '#/components/schemas/Category' }
+        color: { $ref: '#/components/schemas/TrackColor' }
+        owner: { $ref: '#/components/schemas/UserSummary' }
+        visibility: { $ref: '#/components/schemas/Visibility' }
+        contributions: { $ref: '#/components/schemas/ContributionMode' }
+        draft: { type: boolean }
+        eras:
+          type: array
+          items: { $ref: '#/components/schemas/Era' }
+        tags:
+          type: array
+          items: { type: string }
+        startYear: { type: [integer, 'null'], description: Ano do primeiro evento }
+        endYear: { type: [integer, 'null'], description: Ano final do último evento }
+        eventCount: { type: integer }
+        contributorCount: { type: integer }
+        pendingSuggestions: { type: integer }
+        followers: { type: integer }
+        following: { type: boolean, description: Se o usuário logado segue (false sem login) }
+        points:
+          type: array
+          description: Posições de 0 a 100 dos eventos no eixo, para o TlMiniTrack (até 24 pontos)
+          items: { type: number, minimum: 0, maximum: 100 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    TimelineDetail:
+      allOf:
+        - $ref: '#/components/schemas/Timeline'
+        - type: object
+          required: [events]
+          properties:
+            events:
+              type: array
+              items: { $ref: '#/components/schemas/Event' }
+
+    TimelinePage:
+      type: object
+      required: [items, page, pageSize, total]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Timeline' }
+        page: { type: integer }
+        pageSize: { type: integer }
+        total: { type: integer }
+
+    TimelineInput:
+      type: object
+      required: [title, category]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 120 }
+        description: { type: string, maxLength: 2000, default: '' }
+        category: { $ref: '#/components/schemas/Category' }
+        color: { $ref: '#/components/schemas/TrackColor' }
+        visibility: { $ref: '#/components/schemas/Visibility' }
+        contributions: { $ref: '#/components/schemas/ContributionMode' }
+        draft: { type: boolean, default: false }
+        eras:
+          type: array
+          items: { $ref: '#/components/schemas/Era' }
+        tags:
+          type: array
+          maxItems: 10
+          items: { type: string, maxLength: 30 }
+        events:
+          type: array
+          description: Eventos iniciais (opcional, para criar tudo de uma vez)
+          items: { $ref: '#/components/schemas/EventInput' }
+
+    TimelinePatch:
+      type: object
+      description: Todos os campos opcionais. O slug não muda.
+      properties:
+        title: { type: string, minLength: 1, maxLength: 120 }
+        description: { type: string, maxLength: 2000 }
+        category: { $ref: '#/components/schemas/Category' }
+        color: { $ref: '#/components/schemas/TrackColor' }
+        visibility: { $ref: '#/components/schemas/Visibility' }
+        contributions: { $ref: '#/components/schemas/ContributionMode' }
+        draft: { type: boolean }
+        eras:
+          type: array
+          items: { $ref: '#/components/schemas/Era' }
+        tags:
+          type: array
+          maxItems: 10
+          items: { type: string, maxLength: 30 }
+
+    Event:
+      type: object
+      required: [id, year, title, description, by, createdAt]
+      properties:
+        id: { type: string }
+        year: { type: integer, example: 1992 }
+        endYear: { type: [integer, 'null'], description: Fim de um período (ex. 1983–1984) }
+        date: { type: [string, 'null'], description: 'Data por extenso, quando conhecida', example: 29 de setembro de 1992 }
+        title: { type: string }
+        description: { type: string }
+        sourceUrl: { type: [string, 'null'], format: uri }
+        by: { type: string, description: Handle de quem adicionou }
+        era: { type: [string, 'null'], description: Nome de uma das eras da timeline }
+        createdAt: { type: string, format: date-time }
+
+    EventInput:
+      type: object
+      required: [year, title]
+      properties:
+        year: { type: integer }
+        endYear: { type: [integer, 'null'] }
+        date: { type: [string, 'null'], maxLength: 60 }
+        title: { type: string, minLength: 1, maxLength: 160 }
+        description: { type: string, maxLength: 4000, default: '' }
+        sourceUrl: { type: [string, 'null'], format: uri }
+        era: { type: [string, 'null'] }
+
+    EventPatch:
+      type: object
+      description: Todos os campos opcionais
+      properties:
+        year: { type: integer }
+        endYear: { type: [integer, 'null'] }
+        date: { type: [string, 'null'] }
+        title: { type: string, minLength: 1, maxLength: 160 }
+        description: { type: string, maxLength: 4000 }
+        sourceUrl: { type: [string, 'null'], format: uri }
+        era: { type: [string, 'null'] }
+
+    SuggestionStatus:
+      type: string
+      enum: [pendente, aprovada, recusada, ajuste]
+
+    SuggestionKind:
+      type: string
+      description: 'Rótulos na tela: Novo evento, Correção na descrição, Correção de data'
+      enum: [new_event, description_fix, date_fix]
+
+    SuggestionInput:
+      type: object
+      required: [kind, event]
+      properties:
+        kind: { $ref: '#/components/schemas/SuggestionKind' }
+        eventId: { type: string, description: Obrigatório nas correções }
+        event:
+          $ref: '#/components/schemas/EventInput'
+          description: Evento proposto (completo, já com a correção)
+        note: { type: string, maxLength: 1000, description: Recado de quem sugeriu para o dono }
+
+    Suggestion:
+      type: object
+      required: [id, timeline, kind, by, status, event, createdAt]
+      properties:
+        id: { type: string }
+        timeline:
+          type: object
+          required: [slug, title, color]
+          properties:
+            slug: { type: string }
+            title: { type: string }
+            color: { $ref: '#/components/schemas/TrackColor' }
+        kind: { $ref: '#/components/schemas/SuggestionKind' }
+        by: { type: string, description: Handle de quem sugeriu }
+        status: { $ref: '#/components/schemas/SuggestionStatus' }
+        eventId: { type: [string, 'null'], description: Evento corrigido (correções) }
+        event: { $ref: '#/components/schemas/EventInput' }
+        note: { type: [string, 'null'] }
+        feedback: { type: [string, 'null'], description: O que o dono pediu para mudar ou por que recusou }
+        applied: { type: [string, 'null'], description: 'ID do evento criado ou corrigido, depois de aprovada' }
+        previous:
+          description: Na correção aprovada, o evento como era antes, para desfazer
+          oneOf:
+            - $ref: '#/components/schemas/Event'
+            - type: 'null'
+        createdAt: { type: string, format: date-time }
+        reviewedAt: { type: [string, 'null'], format: date-time }
+
+    ReviewInput:
+      type: object
+      required: [decision]
+      properties:
+        decision: { type: string, enum: [approve, reject, request_changes] }
+        feedback: { type: string, maxLength: 1000, description: Obrigatório em request_changes }
+
+    Comparison:
+      type: object
+      required: [start, end, lanes, overlaps]
+      description: Formato pronto para o TlCompareTracks
+      properties:
+        start: { type: integer }
+        end: { type: integer }
+        lanes:
+          type: array
+          minItems: 2
+          maxItems: 4
+          items:
+            type: object
+            required: [id, name, color, timeline, events]
+            properties:
+              id: { type: string, description: Slug da timeline }
+              name: { type: string }
+              color: { $ref: '#/components/schemas/TrackColor', description: 'Pela posição: a, b, c, d' }
+              timeline: { $ref: '#/components/schemas/Timeline' }
+              events:
+                type: array
+                description: Só os eventos entre start e end
+                items: { $ref: '#/components/schemas/Event' }
+        overlaps:
+          type: array
+          description: Anos com eventos em duas ou mais trilhas (para destacar)
+          items:
+            type: object
+            required: [year, laneIds]
+            properties:
+              year: { type: integer }
+              laneIds:
+                type: array
+                items: { type: string }
+
+    SavedComparisonInput:
+      type: object
+      required: [timelines, start, end]
+      properties:
+        timelines:
+          type: array
+          minItems: 2
+          maxItems: 4
+          items: { type: string, description: Slug }
+        start: { type: integer }
+        end: { type: integer }
+
+    SavedComparison:
+      allOf:
+        - $ref: '#/components/schemas/SavedComparisonInput'
+        - type: object
+          required: [id, createdAt]
+          properties:
+            id: { type: string }
+            createdAt: { type: string, format: date-time }
