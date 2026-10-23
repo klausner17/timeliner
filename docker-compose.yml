@@ -57,7 +57,7 @@ services:
       - -c
       - >-
         wget -qO- --header 'Content-Type: application/json'
-        --post-data '{"handle":"klausner","name":"Klausner","email":"klausner17@gmail.com","password":"timeliner123"}'
+        --post-data '{"handle":"klausner","name":"Klausner","email":"klausner@gmail.com","password":"timeliner123"}'
         http://backend:8080/api/auth/register && echo ' usuario criado'
         || echo 'usuario ja existe'
     restart: "no"
