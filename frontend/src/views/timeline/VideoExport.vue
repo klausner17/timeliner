@@ -84,7 +84,7 @@ onBeforeUnmount(() => {
     </div>
 
     <template v-else-if="state.kind === 'ready'">
-      <video class="video__player" :src="state.url" controls autoplay muted playsinline></video>
+      <video class="video__player" :src="state.url" controls playsinline></video>
       <div class="video__actions">
         <TlButton :href="state.url" :download="state.fileName" variant="primary">Baixar vídeo</TlButton>
       </div>
