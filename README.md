@@ -31,6 +31,23 @@ go test ./...
 
 Em desenvolvimento, o Vite repassa `/api` para `http://localhost:8080`, então o frontend chama a API pelo mesmo endereço.
 
+### Com Docker
+
+```bash
+docker compose up --build   # http://localhost:8000
+docker compose down         # para tudo (com -v apaga também o banco)
+```
+
+O `docker-compose.yml` da raiz sobe três serviços:
+
+| Serviço | Imagem | Porta no host |
+| --- | --- | --- |
+| `postgres` | `postgres:16-alpine`, usuário, senha e banco `timeliner`, dados no volume `pgdata` | 5432 |
+| `backend` | `backend/Dockerfile`, a API em Go; roda as migrations ao subir | 8080 |
+| `frontend` | `frontend/Dockerfile`, o build do Vue servido pelo nginx, que repassa `/api` para o backend | 8000 |
+
+As portas do host mudam com `POSTGRES_PORT`, `BACKEND_PORT` e `FRONTEND_PORT`. Para rodar só o banco e usar `go run`/`npm run dev` na máquina: `docker compose up -d postgres`.
+
 ## Telas
 
 Ainda sem backend: os dados vêm de `frontend/src/data/mock.ts` e ficam num store reativo (`frontend/src/data/store.ts`) salvo no `localStorage`. Quando a API existir, só o store muda.
