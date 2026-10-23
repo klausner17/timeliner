@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import {
   TlAvatar,
@@ -183,6 +183,39 @@ const following = computed(() => !!timeline.value && isFollowingTimeline(timelin
 
 const relatedColors = ['b', 'c', 'd'] as const
 
+// ---------- Tela cheia: usa a API do navegador e, sem ela, ocupa a janela ----------
+
+const root = ref<HTMLElement>()
+const full = ref(false)
+
+function enterFull() {
+  full.value = true
+  root.value?.requestFullscreen?.()?.catch(() => undefined)
+}
+
+function exitFull() {
+  full.value = false
+  if (document.fullscreenElement) document.exitFullscreen()
+}
+
+function onFullscreenChange() {
+  if (!document.fullscreenElement) full.value = false
+}
+
+function onKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape' && full.value) exitFull()
+}
+
+onMounted(() => {
+  document.addEventListener('fullscreenchange', onFullscreenChange)
+  document.addEventListener('keydown', onKeydown)
+})
+onBeforeUnmount(() => {
+  document.removeEventListener('fullscreenchange', onFullscreenChange)
+  document.removeEventListener('keydown', onKeydown)
+  if (full.value) exitFull()
+})
+
 async function share() {
   const ok = await copyLink(window.location.href)
   shareMsg.value = ok ? 'Link copiado' : 'Não deu para copiar o link'
@@ -192,7 +225,7 @@ async function share() {
 
 <template>
   <NotFoundView v-if="!timeline" what="timeline" />
-  <div v-else>
+  <div v-else ref="root" class="view" :class="{ 'view--full': full }">
     <section class="top">
       <div class="tl-container top__inner">
         <nav aria-label="Você está em" class="crumbs">
@@ -251,15 +284,19 @@ async function share() {
             <TlChip v-for="e in timeline.eras" :key="e.name" :pressed="era === e.name" @click="era = e.name">{{ e.name }}</TlChip>
           </div>
           <span v-else></span>
-          <TlSegmented
-            v-model="mode"
-            size="sm"
-            label="Modo de visualização"
-            :options="[
-              { value: 'vertical', label: 'Vertical' },
-              { value: 'horizontal', label: 'Horizontal' },
-            ]"
-          />
+          <div class="top__view">
+            <TlSegmented
+              v-model="mode"
+              size="sm"
+              label="Modo de visualização"
+              :options="[
+                { value: 'vertical', label: 'Vertical' },
+                { value: 'horizontal', label: 'Horizontal' },
+              ]"
+            />
+            <TlButton v-if="full" size="sm" icon="close" @click="exitFull">Sair da tela cheia</TlButton>
+            <TlButton v-else size="sm" icon="expand" @click="enterFull">Tela cheia</TlButton>
+          </div>
         </div>
       </div>
     </section>
@@ -432,6 +469,41 @@ async function share() {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+.top__view {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--tl-space-2);
+}
+
+.view--full {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  overflow: auto;
+  background: var(--tl-color-bg);
+}
+.view--full .tl-container {
+  max-width: none;
+}
+.view--full .top__inner {
+  padding-top: var(--tl-space-4);
+  padding-bottom: var(--tl-space-4);
+  gap: var(--tl-space-3);
+}
+.view--full .top__title {
+  font-size: var(--tl-text-2xl);
+}
+.view--full .crumbs,
+.view--full .top__desc,
+.view--full .top__meta,
+.view--full .top__actions,
+.view--full .body__side {
+  display: none;
+}
+.view--full .body {
+  padding-top: var(--tl-space-5);
 }
 
 .body {
