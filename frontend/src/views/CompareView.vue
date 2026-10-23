@@ -1,0 +1,432 @@
+<script setup lang="ts">
+import { computed, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import {
+  TlButton,
+  TlCard,
+  TlCompareTracks,
+  TlInput,
+  TlSegmented,
+  TlSelect,
+  TlTrackLabel,
+  trackColors,
+  type CompareLane,
+  type TrackColor,
+} from '@/design-system'
+import { canView, findSavedComparison, findTimeline, publicTimelines, saveComparison, state, yearRange } from '@/data/store'
+import type { Timeline } from '@/data/types'
+import { copyLink, dateLabel } from '@/lib/format'
+
+const route = useRoute()
+const router = useRouter()
+
+const KEYS = ['a', 'b', 'c', 'd'] as const
+
+// Timelines que aparecem nos seletores: as públicas e as do usuário.
+const choices = computed(() => {
+  const own = state.timelines.filter((t) => canView(t) && !publicTimelines.value.includes(t) && t.events.length)
+  return [...publicTimelines.value, ...own]
+})
+const options = computed(() => choices.value.map((t) => ({ value: t.slug, label: t.title })))
+
+const slugs = computed<string[]>(() => {
+  const picked = KEYS.map((k) => route.query[k]).filter((v): v is string => typeof v === 'string' && !!findTimeline(v))
+  const out = [...picked]
+  // Sempre pelo menos duas: completa com as primeiras que ainda não estão na comparação.
+  for (const t of choices.value) {
+    if (out.length >= 2) break
+    if (!out.includes(t.slug)) out.push(t.slug)
+  }
+  return out
+})
+const selected = computed(() => slugs.value.map((s) => findTimeline(s)).filter((t): t is Timeline => !!t))
+
+function setSlugs(next: string[], extra: Record<string, string | undefined> = {}) {
+  const q: Record<string, string | undefined> = { de: route.query.de as string | undefined, ate: route.query.ate as string | undefined, ...extra }
+  KEYS.forEach((k, i) => (q[k] = next[i]))
+  router.replace({ query: q })
+}
+
+function pick(i: number, slug: string) {
+  const next = [...slugs.value]
+  const other = next.indexOf(slug)
+  if (other !== -1 && other !== i) next[other] = next[i] // escolher uma que já está troca as duas de lugar
+  next[i] = slug
+  setSlugs(next)
+}
+const swap = () => setSlugs([slugs.value[1], slugs.value[0], ...slugs.value.slice(2)])
+function addLane() {
+  const free = choices.value.find((t) => !slugs.value.includes(t.slug))
+  if (free) setSlugs([...slugs.value, free.slug])
+}
+const removeLane = (i: number) => setSlugs(slugs.value.filter((_, j) => j !== i))
+
+// ---------- Período ----------
+
+const defaultRange = computed<[number, number]>(() => {
+  const ranges = selected.value.map(yearRange).filter((r): r is [number, number] => !!r)
+  if (!ranges.length) return [1900, 2020]
+  const lo = Math.max(...ranges.map((r) => r[0]))
+  const hi = Math.min(...ranges.map((r) => r[1]))
+  // Com anos em comum, mostra só a sobreposição; sem, mostra tudo.
+  const [s, e] = lo < hi ? [lo, hi] : [Math.min(...ranges.map((r) => r[0])), Math.max(...ranges.map((r) => r[1]))]
+  return [Math.floor(s / 5) * 5, Math.ceil(e / 5) * 5]
+})
+const start = computed(() => Number(route.query.de) || defaultRange.value[0])
+const end = computed(() => Math.max(start.value + 1, Number(route.query.ate) || defaultRange.value[1]))
+
+const startInput = ref(String(start.value))
+const endInput = ref(String(end.value))
+watch([start, end], ([s, e]) => {
+  startInput.value = String(s)
+  endInput.value = String(e)
+})
+function applyRange() {
+  const s = Number(startInput.value)
+  const e = Number(endInput.value)
+  if (!Number.isInteger(s) || !Number.isInteger(e) || e <= s) {
+    startInput.value = String(start.value)
+    endInput.value = String(end.value)
+    return
+  }
+  setSlugs(slugs.value, { de: String(s), ate: String(e) })
+}
+const resetRange = () => setSlugs(slugs.value, { de: undefined, ate: undefined })
+
+// ---------- Trilhas e lista ----------
+
+const mode = ref('trilhas')
+const colorOf = (i: number): TrackColor => trackColors[i % trackColors.length]
+
+const inRange = (t: Timeline) => t.events.filter((e) => e.year >= start.value && e.year <= end.value).sort((a, b) => a.year - b.year)
+
+const lanes = computed<CompareLane[]>(() =>
+  selected.value.map((t, i) => ({ id: t.slug, name: t.title, color: colorOf(i), events: inRange(t).map((e) => ({ id: e.id, year: e.year, title: e.title })) })),
+)
+
+const allEvents = computed(() => selected.value.flatMap((t, i) => inRange(t).map((e) => ({ ...e, timeline: t, color: colorOf(i) }))))
+const selectedId = ref<string>()
+const current = computed(() => allEvents.value.find((e) => e.id === selectedId.value) ?? allEvents.value[0])
+
+const years = computed(() => [...new Set(allEvents.value.map((e) => e.year))].sort((a, b) => a - b))
+const rows = computed(() =>
+  years.value.map((y) => {
+    const cells = selected.value.map((t) => inRange(t).filter((e) => e.year === y))
+    return { year: y, cells, shared: cells.filter((c) => c.length).length > 1 }
+  }),
+)
+
+/** Anos em que duas ou mais timelines têm eventos. */
+const coincidences = computed(() => rows.value.filter((r) => r.shared))
+const highlight = computed(() => {
+  const y = current.value?.year
+  return coincidences.value.find((r) => r.year === y) ?? coincidences.value[0]
+})
+const highlightText = computed(() => {
+  const h = highlight.value
+  if (!h) return ''
+  const parts = h.cells.flatMap((c) => c.map((e) => e.title))
+  const list = parts.length > 1 ? `${parts.slice(0, -1).join(', ')} e ${parts[parts.length - 1]}` : parts[0]
+  return `Em ${h.year}, ${list} aparecem no mesmo ano.`
+})
+
+const tickStep = computed(() => {
+  const span = end.value - start.value
+  return span > 400 ? 100 : span > 150 ? 25 : span > 60 ? 10 : 5
+})
+
+// ---------- Salvar e compartilhar ----------
+
+const saved = computed(() => !!findSavedComparison(slugs.value, start.value, end.value))
+const shareMsg = ref('')
+function save() {
+  saveComparison(slugs.value, start.value, end.value)
+}
+async function share() {
+  const url = new URL(router.resolve({ query: { ...route.query, a: slugs.value[0], b: slugs.value[1], de: String(start.value), ate: String(end.value) } }).href, window.location.origin)
+  shareMsg.value = (await copyLink(url.href)) ? 'Link copiado' : 'Não deu para copiar o link'
+  setTimeout(() => (shareMsg.value = ''), 2500)
+}
+</script>
+
+<template>
+  <main class="tl-container page">
+    <div class="page__head">
+      <h1 class="page__title">Comparar timelines</h1>
+      <p class="page__lead">Coloque duas histórias no mesmo eixo de tempo e veja o que aconteceu junto.</p>
+    </div>
+
+    <div class="pickers">
+      <template v-for="(t, i) in selected" :key="i">
+        <div class="picker" :style="{ '--track': `var(--tl-track-${colorOf(i)})` }">
+          <label :for="`tl-${i}`" class="picker__label">Timeline {{ KEYS[i].toUpperCase() }}</label>
+          <div class="picker__box">
+            <span class="picker__dot" aria-hidden="true"></span>
+            <TlSelect :id="`tl-${i}`" :model-value="t.slug" :options="options" class="picker__select" @update:model-value="(v) => v && pick(i, v)" />
+            <TlButton v-if="i > 1" icon="close" icon-only size="sm" variant="ghost" :label="`Remover timeline ${KEYS[i].toUpperCase()}`" @click="removeLane(i)" />
+          </div>
+        </div>
+        <TlButton v-if="i === 0" icon="swap" icon-only size="lg" label="Trocar A e B" class="pickers__swap" @click="swap" />
+      </template>
+      <TlButton v-if="selected.length < 4 && choices.length > selected.length" variant="dashed" shape="rounded" size="lg" @click="addLane">+ Adicionar timeline</TlButton>
+    </div>
+
+    <div class="controls">
+      <form class="range" @submit.prevent="applyRange">
+        <label for="de" class="range__label">Período</label>
+        <TlInput id="de" v-model="startInput" inputmode="numeric" aria-label="Ano inicial" class="range__input" @blur="applyRange" />
+        <span aria-hidden="true" class="range__label">até</span>
+        <TlInput v-model="endInput" inputmode="numeric" aria-label="Ano final" class="range__input" @blur="applyRange" />
+        <TlButton v-if="route.query.de || route.query.ate" variant="ghost" size="sm" @click="resetRange">Período sugerido</TlButton>
+      </form>
+      <TlSegmented
+        v-model="mode"
+        label="Modo de comparação"
+        :options="[
+          { value: 'trilhas', label: 'Trilhas' },
+          { value: 'lado', label: 'Lado a lado' },
+        ]"
+      />
+    </div>
+
+    <TlCompareTracks v-if="mode === 'trilhas'" :selected="current?.id" @update:selected="(v) => (selectedId = v)" :lanes="lanes" :start="start" :end="end" :tick-step="tickStep" :highlight-year="highlight?.year" />
+
+    <TlCard v-else padding="sm" class="list" :class="{ 'list--many': selected.length > 2 }">
+      <div class="list__row list__row--head" aria-hidden="true">
+        <template v-if="selected.length === 2">
+          <TlTrackLabel color="a" size="sm" class="list__a">{{ selected[0].title }}</TlTrackLabel>
+          <span></span>
+          <TlTrackLabel color="b" size="sm">{{ selected[1].title }}</TlTrackLabel>
+        </template>
+        <template v-else>
+          <span></span>
+          <TlTrackLabel v-for="(t, i) in selected" :key="t.slug" :color="colorOf(i)" size="sm">{{ t.title }}</TlTrackLabel>
+        </template>
+      </div>
+      <div v-for="r in rows" :key="r.year" class="list__row">
+        <template v-if="selected.length === 2">
+          <div class="list__cell list__a">{{ r.cells[0].map((e) => e.title).join(' · ') }}</div>
+          <div class="list__year" :class="{ 'list__year--shared': r.shared }">{{ r.year }}</div>
+          <div class="list__cell">{{ r.cells[1].map((e) => e.title).join(' · ') }}</div>
+        </template>
+        <template v-else>
+          <div class="list__year" :class="{ 'list__year--shared': r.shared }">{{ r.year }}</div>
+          <div v-for="(c, i) in r.cells" :key="i" class="list__cell">{{ c.map((e) => e.title).join(' · ') }}</div>
+        </template>
+      </div>
+      <p v-if="!rows.length" class="list__empty">Nenhum evento entre {{ start }} e {{ end }}.</p>
+    </TlCard>
+
+    <div class="bottom">
+      <TlCard v-if="current" class="detail" padding="lg">
+        <TlTrackLabel :color="current.color" size="sm" class="detail__meta">{{ current.timeline.title }} · {{ dateLabel(current) }}</TlTrackLabel>
+        <h2 class="detail__title">{{ current.title }}</h2>
+        <p class="detail__desc">{{ current.description }}</p>
+        <RouterLink :to="`/t/${current.timeline.slug}`" class="detail__link">Abrir na timeline</RouterLink>
+      </TlCard>
+      <TlCard tone="inverse" padding="lg" class="match">
+        <h2 class="match__label">Coincidência destacada</h2>
+        <p class="match__text">{{ highlightText || 'Nenhum ano com eventos nas duas timelines neste período.' }}</p>
+        <div class="match__actions">
+          <TlButton variant="inverse" :disabled="saved" @click="save">{{ saved ? 'Comparação salva' : 'Salvar comparação' }}</TlButton>
+          <TlButton variant="ghost" class="match__ghost" @click="share">Compartilhar link</TlButton>
+          <span class="match__toast" role="status">{{ shareMsg }}</span>
+        </div>
+      </TlCard>
+    </div>
+  </main>
+</template>
+
+<style scoped>
+.page {
+  padding-top: var(--tl-space-7);
+  padding-bottom: calc(var(--tl-space-8) * 2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--tl-space-6);
+}
+.page__head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tl-space-2);
+}
+.page__title {
+  font-size: var(--tl-text-4xl);
+  letter-spacing: var(--tl-tracking-tight);
+}
+.page__lead {
+  font-size: 16px;
+  color: var(--tl-color-text-muted);
+}
+.pickers {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: var(--tl-space-3);
+}
+.picker {
+  flex: 1 1 300px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.picker__label {
+  font-size: var(--tl-text-sm);
+  font-weight: var(--tl-weight-semibold);
+  color: var(--tl-color-text-muted);
+}
+.picker__box {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: var(--tl-control-lg);
+  padding: 0 6px 0 14px;
+  background: var(--tl-color-surface);
+  border: 1.5px solid var(--track);
+  border-radius: 12px;
+}
+.picker__dot {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border-radius: var(--tl-radius-pill);
+  background: var(--track);
+}
+.picker__select {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background-color: transparent;
+  font-size: 16px;
+  font-weight: var(--tl-weight-semibold);
+  padding-left: 0;
+}
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--tl-space-3);
+}
+.range {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.range__label {
+  font-size: var(--tl-text-md);
+  color: var(--tl-color-text-muted);
+}
+.range__input {
+  width: 84px;
+}
+.list {
+  display: flex;
+  flex-direction: column;
+  padding-left: var(--tl-space-6);
+  padding-right: var(--tl-space-6);
+  overflow-x: auto;
+}
+.list__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 72px minmax(0, 1fr);
+  gap: var(--tl-space-4);
+  align-items: center;
+  padding: var(--tl-space-3) 0;
+  border-bottom: 1px solid var(--tl-color-border-subtle);
+}
+.list--many .list__row {
+  grid-template-columns: 72px repeat(v-bind('selected.length'), minmax(160px, 1fr));
+}
+.list__row--head {
+  font-weight: var(--tl-weight-semibold);
+}
+.list__a {
+  text-align: right;
+  justify-content: end;
+}
+.list__cell {
+  font-size: var(--tl-text-base);
+  font-weight: var(--tl-weight-medium);
+}
+.list__year {
+  text-align: center;
+  font-family: var(--tl-font-display);
+  font-weight: var(--tl-weight-semibold);
+  font-size: 16px;
+  padding: 6px 0;
+  border-radius: var(--tl-radius-pill);
+}
+.list__year--shared {
+  background: var(--tl-color-surface-sunken);
+}
+.list__empty {
+  padding: var(--tl-space-4) 0;
+  color: var(--tl-color-text-muted);
+}
+.bottom {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--tl-space-5);
+  align-items: stretch;
+}
+.detail {
+  flex: 2 1 460px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.detail__meta {
+  font-size: var(--tl-text-sm);
+  color: var(--tl-color-text-muted);
+}
+.detail__title {
+  font-size: var(--tl-text-2xl);
+}
+.detail__desc {
+  color: var(--tl-color-text-body);
+}
+.detail__link {
+  width: fit-content;
+  padding: 6px 0;
+  font-weight: var(--tl-weight-semibold);
+  font-size: var(--tl-text-md);
+}
+.match {
+  flex: 1 1 300px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.match__label {
+  font-family: var(--tl-font-body);
+  font-size: var(--tl-text-md);
+  font-weight: var(--tl-weight-semibold);
+  color: var(--tl-color-text-inverse-muted);
+  letter-spacing: 0;
+}
+.match__text {
+  font-family: var(--tl-font-display);
+  font-size: 22px;
+  line-height: 1.25;
+}
+.match__actions {
+  margin-top: auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--tl-space-2);
+}
+.match__ghost {
+  color: var(--tl-color-text-inverse);
+  border-color: var(--tl-color-text-muted);
+}
+.match__ghost:hover {
+  color: var(--tl-color-text-inverse);
+}
+.match__toast {
+  font-size: var(--tl-text-sm);
+  color: var(--tl-color-text-inverse-muted);
+}
+</style>
