@@ -1,7 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { TlButton, TlCompareTracks, TlField, TlInput, TlSegmented, TlTabs, type CompareLane } from '..'
+import { TlButton, TlCompareTracks, TlField, TlInput, TlOverviewBar, TlSegmented, TlTabs, type CompareLane } from '..'
 
 const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: { template: '<div />' } }] })
 
@@ -84,5 +84,62 @@ describe('TlCompareTracks', () => {
   it('posiciona pelo ano no eixo', () => {
     const w = mount(TlCompareTracks, { props: { lanes, start: 1980, end: 2020 } })
     expect(w.findAll('button')[0].attributes('style')).toContain('left: 25%')
+  })
+})
+
+describe('TlCompareTracks com timelines grandes', () => {
+  const big: CompareLane[] = [
+    {
+      id: 'g',
+      name: 'Grande',
+      color: 'a',
+      buckets: [
+        { from: 1900, to: 1919, count: 40, sample: [{ id: 'x', year: 1900, title: 'X' }] },
+        { from: 1960, to: 1979, count: 1, sample: [{ id: 'só', year: 1965, title: 'Sozinho' }] },
+      ],
+    },
+  ]
+
+  it('mostra faixas como grupos e faixa com um evento como evento', () => {
+    const w = mount(TlCompareTracks, { props: { lanes: big, start: 1900, end: 2000 } })
+    expect(w.findAll('.tl-compare__event').map((b) => b.text())).toEqual(['1900–191940 eventos', '1965Sozinho'])
+  })
+
+  it('agrupa eventos soltos que não cabem em três linhas', () => {
+    const events = Array.from({ length: 30 }, (_, i) => ({ id: `e${i}`, year: 1900 + i, title: `E${i}` }))
+    const w = mount(TlCompareTracks, { props: { lanes: [{ id: 'a', name: 'A', color: 'a', events }], start: 1900, end: 2000 } })
+    const clusters = w.findAll('.tl-compare__event--cluster')
+    expect(clusters.length).toBeGreaterThan(0)
+    const grouped = clusters.reduce((n, c) => n + Number(c.find('.tl-compare__title').text().replace(' eventos', '')), 0)
+    expect(grouped + w.findAll('.tl-compare__event:not(.tl-compare__event--cluster)').length).toBe(30)
+  })
+
+  it('clicar num grupo aproxima naquele trecho', async () => {
+    const w = mount(TlCompareTracks, { props: { lanes: big, start: 1900, end: 2000, zoomable: true, min: 1800, max: 2000 } })
+    await w.find('.tl-compare__event--cluster').trigger('click')
+    expect(w.emitted('zoom')?.[0]).toEqual([[1900, 1919]])
+    expect(w.emitted('update:start')?.[0]).toEqual([1898])
+    expect(w.emitted('update:end')?.[0]).toEqual([1922])
+  })
+
+  it('botões de zoom mudam a janela', async () => {
+    const w = mount(TlCompareTracks, { props: { lanes: big, start: 1900, end: 2000, zoomable: true } })
+    await w.find('button[aria-label="Aproximar"]').trigger('click')
+    expect(w.emitted('update:start')?.[0]).toEqual([1925])
+    expect(w.emitted('update:end')?.[0]).toEqual([1975])
+  })
+})
+
+describe('TlOverviewBar', () => {
+  it('desenha um histograma a partir das faixas', () => {
+    const w = mount(TlOverviewBar, { props: { start: 0, end: 100, buckets: [{ from: 0, to: 9, count: 100 }, { from: 50, to: 59, count: 1 }] } })
+    expect(w.findAll('.tl-overview__mark')).toHaveLength(2)
+    expect(w.find('[role="img"]').attributes('aria-label')).toBe('Visão geral: 101 eventos de 0 a 100')
+  })
+
+  it('a janela anda com as setas quando é interativa', async () => {
+    const w = mount(TlOverviewBar, { props: { start: 0, end: 100, years: [10, 20], window: [10, 30], interactive: true } })
+    await w.find('[role="slider"]').trigger('keydown', { key: 'ArrowRight' })
+    expect(w.emitted('update:window')?.[0]).toEqual([[12, 32]])
   })
 })

@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import {
   createTimeline,
+  loadComparison,
+  loadEvents,
+  loadSummary,
   decideSuggestion,
   findTimeline,
   rangeLabel,
@@ -74,5 +77,29 @@ describe('comparações', () => {
     saveComparison(['copas-do-mundo', 'presidentes-da-republica'], 1930, 2020)
     saveComparison(['copas-do-mundo', 'presidentes-da-republica'], 1930, 2020)
     expect(state.savedComparisons).toHaveLength(n + 1)
+  })
+})
+
+describe('timelines grandes', () => {
+  it('a demonstração tem 20 mil eventos e não vai para o localStorage', async () => {
+    const t = findTimeline('demonstracao-20-mil-eventos')!
+    expect(t.events).toHaveLength(20000)
+    const first = await loadEvents(t.slug, { limit: 100 })
+    expect(first.items).toHaveLength(100)
+    const second = await loadEvents(t.slug, { limit: 100, cursor: first.nextCursor })
+    expect(second.items[0].year).toBeGreaterThanOrEqual(first.items[99].year)
+    const summary = await loadSummary(t.slug, { buckets: 40 })
+    expect(summary.mode).toBe('faixas')
+    expect(summary.total).toBe(20000)
+    state.bio = 'mexe no estado para salvar'
+    await Promise.resolve()
+    expect(localStorage.getItem('timeliner:v1') ?? '').not.toContain('demonstracao-20-mil-eventos')
+  })
+
+  it('a comparação traz cada trilha no nível de detalhe certo', async () => {
+    const c = await loadComparison(['historia-do-brasil', 'demonstracao-20-mil-eventos'], 1500, 2025)
+    expect(c.lanes[0].mode).toBe('eventos')
+    expect(c.lanes[1].mode).toBe('faixas')
+    expect(c.overlapsTotal).toBeGreaterThan(0)
   })
 })

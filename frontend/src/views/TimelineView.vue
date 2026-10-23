@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import {
   TlAvatar,
@@ -11,6 +11,8 @@ import {
   TlEventItem,
   TlOverviewBar,
   TlSegmented,
+  axisTicks,
+  type CompareEvent,
   type CompareLane,
 } from '@/design-system'
 import {
@@ -20,15 +22,18 @@ import {
   findTimeline,
   findUser,
   isFollowingTimeline,
+  loadEvents,
+  loadSummary,
   rangeLabel,
   relatedTimelines,
-  sortedEvents,
   suggestionsFor,
   toggleFollowTimeline,
   yearRange,
 } from '@/data/store'
 import type { TimelineEvent } from '@/data/types'
+import type { EventWindow } from '@/data/windowing'
 import { copyLink, dateLabel, yearLabel } from '@/lib/format'
+import { useLatest } from '@/lib/useLatest'
 import NotFoundView from './NotFoundView.vue'
 
 const route = useRoute()
@@ -38,21 +43,76 @@ const timeline = computed(() => {
 })
 
 const ALL = 'Tudo'
+const PAGE = 100
 const era = ref(ALL)
 const mode = ref('vertical')
 const selected = ref<string>()
 const shareMsg = ref('')
-watch(() => route.params.slug, () => {
-  era.value = ALL
-  selected.value = undefined
+watch(
+  () => route.params.slug,
+  () => {
+    era.value = ALL
+    selected.value = undefined
+  },
+)
+
+const range = computed(() => (timeline.value ? yearRange(timeline.value) : undefined))
+const eraRange = computed<[number, number] | undefined>(() => {
+  const e = timeline.value?.eras.find((x) => x.name === era.value)
+  return e && range.value ? [e.start, e.end ?? range.value[1]] : undefined
 })
+
+// ---------- Vertical: páginas por cursor, a próxima carrega ao chegar no fim ----------
+
+// Carrega a próxima página quando o fim da lista aparece na tela.
+const sentinel = ref<HTMLElement>()
+let io: IntersectionObserver | undefined
+watch(sentinel, (el) => {
+  io?.disconnect()
+  if (!el || typeof IntersectionObserver === 'undefined') return
+  io = new IntersectionObserver((entries) => entries.some((e) => e.isIntersecting) && loadPage(false), { rootMargin: '600px' })
+  io.observe(el)
+})
+onBeforeUnmount(() => io?.disconnect())
+
+const loaded = shallowRef<TimelineEvent[]>([])
+const nextCursor = ref<string | null>(null)
+const loading = ref(false)
+const loadError = ref('')
+let listSeq = 0
+
+async function loadPage(reset: boolean) {
+  const t = timeline.value
+  if (!t || (!reset && (!nextCursor.value || loading.value))) return
+  const id = reset ? ++listSeq : listSeq
+  loading.value = true
+  try {
+    const [from, to] = eraRange.value ?? []
+    const page = await loadEvents(t.slug, { from, to, cursor: reset ? null : nextCursor.value, limit: PAGE })
+    if (id !== listSeq) return
+    loaded.value = reset ? page.items : [...loaded.value, ...page.items]
+    nextCursor.value = page.nextCursor
+    loadError.value = ''
+    // Se o fim da lista continua visível (tela alta), observar de novo dispara mais uma carga.
+    if (sentinel.value && io) {
+      io.unobserve(sentinel.value)
+      io.observe(sentinel.value)
+    }
+  } catch (e) {
+    if (id === listSeq) loadError.value = e instanceof Error ? e.message : 'Não deu para carregar os eventos.'
+  } finally {
+    if (id === listSeq) loading.value = false
+  }
+}
+watch([() => timeline.value?.slug, eraRange, () => timeline.value?.events.length], () => loadPage(true), { immediate: true })
+
 
 type Group = { name: string; range?: string; events: TimelineEvent[] }
 
 const groups = computed<Group[]>(() => {
   const t = timeline.value
   if (!t) return []
-  const events = sortedEvents(t)
+  const events = loaded.value
   if (!t.eras.length) return [{ name: '', events }]
   const out: Group[] = t.eras.map((e) => ({ name: e.name, range: `${e.start}–${e.end ?? 'hoje'}`, events: [] }))
   const loose: TimelineEvent[] = []
@@ -65,45 +125,54 @@ const groups = computed<Group[]>(() => {
   return out.filter((g) => g.events.length)
 })
 
-const visibleGroups = computed(() => (era.value === ALL ? groups.value : groups.value.filter((g) => g.name === era.value)))
-const visibleEvents = computed(() => visibleGroups.value.flatMap((g) => g.events))
+// ---------- Minimapa ----------
 
-const range = computed(() => (timeline.value ? yearRange(timeline.value) : undefined))
-const overviewWindow = computed<[number, number] | undefined>(() => {
-  if (era.value === ALL || !visibleEvents.value.length) return undefined
-  const ys = visibleEvents.value.map((e) => e.year)
-  return [Math.min(...ys), Math.max(...ys)]
-})
-const overviewTicks = computed(() => {
-  const r = range.value
-  if (!r) return []
-  const step = r[1] - r[0] > 300 ? 100 : r[1] - r[0] > 60 ? 20 : r[1] - r[0] > 20 ? 10 : 5
-  const out = [r[0]]
-  for (let y = Math.ceil((r[0] + 1) / step) * step; y < r[1] - step / 2; y += step) out.push(y)
-  out.push(r[1])
-  return out
-})
-
-const lanes = computed<CompareLane[]>(() =>
-  timeline.value
-    ? [
-        {
-          id: timeline.value.slug,
-          name: timeline.value.title,
-          color: timeline.value.color,
-          events: visibleEvents.value.map((e) => ({ id: e.id, year: e.year, title: e.title })),
-        },
-      ]
-    : [],
+const overviewTicks = computed(() => (range.value ? axisTicks(range.value[0], range.value[1]) : []))
+// Histograma do eixo completo: 100 faixas, sem trazer os eventos.
+const { data: overview } = useLatest(
+  () => (timeline.value && range.value ? loadSummary(timeline.value.slug, { from: range.value[0], to: range.value[1], buckets: 100, maxEvents: 1 }) : undefined),
+  undefined as EventWindow | undefined,
 )
-const horizontalRange = computed<[number, number]>(() => {
-  const ys = visibleEvents.value.map((e) => e.year)
-  if (!ys.length) return [0, 1]
-  const span = Math.max(...ys) - Math.min(...ys)
-  const pad = Math.max(1, Math.round(span * 0.03))
-  return [Math.min(...ys) - pad, Math.max(...ys) + pad]
+const overviewBuckets = computed(() => {
+  const w = overview.value
+  return w ? (w.mode === 'faixas' ? w.buckets : w.events.map((e) => ({ from: e.year, to: e.year, count: 1 }))) : []
 })
-const selectedEvent = computed(() => visibleEvents.value.find((e) => e.id === selected.value) ?? visibleEvents.value[0])
+
+// ---------- Horizontal: janela com zoom; muitos eventos viram faixas ----------
+
+/** Limites do zoom: o eixo completo com uma folga de 3%. */
+const bounds = computed<[number, number]>(() => {
+  const r = range.value
+  if (!r) return [0, 1]
+  const pad = Math.max(1, Math.round((r[1] - r[0]) * 0.03))
+  return [r[0] - pad, r[1] + pad]
+})
+const view = ref<[number, number]>([0, 1])
+watch([bounds, eraRange], () => (view.value = eraRange.value ?? bounds.value), { immediate: true })
+const viewStart = computed({ get: () => view.value[0], set: (v) => (view.value = [v, view.value[1]]) })
+const viewEnd = computed({ get: () => view.value[1], set: (v) => (view.value = [view.value[0], v]) })
+const overviewWindow = computed<[number, number] | undefined>({
+  get: () => (mode.value === 'horizontal' ? view.value : eraRange.value),
+  set: (v) => v && (view.value = v),
+})
+
+const { data: windowData } = useLatest(
+  () => (timeline.value && mode.value === 'horizontal' ? loadSummary(timeline.value.slug, { from: view.value[0], to: view.value[1], buckets: 60 }) : undefined),
+  undefined as EventWindow | undefined,
+)
+const toCompare = (e: TimelineEvent): CompareEvent => ({ id: e.id, year: e.year, title: e.title })
+const lanes = computed<CompareLane[]>(() => {
+  const t = timeline.value
+  const w = windowData.value
+  if (!t || !w) return []
+  return [{ id: t.slug, name: t.title, color: t.color, events: w.events.map(toCompare), buckets: w.buckets.map((b) => ({ ...b, sample: b.sample.map(toCompare) })) }]
+})
+const windowEvents = computed(() => {
+  const w = windowData.value
+  return w ? [...w.events, ...w.buckets.flatMap((b) => b.sample)] : []
+})
+const selectedEvent = computed(() => windowEvents.value.find((e) => e.id === selected.value) ?? windowEvents.value[0])
+const grouped = computed(() => (windowData.value?.mode === 'faixas' ? windowData.value : undefined))
 
 const people = computed(() => (timeline.value ? contributors(timeline.value).map(findUser) : []))
 const pending = computed(() => (timeline.value ? suggestionsFor(timeline.value.slug).filter((s) => s.status === 'pendente').length : 0))
@@ -142,7 +211,7 @@ async function share() {
                 {{ timeline.owner }}
               </span>
               <span>{{ rangeLabel(timeline) }}</span>
-              <span>{{ timeline.events.length }} eventos</span>
+              <span>{{ timeline.events.length.toLocaleString('pt-BR') }} eventos</span>
               <span>{{ people.length }} contribuidores</span>
               <span>{{ timeline.updatedLabel }}</span>
               <TlBadge v-if="timeline.draft" tone="warning">Rascunho</TlBadge>
@@ -165,13 +234,21 @@ async function share() {
         </div>
 
         <TlCard v-if="range" tone="muted" padding="sm">
-          <TlOverviewBar :start="range[0]" :end="range[1]" :years="timeline.events.map((e) => e.year)" :window="overviewWindow" :ticks="overviewTicks" :color="timeline.color" />
+          <TlOverviewBar
+            v-model:window="overviewWindow"
+            :start="range[0]"
+            :end="range[1]"
+            :buckets="overviewBuckets"
+            :ticks="overviewTicks"
+            :color="timeline.color"
+            :interactive="mode === 'horizontal'"
+          />
         </TlCard>
 
         <div class="top__controls">
-          <div v-if="groups.length > 1" role="group" aria-label="Filtrar por período" class="top__chips">
+          <div v-if="timeline.eras.length" role="group" aria-label="Filtrar por período" class="top__chips">
             <TlChip :pressed="era === ALL" @click="era = ALL">{{ ALL }}</TlChip>
-            <TlChip v-for="g in groups" :key="g.name" :pressed="era === g.name" @click="era = g.name">{{ g.name }}</TlChip>
+            <TlChip v-for="e in timeline.eras" :key="e.name" :pressed="era === e.name" @click="era = e.name">{{ e.name }}</TlChip>
           </div>
           <span v-else></span>
           <TlSegmented
@@ -195,7 +272,7 @@ async function share() {
         </TlCard>
 
         <template v-else-if="mode === 'vertical'">
-          <section v-for="g in visibleGroups" :key="g.name" class="era">
+          <section v-for="g in groups" :key="g.name" class="era">
             <div v-if="g.name" class="era__head">
               <h2 class="era__name">{{ g.name }}</h2>
               <span v-if="g.range" class="era__range">{{ g.range }}</span>
@@ -210,12 +287,21 @@ async function share() {
               :source-url="e.sourceUrl"
               :by="e.by"
               :color="timeline.color"
+              class="body__event"
             />
           </section>
+          <p v-if="!loaded.length && !loading" class="body__note">Nenhum evento neste período.</p>
+          <p v-if="loadError" class="body__note" role="alert">{{ loadError }}</p>
+          <div v-if="nextCursor" ref="sentinel" class="more">
+            <TlButton :disabled="loading" @click="loadPage(false)">{{ loading ? 'Carregando…' : 'Carregar mais eventos' }}</TlButton>
+          </div>
         </template>
 
         <template v-else>
-          <TlCompareTracks v-model:selected="selected" :lanes="lanes" :start="horizontalRange[0]" :end="horizontalRange[1]" :tick-step="overviewTicks.length > 2 ? overviewTicks[2] - overviewTicks[1] : 10" />
+          <TlCompareTracks v-model:selected="selected" v-model:start="viewStart" v-model:end="viewEnd" :lanes="lanes" :min="bounds[0]" :max="bounds[1]" zoomable />
+          <p v-if="grouped" class="body__note">
+            {{ grouped.total.toLocaleString('pt-BR') }} eventos neste trecho, agrupados por período. Clique num grupo ou aproxime para ver cada evento.
+          </p>
           <TlCard v-if="selectedEvent" padding="lg" class="detail">
             <span class="detail__date">{{ dateLabel(selectedEvent) }}</span>
             <h2 class="detail__title">{{ selectedEvent.title }}</h2>
@@ -385,6 +471,20 @@ async function share() {
 .era__range {
   font-size: var(--tl-text-md);
   color: var(--tl-color-text-muted);
+}
+.body__event {
+  /* O navegador só desenha os eventos que estão perto da tela. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 120px;
+}
+.body__note {
+  font-size: var(--tl-text-md);
+  color: var(--tl-color-text-muted);
+}
+.more {
+  display: flex;
+  justify-content: center;
+  padding: var(--tl-space-4) 0;
 }
 .empty {
   display: flex;

@@ -1,21 +1,27 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   TlButton,
   TlCard,
   TlCompareTracks,
   TlInput,
+  TlOverviewBar,
   TlSegmented,
   TlSelect,
   TlTrackLabel,
+  axisTicks,
   trackColors,
+  type CompareEvent,
   type CompareLane,
+  type OverviewTrack,
   type TrackColor,
 } from '@/design-system'
-import { canView, findSavedComparison, findTimeline, publicTimelines, saveComparison, state, yearRange } from '@/data/store'
-import type { Timeline } from '@/data/types'
+import { canView, findSavedComparison, findTimeline, loadComparison, loadSummary, publicTimelines, saveComparison, state, yearRange, type Comparison } from '@/data/store'
+import type { Timeline, TimelineEvent } from '@/data/types'
+import { extent, type EventWindow } from '@/data/windowing'
 import { copyLink, dateLabel } from '@/lib/format'
+import { useLatest } from '@/lib/useLatest'
 
 const route = useRoute()
 const router = useRouter()
@@ -72,12 +78,37 @@ const defaultRange = computed<[number, number]>(() => {
   const [s, e] = lo < hi ? [lo, hi] : [Math.min(...ranges.map((r) => r[0])), Math.max(...ranges.map((r) => r[1]))]
   return [Math.floor(s / 5) * 5, Math.ceil(e / 5) * 5]
 })
-const start = computed(() => Number(route.query.de) || defaultRange.value[0])
-const end = computed(() => Math.max(start.value + 1, Number(route.query.ate) || defaultRange.value[1]))
+const routeStart = computed(() => Number(route.query.de) || defaultRange.value[0])
+const routeEnd = computed(() => Math.max(routeStart.value + 1, Number(route.query.ate) || defaultRange.value[1]))
+
+// A janela segue a URL, e o zoom nas trilhas ou no minimapa volta para a URL logo depois.
+const view = ref<[number, number]>([routeStart.value, routeEnd.value])
+watch([routeStart, routeEnd], ([s, e]) => {
+  if (s !== view.value[0] || e !== view.value[1]) view.value = [s, e]
+})
+let urlTimer: ReturnType<typeof setTimeout> | undefined
+watch(view, ([s, e]) => {
+  clearTimeout(urlTimer)
+  if (s === routeStart.value && e === routeEnd.value) return
+  urlTimer = setTimeout(() => setSlugs(slugs.value, { de: String(s), ate: String(e) }), 400)
+})
+onBeforeUnmount(() => clearTimeout(urlTimer))
+const start = computed({ get: () => view.value[0], set: (v) => (view.value = [v, view.value[1]]) })
+const end = computed({ get: () => view.value[1], set: (v) => (view.value = [view.value[0], v]) })
+
+/** Limites do zoom: do primeiro ao último ano de todas as timelines escolhidas. */
+const bounds = computed<[number, number]>(() => {
+  const ranges = selected.value.map(yearRange).filter((r): r is [number, number] => !!r)
+  const lo = extent(ranges.map((r) => r[0]))
+  const hi = extent(ranges.map((r) => r[1]))
+  // Arredonda como defaultRange e inclui um período digitado fora das timelines.
+  if (!lo || !hi) return [routeStart.value, routeEnd.value]
+  return [Math.min(Math.floor(lo[0] / 5) * 5, routeStart.value), Math.max(Math.ceil(hi[1] / 5) * 5, routeEnd.value)]
+})
 
 const startInput = ref(String(start.value))
 const endInput = ref(String(end.value))
-watch([start, end], ([s, e]) => {
+watch(view, ([s, e]) => {
   startInput.value = String(s)
   endInput.value = String(e)
 })
@@ -89,6 +120,7 @@ function applyRange() {
     endInput.value = String(end.value)
     return
   }
+  view.value = [s, e]
   setSlugs(slugs.value, { de: String(s), ate: String(e) })
 }
 const resetRange = () => setSlugs(slugs.value, { de: undefined, ate: undefined })
@@ -98,42 +130,74 @@ const resetRange = () => setSlugs(slugs.value, { de: undefined, ate: undefined }
 const mode = ref('trilhas')
 const colorOf = (i: number): TrackColor => trackColors[i % trackColors.length]
 
-const inRange = (t: Timeline) => t.events.filter((e) => e.year >= start.value && e.year <= end.value).sort((a, b) => a.year - b.year)
-
-const lanes = computed<CompareLane[]>(() =>
-  selected.value.map((t, i) => ({ id: t.slug, name: t.title, color: colorOf(i), events: inRange(t).map((e) => ({ id: e.id, year: e.year, title: e.title })) })),
+// Cada trilha vem como na API: os eventos do trecho, ou faixas quando são muitos.
+const { data: comparison } = useLatest(
+  () => (selected.value.length >= 2 ? loadComparison(slugs.value, view.value[0], view.value[1], { buckets: 60 }) : undefined),
+  undefined as Comparison | undefined,
 )
+const windows = computed(() => comparison.value?.lanes ?? [])
+const bucketed = computed(() => windows.value.some((w) => w.mode === 'faixas'))
 
-const allEvents = computed(() => selected.value.flatMap((t, i) => inRange(t).map((e) => ({ ...e, timeline: t, color: colorOf(i) }))))
-const selectedId = ref<string>()
-const current = computed(() => allEvents.value.find((e) => e.id === selectedId.value) ?? allEvents.value[0])
-
-const years = computed(() => [...new Set(allEvents.value.map((e) => e.year))].sort((a, b) => a - b))
-const rows = computed(() =>
-  years.value.map((y) => {
-    const cells = selected.value.map((t) => inRange(t).filter((e) => e.year === y))
-    return { year: y, cells, shared: cells.filter((c) => c.length).length > 1 }
+const toCompare = (e: TimelineEvent): CompareEvent => ({ id: e.id, year: e.year, title: e.title })
+const lanes = computed<CompareLane[]>(() =>
+  selected.value.map((t, i) => {
+    const w = windows.value[i]
+    return { id: t.slug, name: t.title, color: colorOf(i), events: w?.events.map(toCompare) ?? [], buckets: w?.buckets.map((b) => ({ ...b, sample: b.sample.map(toCompare) })) ?? [] }
   }),
 )
 
-/** Anos em que duas ou mais timelines têm eventos. */
-const coincidences = computed(() => rows.value.filter((r) => r.shared))
+/** Os eventos que vieram: todos, ou os exemplos de cada faixa. */
+const shown = (w: EventWindow | undefined) => (w ? [...w.events, ...w.buckets.flatMap((b) => b.sample)].sort((a, b) => a.year - b.year) : [])
+const allEvents = computed(() => selected.value.flatMap((t, i) => shown(windows.value[i]).map((e) => ({ ...e, timeline: t, color: colorOf(i) }))))
+const selectedId = ref<string>()
+const current = computed(() => allEvents.value.find((e) => e.id === selectedId.value) ?? allEvents.value[0])
+
+const ROWS_STEP = 20
+const rowsShown = ref(ROWS_STEP)
+watch([view, slugs], () => (rowsShown.value = ROWS_STEP))
+const years = computed(() => [...new Set(allEvents.value.map((e) => e.year))].sort((a, b) => a - b))
+const rows = computed(() => {
+  const byLane = selected.value.map((_, i) => shown(windows.value[i]))
+  return years.value.map((y) => {
+    const cells = byLane.map((evs) => evs.filter((e) => e.year === y))
+    return { year: y, cells, shared: cells.filter((c) => c.length).length > 1 }
+  })
+})
+const visibleRows = computed(() => rows.value.slice(0, rowsShown.value))
+
+/** Anos em que duas ou mais timelines têm eventos (vem pronto, com teto, da comparação). */
+const coincidences = computed(() => comparison.value?.overlaps ?? [])
 const highlight = computed(() => {
   const y = current.value?.year
-  return coincidences.value.find((r) => r.year === y) ?? coincidences.value[0]
+  return coincidences.value.find((o) => o.year === y) ?? coincidences.value[0]
 })
 const highlightText = computed(() => {
   const h = highlight.value
   if (!h) return ''
-  const parts = h.cells.flatMap((c) => c.map((e) => e.title))
-  const list = parts.length > 1 ? `${parts.slice(0, -1).join(', ')} e ${parts[parts.length - 1]}` : parts[0]
-  return `Em ${h.year}, ${list} aparecem no mesmo ano.`
+  const parts = allEvents.value.filter((e) => e.year === h.year && h.laneIds.includes(e.timeline.slug)).map((e) => e.title)
+  const names = h.laneIds.map((id) => findTimeline(id)?.title ?? id)
+  const and = (xs: string[]) => (xs.length > 1 ? `${xs.slice(0, -1).join(', ')} e ${xs[xs.length - 1]}` : xs[0])
+  return parts.length > 1 ? `Em ${h.year}, ${and(parts)} aparecem no mesmo ano.` : `Em ${h.year}, ${and(names)} têm eventos no mesmo ano.`
+})
+const coincidenceCount = computed(() => {
+  const n = comparison.value?.overlapsTotal ?? 0
+  return n > 1 ? `${n.toLocaleString('pt-BR')} anos com eventos em mais de uma timeline neste período.` : ''
 })
 
-const tickStep = computed(() => {
-  const span = end.value - start.value
-  return span > 400 ? 100 : span > 150 ? 25 : span > 60 ? 10 : 5
-})
+// Minimapa com as timelines empilhadas sobre o eixo completo.
+const { data: overviewData } = useLatest(
+  () => Promise.all(selected.value.map((t) => loadSummary(t.slug, { from: bounds.value[0], to: bounds.value[1], buckets: 100, maxEvents: 1 }))),
+  [] as EventWindow[],
+)
+const overviewTracks = computed<OverviewTrack[]>(() =>
+  overviewData.value.map((w, i) => ({
+    color: colorOf(i),
+    label: selected.value[i]?.title,
+    buckets: w.mode === 'faixas' ? w.buckets : w.events.map((e) => ({ from: e.year, to: e.year, count: 1 })),
+  })),
+)
+const overviewTicks = computed(() => axisTicks(bounds.value[0], bounds.value[1]))
+const overviewWindow = computed<[number, number] | undefined>({ get: () => view.value, set: (v) => v && (view.value = v) })
 
 // ---------- Salvar e compartilhar ----------
 
@@ -189,7 +253,20 @@ async function share() {
       />
     </div>
 
-    <TlCompareTracks v-if="mode === 'trilhas'" :selected="current?.id" @update:selected="(v) => (selectedId = v)" :lanes="lanes" :start="start" :end="end" :tick-step="tickStep" :highlight-year="highlight?.year" />
+    <TlOverviewBar v-model:window="overviewWindow" :start="bounds[0]" :end="bounds[1]" :tracks="overviewTracks" :ticks="overviewTicks" interactive />
+
+    <TlCompareTracks
+      v-if="mode === 'trilhas'"
+      v-model:start="start"
+      v-model:end="end"
+      :selected="current?.id"
+      :lanes="lanes"
+      :highlight-year="highlight?.year"
+      :min="bounds[0]"
+      :max="bounds[1]"
+      zoomable
+      @update:selected="(v) => (selectedId = v)"
+    />
 
     <TlCard v-else padding="sm" class="list" :class="{ 'list--many': selected.length > 2 }">
       <div class="list__row list__row--head" aria-hidden="true">
@@ -203,7 +280,8 @@ async function share() {
           <TlTrackLabel v-for="(t, i) in selected" :key="t.slug" :color="colorOf(i)" size="sm">{{ t.title }}</TlTrackLabel>
         </template>
       </div>
-      <div v-for="r in rows" :key="r.year" class="list__row">
+      <p v-if="bucketed" class="list__note">Há muitos eventos neste período: aparecem só os primeiros de cada trecho. Diminua o período para ver todos.</p>
+      <div v-for="r in visibleRows" :key="r.year" class="list__row">
         <template v-if="selected.length === 2">
           <div class="list__cell list__a">{{ r.cells[0].map((e) => e.title).join(' · ') }}</div>
           <div class="list__year" :class="{ 'list__year--shared': r.shared }">{{ r.year }}</div>
@@ -215,6 +293,9 @@ async function share() {
         </template>
       </div>
       <p v-if="!rows.length" class="list__empty">Nenhum evento entre {{ start }} e {{ end }}.</p>
+      <div v-if="rows.length > rowsShown" class="list__more">
+        <TlButton size="sm" @click="rowsShown += ROWS_STEP">Ver mais ({{ (rows.length - rowsShown).toLocaleString('pt-BR') }} anos)</TlButton>
+      </div>
     </TlCard>
 
     <div class="bottom">
@@ -227,6 +308,7 @@ async function share() {
       <TlCard tone="inverse" padding="lg" class="match">
         <h2 class="match__label">Coincidência destacada</h2>
         <p class="match__text">{{ highlightText || 'Nenhum ano com eventos nas duas timelines neste período.' }}</p>
+        <p v-if="coincidenceCount" class="match__count">{{ coincidenceCount }}</p>
         <div class="match__actions">
           <TlButton variant="inverse" :disabled="saved" @click="save">{{ saved ? 'Comparação salva' : 'Salvar comparação' }}</TlButton>
           <TlButton variant="ghost" class="match__ghost" @click="share">Compartilhar link</TlButton>
@@ -360,6 +442,20 @@ async function share() {
 }
 .list__year--shared {
   background: var(--tl-color-surface-sunken);
+}
+.list__note {
+  padding: var(--tl-space-3) var(--tl-space-4);
+  font-size: var(--tl-text-sm);
+  color: var(--tl-color-text-muted);
+}
+.list__more {
+  display: flex;
+  justify-content: center;
+  padding: var(--tl-space-3);
+}
+.match__count {
+  font-size: var(--tl-text-sm);
+  opacity: 0.75;
 }
 .list__empty {
   padding: var(--tl-space-4) 0;
