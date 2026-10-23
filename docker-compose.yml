@@ -45,5 +45,22 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # Cria o usuário de dev (klausner17@gmail.com / timeliner123) pela API, uma vez.
+  # Se o usuário já existir, o cadastro falha e o serviço só avisa.
+  seed:
+    image: alpine:3.22
+    depends_on:
+      backend:
+        condition: service_healthy
+    command:
+      - sh
+      - -c
+      - >-
+        wget -qO- --header 'Content-Type: application/json'
+        --post-data '{"handle":"klausner","name":"Klausner","email":"klausner17@gmail.com","password":"timeliner123"}'
+        http://backend:8080/api/auth/register && echo ' usuario criado'
+        || echo 'usuario ja existe'
+    restart: "no"
+
 volumes:
   pgdata:
