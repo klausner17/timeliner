@@ -6,7 +6,15 @@ import { clampWindow, layout, niceStep, zoomWindow, type CompareBucket, type Com
 
 export type { CompareBucket, CompareEvent }
 /** Uma trilha traz eventos soltos, faixas com contagem (timelines grandes) ou os dois. */
-export type CompareLane = { id: string; name: string; color: TrackColor; events?: CompareEvent[]; buckets?: CompareBucket[] }
+export type CompareLane = {
+  id: string
+  name: string
+  color: TrackColor
+  events?: CompareEvent[]
+  buckets?: CompareBucket[]
+  /** Primeiro e último ano da timeline. Fora dele, o eixo some e a área fica apagada. */
+  extent?: [number, number]
+}
 
 /**
  * Duas ou mais timelines em trilhas paralelas no mesmo eixo de anos. Rótulos que não
@@ -90,9 +98,20 @@ const laneViews = computed(() =>
     const bands = items.flatMap((i) =>
       i.kind === 'cluster' ? [{ key: i.key, left: clampPct(i.from), width: Math.max(0.6, clampPct(i.to + 1) - clampPct(i.from)), strength: 0.2 + 0.8 * Math.sqrt(i.count / maxCount) }] : [],
     )
-    return { ...lane, labels, dots, bands, height: `${FIRST_ROW + rows * ROW_H}px` }
+    return { ...lane, labels, dots, bands, edges: edgesOf(lane), height: `${FIRST_ROW + rows * ROW_H}px` }
   }),
 )
+
+function edgesOf(lane: CompareLane) {
+  const [first, last] = lane.extent ?? [start.value, end.value]
+  const from = clampPct(first)
+  const to = clampPct(last)
+  return {
+    axis: { left: from, width: Math.max(0, to - from) },
+    before: from > 0 ? { year: first, x: from } : undefined,
+    after: to < 100 ? { year: last, x: to } : undefined,
+  }
+}
 
 const label = computed(() => `Comparação de ${start.value} a ${end.value}`)
 /** "1930–1945", ou "-1813 a -876" quando o traço confundiria com o sinal de menos. */
@@ -224,7 +243,17 @@ function onPointerUp(ev: PointerEvent) {
             role="group"
             :aria-label="lane.name"
           >
-            <div class="tl-compare__axis" aria-hidden="true"></div>
+            <template v-if="lane.edges.before">
+              <div class="tl-compare__void" :style="{ left: 0, width: `${lane.edges.before.x}%` }" aria-hidden="true"></div>
+              <div class="tl-compare__cap" :style="{ left: `${lane.edges.before.x}%` }" aria-hidden="true"></div>
+              <span class="tl-compare__edge" :style="{ left: `${lane.edges.before.x}%` }">Início em {{ lane.edges.before.year }}</span>
+            </template>
+            <template v-if="lane.edges.after">
+              <div class="tl-compare__void" :style="{ left: `${lane.edges.after.x}%`, right: 0 }" aria-hidden="true"></div>
+              <div class="tl-compare__cap" :style="{ left: `${lane.edges.after.x}%` }" aria-hidden="true"></div>
+              <span class="tl-compare__edge" :style="{ right: `${100 - lane.edges.after.x}%` }">Fim em {{ lane.edges.after.year }}</span>
+            </template>
+            <div class="tl-compare__axis" :style="{ left: `${lane.edges.axis.left}%`, width: `${lane.edges.axis.width}%` }" aria-hidden="true"></div>
             <div
               v-for="b in lane.bands"
               :key="b.key"
@@ -377,12 +406,33 @@ function onPointerUp(ev: PointerEvent) {
 }
 .tl-compare__axis {
   position: absolute;
-  left: 0;
-  right: 0;
   top: 22px;
   height: 2px;
   background: var(--track);
   opacity: 0.35;
+}
+.tl-compare__void {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: repeating-linear-gradient(-45deg, var(--tl-color-bg) 0 6px, var(--tl-color-surface) 6px 12px);
+}
+.tl-compare__cap {
+  position: absolute;
+  top: 12px;
+  width: 2px;
+  height: 22px;
+  margin-left: -1px;
+  border-radius: var(--tl-radius-pill);
+  background: var(--track);
+}
+.tl-compare__edge {
+  position: absolute;
+  top: 0;
+  padding: 0 6px;
+  font-size: var(--tl-text-xs);
+  color: var(--tl-color-text-muted);
+  white-space: nowrap;
 }
 .tl-compare__band {
   position: absolute;

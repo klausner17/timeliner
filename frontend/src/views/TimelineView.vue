@@ -165,7 +165,7 @@ const lanes = computed<CompareLane[]>(() => {
   const t = timeline.value
   const w = windowData.value
   if (!t || !w) return []
-  return [{ id: t.slug, name: t.title, color: t.color, events: w.events.map(toCompare), buckets: w.buckets.map((b) => ({ ...b, sample: b.sample.map(toCompare) })) }]
+  return [{ id: t.slug, name: t.title, color: t.color, extent: range.value, events: w.events.map(toCompare), buckets: w.buckets.map((b) => ({ ...b, sample: b.sample.map(toCompare) })) }]
 })
 const windowEvents = computed(() => {
   const w = windowData.value

@@ -142,7 +142,7 @@ const toCompare = (e: TimelineEvent): CompareEvent => ({ id: e.id, year: e.year,
 const lanes = computed<CompareLane[]>(() =>
   selected.value.map((t, i) => {
     const w = windows.value[i]
-    return { id: t.slug, name: t.title, color: colorOf(i), events: w?.events.map(toCompare) ?? [], buckets: w?.buckets.map((b) => ({ ...b, sample: b.sample.map(toCompare) })) ?? [] }
+    return { id: t.slug, name: t.title, color: colorOf(i), extent: yearRange(t), events: w?.events.map(toCompare) ?? [], buckets: w?.buckets.map((b) => ({ ...b, sample: b.sample.map(toCompare) })) ?? [] }
   }),
 )
 

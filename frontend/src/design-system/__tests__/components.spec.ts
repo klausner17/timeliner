@@ -85,6 +85,18 @@ describe('TlCompareTracks', () => {
     const w = mount(TlCompareTracks, { props: { lanes, start: 1980, end: 2020 } })
     expect(w.findAll('button')[0].attributes('style')).toContain('left: 25%')
   })
+
+  it('marca o início e o fim da timeline quando cabem na janela', () => {
+    const w = mount(TlCompareTracks, { props: { lanes: [{ ...lanes[0], extent: [1990, 2000] }], start: 1980, end: 2020 } })
+    expect(w.findAll('.tl-compare__edge').map((e) => e.text())).toEqual(['Início em 1990', 'Fim em 2000'])
+    expect(w.find('.tl-compare__axis').attributes('style')).toContain('left: 25%; width: 25%')
+  })
+
+  it('não marca as pontas que ficam fora da janela', () => {
+    const w = mount(TlCompareTracks, { props: { lanes: [{ ...lanes[0], extent: [1900, 2000] }], start: 1980, end: 2020 } })
+    expect(w.findAll('.tl-compare__edge').map((e) => e.text())).toEqual(['Fim em 2000'])
+    expect(mount(TlCompareTracks, { props: { lanes, start: 1980, end: 2020 } }).findAll('.tl-compare__edge')).toHaveLength(0)
+  })
 })
 
 describe('TlCompareTracks com timelines grandes', () => {
