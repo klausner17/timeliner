@@ -3,11 +3,13 @@ package postgres
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 
 	"github.com/klausner17/timeliner/backend/internal/domain"
+	"github.com/klausner17/timeliner/backend/internal/usecase"
 )
 
 type events struct{ *db }
@@ -44,14 +46,92 @@ func (r events) ByID(ctx context.Context, id string) (*domain.Event, error) {
 	return scanEvent(r.q(ctx).QueryRow(ctx, `SELECT `+eventCols+` FROM events WHERE id=$1`, id))
 }
 
-func (r events) ListByTimeline(ctx context.Context, timelineID string, from, to *int) ([]domain.Event, error) {
+func (r events) CreateMany(ctx context.Context, es []domain.Event) error {
+	rows := make([][]any, len(es))
+	for i, e := range es {
+		rows[i] = []any{e.ID, e.TimelineID, e.Year, e.EndYear, e.Date, e.Title, e.Description, e.SourceURL, e.Era, e.AuthorID, e.CreatedAt}
+	}
+	_, err := r.q(ctx).CopyFrom(ctx, pgx.Identifier{"events"}, strings.Split(strings.ReplaceAll(eventCols, " ", ""), ","), pgx.CopyFromRows(rows))
+	return translate(err)
+}
+
+// eventOrder é a ordem cronológica, igual a memory.SortEvents e ao índice events_timeline_order_idx.
+const eventOrder = `year, COALESCE(end_year, year), created_at, id`
+
+// touches filtra os eventos da timeline $1 que tocam o intervalo [$2, $3]; nulos não filtram.
+const touches = `timeline_id=$1 AND ($2::int IS NULL OR COALESCE(end_year, year) >= $2) AND ($3::int IS NULL OR year <= $3)`
+
+func (r events) ListByTimeline(ctx context.Context, q usecase.EventQuery) ([]domain.Event, error) {
+	after := []any{nil, nil, nil, nil}
+	if c := q.After; c != nil {
+		after = []any{c.Year, c.EndYear, c.CreatedAt, c.ID}
+	}
+	args := append([]any{q.TimelineID, q.From, q.To}, append(after, q.Limit)...)
 	rows, err := r.q(ctx).Query(ctx, `SELECT `+eventCols+` FROM events
-		WHERE timeline_id=$1 AND ($2::int IS NULL OR COALESCE(end_year, year) >= $2) AND ($3::int IS NULL OR year <= $3)
-		ORDER BY year, COALESCE(end_year, year), created_at, id`, timelineID, from, to)
+		WHERE `+touches+` AND ($4::int IS NULL OR (`+eventOrder+`) > ($4, $5::int, $6::timestamptz, $7::text))
+		ORDER BY `+eventOrder+` LIMIT $8`, args...)
 	if err != nil {
 		return nil, err
 	}
 	return collect(rows, scanEvent)
+}
+
+func (r events) Summary(ctx context.Context, q usecase.SummaryQuery) ([]domain.YearBucket, error) {
+	span := q.To - q.From + 1
+	// Conta por faixa e, para cada faixa com eventos, busca os primeiros pelo índice. A
+	// faixa b vai de $2 + ceil(b*span/n) a $2 + ceil((b+1)*span/n) - 1, como em domain.BucketRange;
+	// a primeira também leva quem começa antes de $2.
+	rows, err := r.q(ctx).Query(ctx, `WITH c AS (
+			SELECT b, count(*) AS n FROM (SELECT ((GREATEST(year, $2) - $2)::bigint * $4 / $5)::int AS b FROM events WHERE `+touches+`) x
+			GROUP BY b)
+		SELECT c.b, c.n, s.* FROM c CROSS JOIN LATERAL (
+			SELECT `+eventCols+` FROM events WHERE `+touches+`
+				AND year <= $2 + ((c.b + 1)::bigint * $5 + $4 - 1) / $4 - 1
+				AND year >= CASE WHEN c.b = 0 THEN -2147483648 ELSE $2 + (c.b::bigint * $5 + $4 - 1) / $4 END
+			ORDER BY `+eventOrder+` LIMIT $6) s
+		ORDER BY c.b, s.year, COALESCE(s.end_year, s.year), s.created_at, s.id`, q.TimelineID, q.From, q.To, q.Buckets, span, q.Sample)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []domain.YearBucket{}
+	last := -1
+	for rows.Next() {
+		var b, n int
+		var e domain.Event
+		if err := rows.Scan(&b, &n, &e.ID, &e.TimelineID, &e.Year, &e.EndYear, &e.Date, &e.Title, &e.Description,
+			&e.SourceURL, &e.Era, &e.AuthorID, &e.CreatedAt); err != nil {
+			return nil, err
+		}
+		if b != last {
+			from, to := domain.BucketRange(b, q.From, span, q.Buckets)
+			out = append(out, domain.YearBucket{From: from, To: to, Count: n, Sample: []domain.Event{}})
+			last = b
+		}
+		out[len(out)-1].Sample = append(out[len(out)-1].Sample, e)
+	}
+	return out, rows.Err()
+}
+
+func (r events) Overlaps(ctx context.Context, timelineIDs []string, from, to, limit int) ([]domain.YearOverlap, int, error) {
+	rows, err := r.q(ctx).Query(ctx, `SELECT year, array_agg(DISTINCT timeline_id ORDER BY timeline_id), count(*) OVER ()
+		FROM events WHERE timeline_id = ANY($1) AND year BETWEEN $2 AND $3
+		GROUP BY year HAVING count(DISTINCT timeline_id) >= 2
+		ORDER BY year LIMIT $4`, timelineIDs, from, to, limit)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	out := []domain.YearOverlap{}
+	total := 0
+	for rows.Next() {
+		var o domain.YearOverlap
+		if err := rows.Scan(&o.Year, &o.TimelineIDs, &total); err != nil {
+			return nil, 0, err
+		}
+		out = append(out, o)
+	}
+	return out, total, rows.Err()
 }
 
 func collect[T any](rows pgx.Rows, scan func(pgx.Row) (*T, error)) ([]T, error) {

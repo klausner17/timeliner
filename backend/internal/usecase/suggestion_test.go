@@ -32,7 +32,7 @@ func (w suggestionWorld) review(t *testing.T, id string, decision usecase.Review
 
 func (w suggestionWorld) events(t *testing.T) []usecase.EventView {
 	t.Helper()
-	return must[[]usecase.EventView](t)(usecase.NewListEvents(w.d).Execute(ctx, usecase.ListEventsInput{Slug: w.timeline.Timeline.Slug}))
+	return must[usecase.EventPage](t)(usecase.NewListEvents(w.d).Execute(ctx, usecase.ListEventsInput{Slug: w.timeline.Timeline.Slug})).Items
 }
 
 func TestApproveNewEventAndReopen(t *testing.T) {
@@ -77,7 +77,7 @@ func TestApproveNewEventAndReopen(t *testing.T) {
 
 func TestApproveFixKeepsPreviousAndReopenRestores(t *testing.T) {
 	w := newSuggestionWorld(t)
-	original := w.timeline.Events[0].Event
+	original := w.timeline.Events.Items[0].Event
 	s := w.suggest(t, usecase.CreateSuggestionInput{
 		Kind: domain.SuggestionDateFix, EventID: &original.ID,
 		Event: domain.EventData{Year: 1992, Date: ptr("29 de setembro de 1992"), Title: "Impeachment"},

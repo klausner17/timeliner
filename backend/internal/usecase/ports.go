@@ -63,14 +63,42 @@ type TimelineRepository interface {
 	Tags(ctx context.Context, limit int) ([]domain.TagCount, error)
 }
 
+// EventQuery pede uma página de eventos de uma timeline, em ordem cronológica.
+type EventQuery struct {
+	TimelineID string
+	// From e To filtram por eventos que tocam o intervalo (um período 1960–1970 entra em from=1965).
+	From *int
+	To   *int
+	// After pula tudo até esse evento, inclusive (paginação por cursor).
+	After *domain.EventCursor
+	Limit int
+}
+
+// SummaryQuery divide [From, To] em Buckets faixas iguais de anos.
+type SummaryQuery struct {
+	TimelineID string
+	From       int
+	To         int
+	Buckets    int
+	// Sample é quantos eventos de exemplo vêm em cada faixa.
+	Sample int
+}
+
 type EventRepository interface {
 	Create(ctx context.Context, e *domain.Event) error
+	// CreateMany grava vários eventos de uma vez (importação).
+	CreateMany(ctx context.Context, es []domain.Event) error
 	Update(ctx context.Context, e *domain.Event) error
 	Delete(ctx context.Context, id string) error
 	ByID(ctx context.Context, id string) (*domain.Event, error)
-	// ListByTimeline devolve os eventos em ordem cronológica. from e to filtram por
-	// eventos que tocam o intervalo (um período 1960–1970 entra em from=1965).
-	ListByTimeline(ctx context.Context, timelineID string, from, to *int) ([]domain.Event, error)
+	// ListByTimeline devolve até q.Limit eventos em ordem cronológica.
+	ListByTimeline(ctx context.Context, q EventQuery) ([]domain.Event, error)
+	// Summary devolve só as faixas com eventos, em ordem, cada uma com a contagem e
+	// os primeiros q.Sample eventos.
+	Summary(ctx context.Context, q SummaryQuery) ([]domain.YearBucket, error)
+	// Overlaps devolve até limit anos de [from, to] em que duas ou mais das timelines têm
+	// evento começando, em ordem, e o total desses anos.
+	Overlaps(ctx context.Context, timelineIDs []string, from, to, limit int) ([]domain.YearOverlap, int, error)
 }
 
 type SuggestionRepository interface {

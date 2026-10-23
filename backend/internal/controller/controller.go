@@ -32,10 +32,11 @@ type UseCases struct {
 	FollowTimeline usecase.UseCase[usecase.FollowTimelineInput, usecase.Empty]
 	ListTags       usecase.UseCase[usecase.Empty, []domain.TagCount]
 
-	ListEvents  usecase.UseCase[usecase.ListEventsInput, []usecase.EventView]
-	CreateEvent usecase.UseCase[usecase.CreateEventInput, usecase.EventView]
-	UpdateEvent usecase.UseCase[usecase.UpdateEventInput, usecase.EventView]
-	DeleteEvent usecase.UseCase[usecase.EventRefInput, usecase.Empty]
+	ListEvents      usecase.UseCase[usecase.ListEventsInput, usecase.EventPage]
+	SummarizeEvents usecase.UseCase[usecase.SummarizeEventsInput, usecase.EventWindow]
+	CreateEvent     usecase.UseCase[usecase.CreateEventInput, usecase.EventView]
+	UpdateEvent     usecase.UseCase[usecase.UpdateEventInput, usecase.EventView]
+	DeleteEvent     usecase.UseCase[usecase.EventRefInput, usecase.Empty]
 
 	ListSuggestions    usecase.UseCase[usecase.ListSuggestionsInput, []usecase.SuggestionView]
 	CreateSuggestion   usecase.UseCase[usecase.CreateSuggestionInput, usecase.SuggestionView]
@@ -58,7 +59,7 @@ func UseCasesFrom(d *usecase.Deps) UseCases {
 		ListTimelines: usecase.NewListTimelines(d), CreateTimeline: usecase.NewCreateTimeline(d), GetTimeline: usecase.NewGetTimeline(d),
 		UpdateTimeline: usecase.NewUpdateTimeline(d), DeleteTimeline: usecase.NewDeleteTimeline(d),
 		FollowTimeline: usecase.NewFollowTimeline(d), ListTags: usecase.NewListTags(d),
-		ListEvents: usecase.NewListEvents(d), CreateEvent: usecase.NewCreateEvent(d), UpdateEvent: usecase.NewUpdateEvent(d),
+		ListEvents: usecase.NewListEvents(d), SummarizeEvents: usecase.NewSummarizeEvents(d), CreateEvent: usecase.NewCreateEvent(d), UpdateEvent: usecase.NewUpdateEvent(d),
 		DeleteEvent:     usecase.NewDeleteEvent(d),
 		ListSuggestions: usecase.NewListSuggestions(d), CreateSuggestion: usecase.NewCreateSuggestion(d),
 		ResubmitSuggestion: usecase.NewResubmitSuggestion(d), ReviewSuggestion: usecase.NewReviewSuggestion(d),
@@ -113,6 +114,7 @@ func (c *Controller) routes(r chi.Router) {
 	r.Post("/timelines/{slug}/follow", c.followTimeline(true))
 	r.Delete("/timelines/{slug}/follow", c.followTimeline(false))
 	r.Get("/timelines/{slug}/events", c.listEvents)
+	r.Get("/timelines/{slug}/summary", c.summarizeEvents)
 	r.Post("/timelines/{slug}/events", c.createEvent)
 	r.Patch("/timelines/{slug}/events/{eventId}", c.updateEvent)
 	r.Delete("/timelines/{slug}/events/{eventId}", c.deleteEvent)

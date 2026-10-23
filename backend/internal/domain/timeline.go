@@ -89,8 +89,10 @@ type TimelineStats struct {
 	PendingSuggestions int
 	Followers          int
 	Following          bool
-	// Years são os anos de início dos eventos, em ordem.
-	Years     []int
+	// Positions são as posições distintas dos anos de início no eixo StartYear–EndYear,
+	// em milésimos (0 a 1000) e em ordem. Ficam no máximo 1001 valores, por maior que
+	// seja a timeline.
+	Positions []int
 	StartYear *int
 	EndYear   *int
 }

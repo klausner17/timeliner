@@ -21,7 +21,7 @@ func TestCreateTimelineSlugAndStats(t *testing.T) {
 	if !slices.Equal(tl.Points, []float64{0, 66.4, 95.7}) {
 		t.Fatalf("points = %v", tl.Points)
 	}
-	if len(tl.Events) != 3 || tl.Events[0].AuthorHandle != "ana" {
+	if len(tl.Events.Items) != 3 || tl.Events.Items[0].AuthorHandle != "ana" || tl.Events.NextCursor != nil {
 		t.Fatalf("eventos = %+v", tl.Events)
 	}
 	again := createTimeline(t, d, ana.ID, "História do Brasil")

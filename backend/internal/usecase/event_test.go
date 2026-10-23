@@ -34,7 +34,7 @@ func TestEventsCRUD(t *testing.T) {
 	}
 
 	from := 1970
-	evs := must[[]usecase.EventView](t)(usecase.NewListEvents(d).Execute(ctx, usecase.ListEventsInput{Slug: "brasil", From: &from}))
+	evs := must[usecase.EventPage](t)(usecase.NewListEvents(d).Execute(ctx, usecase.ListEventsInput{Slug: "brasil", From: &from})).Items
 	if len(evs) != 1 || evs[0].Event.ID != golpe.Event.ID {
 		t.Fatalf("período 1964–1985 devia entrar em from=1970: %+v", evs)
 	}

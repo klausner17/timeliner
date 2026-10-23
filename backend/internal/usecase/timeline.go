@@ -188,6 +188,7 @@ func (uc *CreateTimeline) Execute(ctx context.Context, in CreateTimelineInput) (
 	} else if err != nil {
 		return TimelineDetailView{}, err
 	}
+	f.check(len(in.Events) <= MaxImport, "events", "Crie a timeline com até 500 eventos e adicione o resto depois.")
 	events := make([]domain.Event, len(in.Events))
 	for i, data := range in.Events {
 		data = normalizeEvent(data)
@@ -206,12 +207,7 @@ func (uc *CreateTimeline) Execute(ctx context.Context, in CreateTimelineInput) (
 		if err := uc.d.Timelines.Create(ctx, &t); err != nil {
 			return err
 		}
-		for i := range events {
-			if err := uc.d.Events.Create(ctx, &events[i]); err != nil {
-				return err
-			}
-		}
-		return nil
+		return uc.d.Events.CreateMany(ctx, events)
 	})
 	if err != nil {
 		return TimelineDetailView{}, err

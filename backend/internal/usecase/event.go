@@ -11,25 +11,37 @@ type ListEventsInput struct {
 	Slug    string
 	From    *int
 	To      *int
+	// Cursor é o NextCursor da página anterior; vazio começa do início.
+	Cursor string
+	Limit  int
 }
 
+// ListEvents pagina os eventos em ordem cronológica, por cursor.
 type ListEvents struct{ d *Deps }
 
 func NewListEvents(d *Deps) *ListEvents { return &ListEvents{d} }
 
-func (uc *ListEvents) Execute(ctx context.Context, in ListEventsInput) ([]EventView, error) {
+func (uc *ListEvents) Execute(ctx context.Context, in ListEventsInput) (EventPage, error) {
 	t, err := visibleTimeline(ctx, uc.d, in.Slug, in.ActorID)
 	if err != nil {
-		return nil, err
+		return EventPage{}, err
 	}
-	if in.From != nil && in.To != nil && *in.From > *in.To {
-		return nil, domain.Invalid(map[string]string{"to": "O ano final precisa ser depois do inicial."})
+	if in.Limit == 0 {
+		in.Limit = DefaultPageSize
 	}
-	events, err := uc.d.Events.ListByTimeline(ctx, t.ID, in.From, in.To)
-	if err != nil {
-		return nil, err
+	q := EventQuery{TimelineID: t.ID, From: in.From, To: in.To, Limit: in.Limit}
+	f := fieldErrors{}
+	f.check(in.From == nil || in.To == nil || *in.From <= *in.To, "to", "O ano final precisa ser depois do inicial.")
+	f.check(in.Limit >= 1 && in.Limit <= MaxPageSize, "limit", "Use de 1 a 500 eventos por página.")
+	if in.Cursor != "" {
+		var ok bool
+		q.After, ok = decodeCursor(in.Cursor)
+		f.check(ok, "cursor", "Cursor inválido. Recarregue a página.")
 	}
-	return eventViews(ctx, uc.d, events)
+	if err := f.err(); err != nil {
+		return EventPage{}, err
+	}
+	return eventPage(ctx, uc.d, q)
 }
 
 type CreateEventInput struct {

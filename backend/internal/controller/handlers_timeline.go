@@ -152,18 +152,49 @@ func (c *Controller) listTags(w http.ResponseWriter, r *http.Request) {
 
 func (c *Controller) listEvents(w http.ResponseWriter, r *http.Request) {
 	fields := map[string]string{}
-	from, to := queryInt(r, "from", fields), queryInt(r, "to", fields)
+	in := slugInput(r)
+	q := usecase.ListEventsInput{ActorID: in.ActorID, Slug: in.Slug, From: queryInt(r, "from", fields), To: queryInt(r, "to", fields), Cursor: r.URL.Query().Get("cursor")}
+	if n := queryInt(r, "limit", fields); n != nil {
+		q.Limit = *n
+	}
 	if err := fieldsErr(fields); err != nil {
 		c.fail(w, r, err)
 		return
 	}
-	in := slugInput(r)
-	vs, err := c.uc.ListEvents.Execute(r.Context(), usecase.ListEventsInput{ActorID: in.ActorID, Slug: in.Slug, From: from, To: to})
+	page, err := c.uc.ListEvents.Execute(r.Context(), q)
 	if err != nil {
 		c.fail(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, itemsJSON[eventJSON]{toEvents(vs)})
+	writeJSON(w, http.StatusOK, toEventPage(page))
+}
+
+// windowOptions lê buckets e maxEvents; ausentes ficam 0 e o usecase usa o padrão.
+func windowOptions(r *http.Request, fields map[string]string) usecase.WindowOptions {
+	var o usecase.WindowOptions
+	if n := queryInt(r, "buckets", fields); n != nil {
+		o.Buckets = *n
+	}
+	if n := queryInt(r, "maxEvents", fields); n != nil {
+		o.MaxEvents = *n
+	}
+	return o
+}
+
+func (c *Controller) summarizeEvents(w http.ResponseWriter, r *http.Request) {
+	fields := map[string]string{}
+	in := slugInput(r)
+	q := usecase.SummarizeEventsInput{ActorID: in.ActorID, Slug: in.Slug, From: queryInt(r, "from", fields), To: queryInt(r, "to", fields), WindowOptions: windowOptions(r, fields)}
+	if err := fieldsErr(fields); err != nil {
+		c.fail(w, r, err)
+		return
+	}
+	v, err := c.uc.SummarizeEvents.Execute(r.Context(), q)
+	if err != nil {
+		c.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, toEventWindow(v))
 }
 
 func (c *Controller) createEvent(w http.ResponseWriter, r *http.Request) {
@@ -228,12 +259,13 @@ func (c *Controller) deleteEvent(w http.ResponseWriter, r *http.Request) {
 func (c *Controller) compare(w http.ResponseWriter, r *http.Request) {
 	fields := map[string]string{}
 	start, end := queryInt(r, "start", fields), queryInt(r, "end", fields)
+	opts := windowOptions(r, fields)
 	if err := fieldsErr(fields); err != nil {
 		c.fail(w, r, err)
 		return
 	}
 	slugs := strings.Split(r.URL.Query().Get("slugs"), ",")
-	v, err := c.uc.Compare.Execute(r.Context(), usecase.CompareInput{ActorID: actor(r), Slugs: slugs, Start: start, End: end})
+	v, err := c.uc.Compare.Execute(r.Context(), usecase.CompareInput{ActorID: actor(r), Slugs: slugs, Start: start, End: end, WindowOptions: opts})
 	if err != nil {
 		c.fail(w, r, err)
 		return

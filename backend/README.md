@@ -6,6 +6,7 @@ API em Go com PostgreSQL. O contrato é [`api/openapi.yaml`](../api/openapi.yaml
 
 ```
 cmd/api/              main: lê a configuração, abre o banco, roda as migrations e sobe o HTTP
+cmd/seed-grande/      cria uma timeline com milhares de eventos, para testar timelines grandes
 internal/domain/      entidades (Timeline, Event, Suggestion...) e erros de negócio
 internal/usecase/     regras de negócio; um tipo por caso de uso, todos UseCase[I, O]
 internal/repository/  postgres/ (pgx + goose) e memory/ (para testes)
@@ -22,6 +23,22 @@ internal/platform/    bcrypt, relógio e geração de IDs
   Postgres põe o `pgx.Tx` no `ctx`, e os repositories usam a transação quando ela existe. Aprovar e
   desfazer sugestões, criar timeline com eventos e cadastrar usuário usam transação.
 - **Controller.** Converte o Output para o JSON do contrato (`dto.go`) e o erro para o status HTTP.
+
+## Timelines grandes
+
+Nenhuma rota devolve todos os eventos de uma vez:
+
+- `GET /timelines/{slug}/events` pagina por cursor (keyset sobre `year, fim, created_at, id`, coberto
+  pelo índice `events_timeline_order_idx`), 100 por página por padrão e até 500.
+- `GET /timelines/{slug}` traz só a primeira página e o `eventsNextCursor`.
+- `GET /timelines/{slug}/summary` e cada trilha de `GET /compare` devolvem os eventos do trecho se
+  forem até `maxEvents` (150), e senão faixas de anos com contagem e 3 exemplos (`mode: faixas`).
+- Os `points` dos cartões saem de posições já reduzidas no banco (no máximo 1001 valores).
+- A criação de timeline aceita até 500 eventos, gravados com `COPY`.
+
+```bash
+DATABASE_URL=... go run ./cmd/seed-grande -n 20000 -slug grande   # cria /t/grande
+```
 
 ## Erros
 

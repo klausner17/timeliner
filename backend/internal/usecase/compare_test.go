@@ -26,8 +26,8 @@ func TestCompare(t *testing.T) {
 	}
 
 	out = must[usecase.ComparisonView](t)(cmp.Execute(ctx, usecase.CompareInput{Slugs: []string{"brasil", "escandalos"}, Start: ptr(1990), End: ptr(2000)}))
-	if len(out.Lanes[0].Events) != 1 || len(out.Lanes[1].Events) != 1 {
-		t.Fatalf("filtro de anos: %d e %d eventos", len(out.Lanes[0].Events), len(out.Lanes[1].Events))
+	if len(out.Lanes[0].Window.Events) != 1 || len(out.Lanes[1].Window.Events) != 1 {
+		t.Fatalf("filtro de anos: %d e %d eventos", len(out.Lanes[0].Window.Events), len(out.Lanes[1].Window.Events))
 	}
 
 	_, err := cmp.Execute(ctx, usecase.CompareInput{Slugs: []string{"brasil", "brasil"}})
