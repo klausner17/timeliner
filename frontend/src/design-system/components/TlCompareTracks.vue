@@ -1,28 +1,40 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { TrackColor } from '../tokens'
+import TlButton from './TlButton.vue'
+import { clampWindow, layout, niceStep, zoomWindow, type CompareBucket, type CompareEvent, type TrackItem } from './trackLayout'
 
-export type CompareEvent = { id: string; year: number; title: string }
-export type CompareLane = { id: string; name: string; color: TrackColor; events: CompareEvent[] }
+export type { CompareBucket, CompareEvent }
+/** Uma trilha traz eventos soltos, faixas com contagem (timelines grandes) ou os dois. */
+export type CompareLane = { id: string; name: string; color: TrackColor; events?: CompareEvent[]; buckets?: CompareBucket[] }
 
-/** Duas ou mais timelines em trilhas paralelas no mesmo eixo de anos. */
+/**
+ * Duas ou mais timelines em trilhas paralelas no mesmo eixo de anos. Rótulos que não
+ * cabem viram grupos ("23 eventos"); com `zoomable`, dá para aproximar e arrastar o eixo,
+ * e clicar num grupo aproxima naquele trecho.
+ */
 const props = withDefaults(
   defineProps<{
     lanes: CompareLane[]
-    start: number
-    end: number
     tickStep?: number
     /** Ano destacado com uma faixa vertical (ex.: 1992). */
     highlightYear?: number
+    zoomable?: boolean
+    /** Limites do zoom e do arraste (ex.: primeiro e último ano das timelines). */
+    min?: number
+    max?: number
   }>(),
-  { tickStep: 5 },
+  { zoomable: false },
 )
 
 const selected = defineModel<string>('selected')
+/** Janela visível em anos. Com v-model:start/end, o pai acompanha o zoom. */
+const start = defineModel<number>('start', { required: true })
+const end = defineModel<number>('end', { required: true })
+const emit = defineEmits<{ zoom: [range: [number, number]] }>()
 
 const ROW_H = 70 // cabe um rótulo de até duas linhas
 const FIRST_ROW = 44
-const LABEL_W = 176 // max-width do rótulo + folga
 const MIN_ROWS = 2
 
 // Largura real do eixo, para saber quando dois rótulos se encostam.
@@ -36,41 +48,147 @@ onMounted(() => {
 })
 onBeforeUnmount(() => observer?.disconnect())
 
-const pct = (y: number) => ((y - props.start) / Math.max(1, props.end - props.start)) * 100
+const span = computed(() => Math.max(1, end.value - start.value))
+const pct = (y: number) => ((y - start.value) / span.value) * 100
+const clampPct = (y: number) => Math.min(100, Math.max(0, pct(y)))
+const toPx = (y: number) => (clampPct(y) / 100) * plotWidth.value
 
 const ticks = computed(() => {
+  const step = props.tickStep ?? niceStep(span.value)
   const out: number[] = []
-  const first = Math.ceil(props.start / props.tickStep) * props.tickStep
-  for (let y = first; y <= props.end; y += props.tickStep) out.push(y)
+  const first = Math.ceil(start.value / step) * step
+  for (let y = first; y <= end.value; y += step) out.push(y)
   return out
 })
 
+function itemsOf(lane: CompareLane): TrackItem[] {
+  const items: TrackItem[] = []
+  for (const e of lane.events ?? []) {
+    if (e.year >= start.value && e.year <= end.value) items.push({ kind: 'event', key: e.id, event: e, year: e.year, px: toPx(e.year) })
+  }
+  for (const b of lane.buckets ?? []) {
+    if (b.to < start.value || b.from > end.value) continue
+    const only = b.count === 1 ? b.sample?.[0] : undefined
+    if (only) items.push({ kind: 'event', key: only.id, event: only, year: only.year, px: toPx(only.year) })
+    else items.push({ kind: 'cluster', key: `c${b.from}-${b.to}`, from: b.from, to: b.to, count: b.count, sample: b.sample ?? [], px: toPx((b.from + b.to + 1) / 2) })
+  }
+  return items.sort((a, b) => a.px - b.px)
+}
+
 const laneViews = computed(() =>
   props.lanes.map((lane) => {
-    // Cada rótulo vai para a primeira linha onde não encosta no anterior.
-    const rowEnds: number[] = []
-    const events = lane.events
-      .filter((e) => e.year >= props.start && e.year <= props.end)
-      .sort((a, b) => a.year - b.year)
-      .map((e) => {
-        const x = pct(e.year)
-        const px = (x / 100) * plotWidth.value
-        const alignEnd = px + LABEL_W > plotWidth.value
-        const from = alignEnd ? px - LABEL_W : px
-        let row = rowEnds.findIndex((end) => from >= end)
-        if (row === -1) row = rowEnds.length
-        rowEnds[row] = from + LABEL_W
-        const top = FIRST_ROW + row * ROW_H
-        return { ...e, x, top, stem: top - 22, alignEnd }
-      })
-    const rows = Math.max(MIN_ROWS, rowEnds.length)
-    return { ...lane, events, height: `${FIRST_ROW + rows * ROW_H}px` }
+    const items = itemsOf(lane)
+    const placed = layout(items, plotWidth.value, toPx)
+    const rows = Math.max(MIN_ROWS, ...placed.map((p) => p.row + 1))
+    const labels = placed.map((p) => {
+      const top = FIRST_ROW + p.row * ROW_H
+      return { ...p, x: (p.px / plotWidth.value) * 100, top, stem: top - 22 }
+    })
+    // No eixo, todo evento ganha seu ponto e toda faixa sua barra, mesmo quando o rótulo está num grupo.
+    const dots = items.flatMap((i) => (i.kind === 'event' ? [{ key: i.key, id: i.event.id, x: (i.px / plotWidth.value) * 100 }] : []))
+    const maxCount = Math.max(1, ...items.map((i) => (i.kind === 'cluster' ? i.count : 0)))
+    const bands = items.flatMap((i) =>
+      i.kind === 'cluster' ? [{ key: i.key, left: clampPct(i.from), width: Math.max(0.6, clampPct(i.to + 1) - clampPct(i.from)), strength: 0.2 + 0.8 * Math.sqrt(i.count / maxCount) }] : [],
+    )
+    return { ...lane, labels, dots, bands, height: `${FIRST_ROW + rows * ROW_H}px` }
   }),
 )
+
+const label = computed(() => `Comparação de ${start.value} a ${end.value}`)
+/** "1930–1945", ou "-1813 a -876" quando o traço confundiria com o sinal de menos. */
+const rangeText = (from: number, to: number) => (from === to ? `${from}` : from < 0 || to < 0 ? `${from} a ${to}` : `${from}–${to}`)
+
+// ---------- Zoom ----------
+
+const bounds = computed(() => ({ min: props.min, max: props.max }))
+const canZoomOut = computed(() => props.min === undefined || props.max === undefined || start.value > props.min || end.value < props.max)
+
+function setWindow([s, e]: [number, number]) {
+  if (s === start.value && e === end.value) return
+  start.value = s
+  end.value = e
+}
+
+const zoomBy = (factor: number, anchor = (start.value + end.value) / 2) => setWindow(zoomWindow(start.value, end.value, factor, anchor, bounds.value))
+const showAll = () => props.min !== undefined && props.max !== undefined && setWindow([props.min, props.max])
+
+function openCluster(item: { from: number; to: number }) {
+  emit('zoom', [item.from, item.to])
+  if (!props.zoomable) return
+  const pad = Math.max(1, Math.round((item.to - item.from + 1) * 0.1))
+  setWindow(clampWindow(item.from - pad, item.to + 1 + pad, bounds.value))
+}
+
+const yearAt = (clientX: number) => {
+  const r = plot.value?.getBoundingClientRect()
+  return r && r.width ? start.value + ((clientX - r.left) / r.width) * span.value : (start.value + end.value) / 2
+}
+
+function onWheel(ev: WheelEvent) {
+  if (!props.zoomable) return
+  if (ev.ctrlKey || ev.metaKey) {
+    // Pinça no trackpad chega como wheel com ctrlKey.
+    ev.preventDefault()
+    zoomBy(Math.exp(ev.deltaY * 0.003), yearAt(ev.clientX))
+  } else if (Math.abs(ev.deltaX) > Math.abs(ev.deltaY)) {
+    ev.preventDefault()
+    const shift = (ev.deltaX / plotWidth.value) * span.value
+    setWindow(clampWindow(start.value + shift, end.value + shift, bounds.value))
+  }
+}
+
+// Arrastar com um dedo/mouse move o eixo; dois dedos fazem pinça.
+const pointers = new Map<number, number>()
+let gesture: { start: number; end: number; x: number; dist: number; anchor: number } | undefined
+const dragging = ref(false)
+
+function beginGesture() {
+  const xs = [...pointers.values()]
+  const x = xs.reduce((a, b) => a + b, 0) / xs.length
+  gesture = { start: start.value, end: end.value, x, dist: xs.length > 1 ? Math.abs(xs[0] - xs[1]) : 0, anchor: yearAt(x) }
+}
+
+function onPointerDown(ev: PointerEvent) {
+  if (!props.zoomable || (ev.target as HTMLElement).closest('button')) return
+  pointers.set(ev.pointerId, ev.clientX)
+  ;(ev.currentTarget as HTMLElement).setPointerCapture?.(ev.pointerId)
+  dragging.value = true
+  beginGesture()
+}
+
+function onPointerMove(ev: PointerEvent) {
+  if (!gesture || !pointers.has(ev.pointerId)) return
+  pointers.set(ev.pointerId, ev.clientX)
+  const xs = [...pointers.values()]
+  const g = gesture
+  if (xs.length > 1 && g.dist > 0) {
+    setWindow(zoomWindow(g.start, g.end, g.dist / Math.max(1, Math.abs(xs[0] - xs[1])), g.anchor, bounds.value))
+  } else {
+    const shift = -((xs[0] - g.x) / plotWidth.value) * (g.end - g.start)
+    setWindow(clampWindow(g.start + shift, g.end + shift, bounds.value))
+  }
+}
+
+function onPointerUp(ev: PointerEvent) {
+  pointers.delete(ev.pointerId)
+  if (pointers.size) beginGesture()
+  else {
+    gesture = undefined
+    dragging.value = false
+  }
+}
 </script>
 
 <template>
-  <section class="tl-compare" :aria-label="`Comparação de ${start} a ${end}`">
+  <section class="tl-compare" :aria-label="label">
+    <div v-if="zoomable" class="tl-compare__toolbar">
+      <span class="tl-compare__window" aria-live="polite">{{ rangeText(start, end) }}</span>
+      <div class="tl-compare__zoom">
+        <TlButton icon="minus" icon-only size="sm" label="Afastar" :disabled="!canZoomOut" @click="zoomBy(2)" />
+        <TlButton icon="plus" icon-only size="sm" label="Aproximar" :disabled="end - start <= 2" @click="zoomBy(0.5)" />
+        <TlButton v-if="min !== undefined && max !== undefined" icon="expand" size="sm" :disabled="!canZoomOut" @click="showAll">Ver tudo</TlButton>
+      </div>
+    </div>
     <div class="tl-compare__inner">
       <div class="tl-compare__row">
         <div></div>
@@ -85,9 +203,18 @@ const laneViews = computed(() =>
             {{ lane.name }}
           </div>
         </div>
-        <div ref="plot" class="tl-compare__plot">
+        <div
+          ref="plot"
+          class="tl-compare__plot"
+          :class="{ 'tl-compare__plot--zoomable': zoomable, 'tl-compare__plot--dragging': dragging }"
+          @wheel="onWheel"
+          @pointerdown="onPointerDown"
+          @pointermove="onPointerMove"
+          @pointerup="onPointerUp"
+          @pointercancel="onPointerUp"
+        >
           <div v-for="t in ticks" :key="t" class="tl-compare__grid" :style="{ left: `${pct(t)}%` }" aria-hidden="true"></div>
-          <div v-if="highlightYear !== undefined" class="tl-compare__highlight" :style="{ left: `${pct(highlightYear)}%` }" aria-hidden="true"></div>
+          <div v-if="highlightYear !== undefined && highlightYear >= start && highlightYear <= end" class="tl-compare__highlight" :style="{ left: `${pct(highlightYear)}%` }" aria-hidden="true"></div>
           <div
             v-for="(lane, li) in laneViews"
             :key="lane.id"
@@ -98,19 +225,47 @@ const laneViews = computed(() =>
             :aria-label="lane.name"
           >
             <div class="tl-compare__axis" aria-hidden="true"></div>
-            <template v-for="e in lane.events" :key="e.id">
+            <div
+              v-for="b in lane.bands"
+              :key="b.key"
+              class="tl-compare__band"
+              :style="{ left: `${b.left}%`, width: `${b.width}%`, opacity: b.strength }"
+              aria-hidden="true"
+            ></div>
+            <div
+              v-for="d in lane.dots"
+              :key="d.key"
+              class="tl-compare__dot"
+              :class="{ 'tl-compare__dot--on': selected === d.id }"
+              :style="{ left: `${d.x}%` }"
+              aria-hidden="true"
+            ></div>
+            <template v-for="e in lane.labels" :key="e.key">
               <div class="tl-compare__stem" :style="{ left: `${e.x}%`, height: `${e.stem}px` }" aria-hidden="true"></div>
-              <div class="tl-compare__dot" :class="{ 'tl-compare__dot--on': selected === e.id }" :style="{ left: `${e.x}%` }" aria-hidden="true"></div>
               <button
+                v-if="e.kind === 'event'"
                 type="button"
                 class="tl-compare__event"
-                :class="{ 'tl-compare__event--on': selected === e.id, 'tl-compare__event--end': e.alignEnd }"
+                :class="{ 'tl-compare__event--on': selected === e.event.id, 'tl-compare__event--end': e.alignEnd }"
                 :style="e.alignEnd ? { right: `${100 - e.x}%`, top: `${e.top}px` } : { left: `${e.x}%`, top: `${e.top}px` }"
-                :aria-pressed="selected === e.id"
-                @click="selected = e.id"
+                :aria-pressed="selected === e.event.id"
+                @click="selected = e.event.id"
               >
-                <span class="tl-compare__year">{{ e.year }}</span>
-                <span class="tl-compare__title" :title="e.title">{{ e.title }}</span>
+                <span class="tl-compare__year">{{ e.event.year }}</span>
+                <span class="tl-compare__title" :title="e.event.title">{{ e.event.title }}</span>
+              </button>
+              <button
+                v-else
+                type="button"
+                class="tl-compare__event tl-compare__event--cluster"
+                :class="{ 'tl-compare__event--end': e.alignEnd }"
+                :style="e.alignEnd ? { right: `${100 - e.x}%`, top: `${e.top}px` } : { left: `${e.x}%`, top: `${e.top}px` }"
+                :aria-label="`${e.count} eventos de ${e.from} a ${e.to}${zoomable ? '. Aproximar' : ''}`"
+                :title="e.sample.map((s) => `${s.year} · ${s.title}`).join('\n')"
+                @click="openCluster(e)"
+              >
+                <span class="tl-compare__year">{{ rangeText(e.from, e.to) }}</span>
+                <span class="tl-compare__title">{{ e.count.toLocaleString('pt-BR') }} eventos</span>
               </button>
             </template>
           </div>
@@ -126,6 +281,25 @@ const laneViews = computed(() =>
   border: 1px solid var(--tl-color-border);
   border-radius: 18px;
   overflow-x: auto;
+}
+.tl-compare__toolbar {
+  position: sticky;
+  left: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--tl-space-3);
+  padding: var(--tl-space-4) var(--tl-space-7) 0;
+}
+.tl-compare__window {
+  font-size: var(--tl-text-sm);
+  font-weight: var(--tl-weight-semibold);
+  color: var(--tl-color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.tl-compare__zoom {
+  display: flex;
+  gap: var(--tl-space-1);
 }
 .tl-compare__inner {
   min-width: 920px;
@@ -169,6 +343,15 @@ const laneViews = computed(() =>
 }
 .tl-compare__plot {
   position: relative;
+  overflow: hidden;
+}
+.tl-compare__plot--zoomable {
+  cursor: grab;
+  touch-action: pan-y;
+}
+.tl-compare__plot--dragging {
+  cursor: grabbing;
+  user-select: none;
 }
 .tl-compare__grid {
   position: absolute;
@@ -200,6 +383,13 @@ const laneViews = computed(() =>
   height: 2px;
   background: var(--track);
   opacity: 0.35;
+}
+.tl-compare__band {
+  position: absolute;
+  top: 19px;
+  height: 8px;
+  border-radius: var(--tl-radius-pill);
+  background: var(--track);
 }
 .tl-compare__stem {
   position: absolute;
@@ -239,6 +429,11 @@ const laneViews = computed(() =>
 }
 .tl-compare__event--end {
   text-align: right;
+}
+.tl-compare__event--cluster {
+  border-style: dashed;
+  border-color: var(--track);
+  background: color-mix(in srgb, var(--track) 6%, var(--tl-color-surface));
 }
 .tl-compare__event:hover {
   border-color: var(--track);

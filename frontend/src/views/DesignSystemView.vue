@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import {
   colorGroups,
   iconNames,
@@ -35,6 +35,8 @@ import {
   type CompareLane,
   type TrackColor,
 } from '@/design-system'
+import { generatedTimeline } from '@/data/mock'
+import { chronological, windowOf } from '@/data/windowing'
 import DsDemo from './design-system/DsDemo.vue'
 import DsSection from './design-system/DsSection.vue'
 
@@ -50,6 +52,7 @@ const sections = [
   { id: 'cartoes', label: 'Cartões' },
   { id: 'timeline', label: 'Timeline' },
   { id: 'comparar', label: 'Comparação' },
+  { id: 'timeline-grande', label: 'Timelines grandes' },
   { id: 'cabecalho', label: 'Cabeçalho' },
 ]
 
@@ -113,6 +116,16 @@ const lanes: CompareLane[] = [
 
 const overviewYears = [1500, 1549, 1580, 1630, 1654, 1695, 1720, 1763, 1789, 1808, 1815, 1822, 1831, 1840, 1850, 1865, 1888, 1889, 1910, 1922, 1930, 1937, 1945, 1954, 1964, 1968, 1985, 1988, 1994, 2002, 2016]
 
+// Timeline grande: 20 mil eventos gerados, com zoom e faixas de anos.
+const big = chronological(generatedTimeline().events)
+const bigView = ref<[number, number]>([-2000, 2030])
+const bigStart = computed({ get: () => bigView.value[0], set: (v) => (bigView.value = [v, bigView.value[1]]) })
+const bigEnd = computed({ get: () => bigView.value[1], set: (v) => (bigView.value = [bigView.value[0], v]) })
+const bigWindow = computed(() => windowOf(big, bigView.value[0], bigView.value[1], { buckets: 60 }))
+const bigLanes = computed<CompareLane[]>(() => [{ id: 'grande', name: '20 mil eventos', color: 'd', events: bigWindow.value.events, buckets: bigWindow.value.buckets }])
+const bigOverview = windowOf(big, -2000, 2030, { buckets: 100, maxEvents: 1 }).buckets
+const bigSelected = ref<string>()
+
 const usage = {
   tokens: `/* Use sempre os tokens semânticos */
 .minha-caixa {
@@ -128,6 +141,9 @@ const usage = {
   <TlInput :id="id" v-model="titulo" />
 </TlField>`,
   compare: `<TlCompareTracks :lanes="lanes" :start="1980" :end="2020" :highlight-year="1992" v-model:selected="eventoId" />`,
+  big: `<TlOverviewBar v-model:window="janela" :start="-2000" :end="2030" :buckets="histograma" interactive />
+<TlCompareTracks v-model:start="inicio" v-model:end="fim" :lanes="lanes" :min="-2000" :max="2030" zoomable />
+<!-- lanes[i].buckets: [{ from, to, count, sample }] quando a API devolve mode=faixas -->`,
 }
 </script>
 
@@ -493,6 +509,17 @@ const usage = {
         >
           <TlCompareTracks v-model:selected="selecionado" :lanes="lanes" :start="1980" :end="2020" :highlight-year="1992" />
           <p class="ds-muted">Selecionado: <code>{{ selecionado }}</code></p>
+        </DsSection>
+
+        <DsSection
+          id="timeline-grande"
+          title="Timelines grandes"
+          description="Com muitos eventos, a trilha recebe faixas de anos (buckets) e mostra grupos; clicar num grupo aproxima. Arraste o eixo, use os botões ou ctrl + roda do mouse para o zoom, ou mova a janela do minimapa. Poucos eventos no trecho aparecem um a um."
+          :usage="usage.big"
+        >
+          <TlOverviewBar v-model:window="bigView" :start="-2000" :end="2030" :buckets="bigOverview" color="d" interactive />
+          <TlCompareTracks v-model:selected="bigSelected" v-model:start="bigStart" v-model:end="bigEnd" :lanes="bigLanes" :min="-2000" :max="2030" zoomable />
+          <p class="ds-muted">{{ bigWindow.total.toLocaleString('pt-BR') }} eventos entre {{ bigView[0] }} e {{ bigView[1] }} ({{ bigWindow.mode }})</p>
         </DsSection>
 
         <!-- Cabeçalho -->

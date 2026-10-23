@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"maps"
 	"slices"
 	"strings"
 
@@ -13,12 +14,14 @@ type CompareInput struct {
 	Slugs   []string
 	Start   *int
 	End     *int
+	WindowOptions
 }
 
+// CompareLane traz os eventos da trilha ou, se forem muitos, as faixas (ver EventWindow).
 type CompareLane struct {
 	Color    domain.TrackColor
 	Timeline TimelineView
-	Events   []EventView
+	Window   EventWindow
 }
 
 type Overlap struct {
@@ -28,10 +31,12 @@ type Overlap struct {
 }
 
 type ComparisonView struct {
-	Start    int
-	End      int
-	Lanes    []CompareLane
-	Overlaps []Overlap
+	Start int
+	End   int
+	Lanes []CompareLane
+	// Overlaps vem limitado aos primeiros anos; OverlapsTotal conta todos.
+	Overlaps      []Overlap
+	OverlapsTotal int
 }
 
 // Compare põe de 2 a 4 timelines no mesmo eixo. Sem start/end, o eixo vai do primeiro
@@ -50,6 +55,7 @@ func (uc *Compare) Execute(ctx context.Context, in CompareInput) (ComparisonView
 	f := fieldErrors{}
 	f.check(len(slugs) >= 2 && len(slugs) <= 4, "slugs", "Escolha de 2 a 4 timelines diferentes.")
 	f.check(in.Start == nil || in.End == nil || *in.Start <= *in.End, "end", "O ano final precisa ser depois do inicial.")
+	in.WindowOptions.validate(f)
 	if err := f.err(); err != nil {
 		return ComparisonView{}, err
 	}
@@ -89,29 +95,30 @@ func (uc *Compare) Execute(ctx context.Context, in CompareInput) (ComparisonView
 		end = start
 	}
 	out := ComparisonView{Start: start, End: end, Lanes: make([]CompareLane, len(views)), Overlaps: []Overlap{}}
-	byYear := map[int][]string{}
+	slugOf := map[string]string{}
 	for i, v := range views {
-		events, err := uc.d.Events.ListByTimeline(ctx, v.Timeline.ID, &start, &end)
+		w, err := eventWindow(ctx, uc.d, v.Timeline.ID, start, end, in.WindowOptions)
 		if err != nil {
 			return ComparisonView{}, err
 		}
-		evs, err := eventViews(ctx, uc.d, events)
-		if err != nil {
-			return ComparisonView{}, err
-		}
-		out.Lanes[i] = CompareLane{Color: domain.TrackColors[i], Timeline: v, Events: evs}
-		for _, e := range events {
-			if !slices.Contains(byYear[e.Year], v.Timeline.Slug) {
-				byYear[e.Year] = append(byYear[e.Year], v.Timeline.Slug)
+		out.Lanes[i] = CompareLane{Color: domain.TrackColors[i], Timeline: v, Window: w}
+		slugOf[v.Timeline.ID] = v.Timeline.Slug
+	}
+	overlaps, total, err := uc.d.Events.Overlaps(ctx, slices.Collect(maps.Keys(slugOf)), start, end, maxOverlaps)
+	if err != nil {
+		return ComparisonView{}, err
+	}
+	out.OverlapsTotal = total
+	for _, o := range overlaps {
+		// Na ordem das trilhas, não na do banco.
+		s := []string{}
+		for _, v := range views {
+			if slices.Contains(o.TimelineIDs, v.Timeline.ID) {
+				s = append(s, slugOf[v.Timeline.ID])
 			}
 		}
+		out.Overlaps = append(out.Overlaps, Overlap{Year: o.Year, Slugs: s})
 	}
-	for year, s := range byYear {
-		if len(s) >= 2 {
-			out.Overlaps = append(out.Overlaps, Overlap{Year: year, Slugs: s})
-		}
-	}
-	slices.SortFunc(out.Overlaps, func(a, b Overlap) int { return a.Year - b.Year })
 	return out, nil
 }
 

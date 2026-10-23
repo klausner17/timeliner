@@ -3,7 +3,6 @@ package usecase
 import (
 	"context"
 	"errors"
-	"slices"
 
 	"github.com/klausner17/timeliner/backend/internal/domain"
 )
@@ -29,9 +28,10 @@ type EventView struct {
 	AuthorHandle string
 }
 
+// TimelineDetailView traz só a primeira página de eventos; o resto vem de ListEvents.
 type TimelineDetailView struct {
 	TimelineView
-	Events []EventView
+	Events EventPage
 }
 
 type SuggestionView struct {
@@ -43,22 +43,11 @@ type SuggestionView struct {
 
 const maxPoints = 24
 
-// points espalha os anos no eixo de 0 a 100, sem repetir e com no máximo maxPoints.
-func points(years []int, start, end *int) []float64 {
-	out := []float64{}
-	if len(years) == 0 || start == nil || end == nil {
-		return out
-	}
-	span := float64(*end - *start)
-	for _, y := range years {
-		p := 50.0
-		if span > 0 {
-			p = float64(y-*start) / span * 100
-		}
-		p = float64(int(p*10+0.5)) / 10
-		if !slices.Contains(out, p) {
-			out = append(out, p)
-		}
+// points converte as posições (em milésimos) para o eixo de 0 a 100, com no máximo maxPoints.
+func points(positions []int) []float64 {
+	out := make([]float64, len(positions))
+	for i, p := range positions {
+		out[i] = float64(p) / 10
 	}
 	if len(out) <= maxPoints {
 		return out
@@ -87,7 +76,7 @@ func timelineViews(ctx context.Context, d *Deps, ts []domain.Timeline, viewerID 
 	out := make([]TimelineView, len(ts))
 	for i, t := range ts {
 		s := stats[t.ID]
-		out[i] = TimelineView{Timeline: t, Owner: owners[t.OwnerID], Stats: s, Points: points(s.Years, s.StartYear, s.EndYear)}
+		out[i] = TimelineView{Timeline: t, Owner: owners[t.OwnerID], Stats: s, Points: points(s.Positions)}
 	}
 	return out, nil
 }
@@ -105,15 +94,11 @@ func timelineDetail(ctx context.Context, d *Deps, t *domain.Timeline, viewerID s
 	if err != nil {
 		return TimelineDetailView{}, err
 	}
-	events, err := d.Events.ListByTimeline(ctx, t.ID, nil, nil)
+	page, err := eventPage(ctx, d, EventQuery{TimelineID: t.ID, Limit: DefaultPageSize})
 	if err != nil {
 		return TimelineDetailView{}, err
 	}
-	evs, err := eventViews(ctx, d, events)
-	if err != nil {
-		return TimelineDetailView{}, err
-	}
-	return TimelineDetailView{TimelineView: tv, Events: evs}, nil
+	return TimelineDetailView{TimelineView: tv, Events: page}, nil
 }
 
 func eventViews(ctx context.Context, d *Deps, events []domain.Event) ([]EventView, error) {

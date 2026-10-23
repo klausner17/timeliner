@@ -3,6 +3,8 @@ type IconDef = { viewBox: string; paths: string[]; fill?: boolean }
 
 const defs = {
   plus: { viewBox: '0 0 16 16', paths: ['M8 3v10', 'M3 8h10'] },
+  minus: { viewBox: '0 0 16 16', paths: ['M3 8h10'] },
+  expand: { viewBox: '0 0 16 16', paths: ['M2 6V2h4', 'M14 6V2h-4', 'M2 10v4h4', 'M14 10v4h-4'] },
   compare: { viewBox: '0 0 16 16', paths: ['M2 5h12', 'M2 11h12'] },
   swap: { viewBox: '0 0 20 20', paths: ['M4 7h12l-3-3', 'M16 13H4l3 3'] },
   share: { viewBox: '0 0 18 18', paths: ['M9 2v10', 'M5 6l4-4 4 4', 'M3 11v4h12v-4'] },

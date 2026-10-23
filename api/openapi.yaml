@@ -149,7 +149,7 @@ paths:
     get:
       tags: [timelines]
       security: []
-      summary: Detalhe da timeline com eras e eventos em ordem cronológica
+      summary: Detalhe da timeline com eras e a primeira página de eventos em ordem cronológica
       responses:
         '200':
           description: OK
@@ -208,22 +208,22 @@ paths:
     get:
       tags: [events]
       security: []
-      summary: Eventos ordenados por ano e data
+      summary: Eventos em ordem cronológica, paginados por cursor
+      description: |
+        Para continuar, mande o `nextCursor` da página anterior em `cursor`, com os mesmos
+        `from` e `to`. Para pular para um ano ou era, comece uma lista nova com `from`.
       parameters:
-        - { name: from, in: query, schema: { type: integer }, description: Ano inicial (inclusivo) }
+        - { name: from, in: query, schema: { type: integer }, description: 'Ano inicial (inclusivo). Entram os eventos que tocam o intervalo: um período 1960–1970 entra em from=1965.' }
         - { name: to, in: query, schema: { type: integer }, description: Ano final (inclusivo) }
+        - { name: cursor, in: query, schema: { type: string }, description: nextCursor da página anterior (opaco) }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
       responses:
         '200':
           description: OK
           content:
             application/json:
-              schema:
-                type: object
-                required: [items]
-                properties:
-                  items:
-                    type: array
-                    items: { $ref: '#/components/schemas/Event' }
+              schema: { $ref: '#/components/schemas/EventPage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '404': { $ref: '#/components/responses/NotFound' }
     post:
       tags: [events]
@@ -242,6 +242,31 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /timelines/{slug}/summary:
+    parameters:
+      - { $ref: '#/components/parameters/Slug' }
+    get:
+      tags: [events]
+      security: []
+      summary: Visão do eixo (modo horizontal, minimapa) com nível de detalhe pelo zoom
+      description: |
+        Se o trecho tem até `maxEvents` eventos, vêm todos (`mode: eventos`), não importa
+        quantos anos ele cubra. Se tem mais, vêm faixas iguais de anos com a contagem e os
+        primeiros eventos de cada uma (`mode: faixas`). Só faixas com eventos aparecem.
+      parameters:
+        - { name: from, in: query, schema: { type: integer }, description: Padrão = primeiro ano da timeline }
+        - { name: to, in: query, schema: { type: integer }, description: Padrão = último ano da timeline }
+        - { $ref: '#/components/parameters/Buckets' }
+        - { $ref: '#/components/parameters/MaxEvents' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EventWindow' }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '404': { $ref: '#/components/responses/NotFound' }
 
   /timelines/{slug}/events/{eventId}:
@@ -417,6 +442,8 @@ paths:
           schema: { type: string, example: 'historia-do-brasil,escandalos-politicos' }
         - { name: start, in: query, schema: { type: integer }, description: Padrão = menor ano entre as trilhas }
         - { name: end, in: query, schema: { type: integer }, description: Padrão = maior ano entre as trilhas }
+        - { $ref: '#/components/parameters/Buckets' }
+        - { $ref: '#/components/parameters/MaxEvents' }
       responses:
         '200':
           description: OK
@@ -592,6 +619,10 @@ components:
       { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
     PageSize:
       { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+    Buckets:
+      { name: buckets, in: query, description: Em quantas faixas dividir o trecho quando houver eventos demais (nunca menores que um ano), schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+    MaxEvents:
+      { name: maxEvents, in: query, description: Até quantos eventos vêm um a um antes de agrupar em faixas, schema: { type: integer, minimum: 1, maximum: 500, default: 150 } }
 
   responses:
     BadRequest:
@@ -766,11 +797,54 @@ components:
       allOf:
         - $ref: '#/components/schemas/Timeline'
         - type: object
-          required: [events]
+          required: [events, eventsNextCursor]
           properties:
             events:
               type: array
+              description: Primeira página (até 100); o resto vem de /timelines/{slug}/events
               items: { $ref: '#/components/schemas/Event' }
+            eventsNextCursor:
+              type: [string, 'null']
+              description: cursor para /timelines/{slug}/events; null quando já vieram todos
+
+    EventPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Event' }
+        nextCursor: { type: [string, 'null'], description: null na última página }
+
+    EventWindow:
+      type: object
+      required: [from, to, total, mode, events, buckets]
+      properties:
+        from: { type: integer }
+        to: { type: integer }
+        total: { type: integer, description: Eventos no trecho }
+        mode: { type: string, enum: [eventos, faixas] }
+        events:
+          type: array
+          description: Todos os eventos do trecho em mode=eventos; vazio em mode=faixas
+          items: { $ref: '#/components/schemas/Event' }
+        buckets:
+          type: array
+          description: Faixas com eventos em mode=faixas; vazio em mode=eventos
+          items: { $ref: '#/components/schemas/YearBucket' }
+
+    YearBucket:
+      type: object
+      required: [from, to, count, sample]
+      properties:
+        from: { type: integer, description: Primeiro ano da faixa }
+        to: { type: integer, description: Último ano da faixa (inclusivo) }
+        count: { type: integer }
+        sample:
+          type: array
+          maxItems: 3
+          description: Os primeiros eventos da faixa, em ordem cronológica
+          items: { $ref: '#/components/schemas/Event' }
 
     TimelinePage:
       type: object
@@ -804,6 +878,7 @@ components:
         events:
           type: array
           description: Eventos iniciais (opcional, para criar tudo de uma vez)
+          maxItems: 500
           items: { $ref: '#/components/schemas/EventInput' }
 
     TimelinePatch:
@@ -921,7 +996,7 @@ components:
 
     Comparison:
       type: object
-      required: [start, end, lanes, overlaps]
+      required: [start, end, lanes, overlaps, overlapsTotal]
       description: Formato pronto para o TlCompareTracks
       properties:
         start: { type: integer }
@@ -931,20 +1006,20 @@ components:
           minItems: 2
           maxItems: 4
           items:
-            type: object
-            required: [id, name, color, timeline, events]
-            properties:
-              id: { type: string, description: Slug da timeline }
-              name: { type: string }
-              color: { $ref: '#/components/schemas/TrackColor', description: 'Pela posição: a, b, c, d' }
-              timeline: { $ref: '#/components/schemas/Timeline' }
-              events:
-                type: array
-                description: Só os eventos entre start e end
-                items: { $ref: '#/components/schemas/Event' }
+            description: Cada trilha traz os eventos entre start e end ou, se forem muitos, as faixas (ver EventWindow)
+            allOf:
+              - $ref: '#/components/schemas/EventWindow'
+              - type: object
+                required: [id, name, color, timeline]
+                properties:
+                  id: { type: string, description: Slug da timeline }
+                  name: { type: string }
+                  color: { $ref: '#/components/schemas/TrackColor', description: 'Pela posição: a, b, c, d' }
+                  timeline: { $ref: '#/components/schemas/Timeline' }
         overlaps:
           type: array
-          description: Anos com eventos em duas ou mais trilhas (para destacar)
+          maxItems: 200
+          description: Anos entre start e end em que eventos de duas ou mais trilhas começam (para destacar), os 200 primeiros
           items:
             type: object
             required: [year, laneIds]
@@ -953,6 +1028,7 @@ components:
               laneIds:
                 type: array
                 items: { type: string }
+        overlapsTotal: { type: integer, description: Quantos anos com coincidência existem, inclusive os que não vieram }
 
     SavedComparisonInput:
       type: object

@@ -3,9 +3,10 @@
  * tiver as rotas, estas funções passam a chamar a API e as telas não mudam.
  * As mudanças ficam no localStorage para sobreviver a um recarregamento.
  */
-import { computed, reactive, watch } from 'vue'
+import { computed, markRaw, reactive, watch } from 'vue'
 import * as mock from './mock'
 import type { SavedComparison, Suggestion, Timeline, TimelineEvent, User } from './types'
+import { chronological, extent, overlapsOf, pageOf, windowOf, type EventPage, type EventWindow, type Overlap, type WindowOptions } from './windowing'
 
 const STORAGE_KEY = 'timeliner:v1'
 
@@ -32,11 +33,22 @@ function initialState(): State {
 function load(): State {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw) return { ...initialState(), ...JSON.parse(raw) }
+    if (raw) return withGenerated({ ...initialState(), ...JSON.parse(raw) })
   } catch {
     // Sem storage (aba anônima, testes): começa dos dados de exemplo.
   }
-  return initialState()
+  return withGenerated(initialState())
+}
+
+/**
+ * A timeline de demonstração com milhares de eventos é gerada a cada carga e não vai
+ * para o localStorage (não caberia). Os eventos ficam fora da reatividade: o watch
+ * profundo abaixo não precisa percorrer cada um.
+ */
+function withGenerated(s: State): State {
+  const t = mock.generatedTimeline()
+  t.events = markRaw(t.events)
+  return { ...s, timelines: [...s.timelines.filter((x) => !x.generated), t] }
 }
 
 export const state = reactive<State>(load())
@@ -45,7 +57,7 @@ watch(
   state,
   (s) => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(s))
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...s, timelines: s.timelines.filter((t) => !t.generated) }))
     } catch {
       // Ignora: o app funciona sem persistência.
     }
@@ -55,7 +67,7 @@ watch(
 
 /** Volta aos dados de exemplo (útil em testes e demonstrações). */
 export function resetStore() {
-  Object.assign(state, initialState())
+  Object.assign(state, withGenerated(initialState()))
 }
 
 const uid = (prefix: string) => `${prefix}${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
@@ -79,13 +91,13 @@ export function toggleFollowUser(handle: string) {
 // ---------- Timelines ----------
 
 export function sortedEvents(t: Timeline): TimelineEvent[] {
-  return [...t.events].sort((a, b) => a.year - b.year)
+  return chronological(t.events)
 }
 
 export function yearRange(t: Timeline): [number, number] | undefined {
-  if (!t.events.length) return undefined
-  const years = t.events.flatMap((e) => (e.endYear ? [e.year, e.endYear] : [e.year]))
-  return [Math.min(...years), Math.max(...years)]
+  const lo = extent(t.events.map((e) => e.year))
+  const hi = extent(t.events.map((e) => e.endYear ?? e.year))
+  return lo && hi ? [lo[0], hi[1]] : undefined
 }
 
 export function rangeLabel(t: Timeline): string {
@@ -219,6 +231,36 @@ export function relatedTimelines(t: Timeline, limit = 3): Timeline[] {
     .sort((a, b) => b.overlap - a.overlap)
     .slice(0, limit)
     .map((x) => x.o)
+}
+
+// ---------- Leitura em partes (mesmo formato da API) ----------
+// São assíncronas como serão com o backend: as telas já tratam respostas fora de ordem.
+
+/** GET /timelines/{slug}/events: uma página em ordem cronológica, por cursor. */
+export async function loadEvents(slug: string, opts: { from?: number; to?: number; cursor?: string | null; limit?: number } = {}): Promise<EventPage> {
+  const t = findTimeline(slug)
+  if (!t) throw new Error('Timeline não encontrada.')
+  return pageOf(sortedEvents(t), opts)
+}
+
+/** GET /timelines/{slug}/summary: os eventos do trecho, ou faixas de anos se forem muitos. */
+export async function loadSummary(slug: string, opts: WindowOptions & { from?: number; to?: number } = {}): Promise<EventWindow> {
+  const t = findTimeline(slug)
+  if (!t) throw new Error('Timeline não encontrada.')
+  const r = yearRange(t) ?? [0, 0]
+  const from = opts.from ?? r[0]
+  const to = Math.max(from, opts.to ?? r[1])
+  return windowOf(sortedEvents(t), from, to, opts)
+}
+
+export type Comparison = { start: number; end: number; lanes: EventWindow[]; overlaps: Overlap[]; overlapsTotal: number }
+
+/** GET /compare: o mesmo nível de detalhe de loadSummary em cada trilha, mais as coincidências. */
+export async function loadComparison(slugs: string[], start: number, end: number, opts: WindowOptions = {}): Promise<Comparison> {
+  const ts = slugs.map((s) => findTimeline(s)).filter((t): t is Timeline => !!t)
+  const sorted = ts.map(sortedEvents)
+  const lanes = sorted.map((events) => windowOf(events, start, end, opts))
+  return { start, end, lanes, ...overlapsOf(ts.map((t, i) => ({ id: t.slug, events: sorted[i] })), start, end) }
 }
 
 // ---------- Sugestões ----------

@@ -236,6 +236,49 @@ func TestTimelineSuggestionCompareFlow(t *testing.T) {
 	a.want(a.do("GET", "/api/timelines/escandalos", ana, nil), 404)
 }
 
+func TestEventsPagingAndSummary(t *testing.T) {
+	a := newAPI(t)
+	ana := a.register("ana")
+	events := make([]map[string]any, 200)
+	for i := range events {
+		events[i] = map[string]any{"year": 1800 + i, "title": fmt.Sprintf("Evento %d", i)}
+	}
+	tl := a.want(a.do("POST", "/api/timelines", ana, map[string]any{"title": "Grande", "category": "História", "events": events}), 201)
+	if len(tl.Body["events"].([]any)) != 100 || tl.Body["eventsNextCursor"] == nil {
+		t.Fatalf("detalhe = %d eventos, cursor %v", len(tl.Body["events"].([]any)), tl.Body["eventsNextCursor"])
+	}
+
+	page := a.want(a.do("GET", "/api/timelines/grande/events?limit=150&cursor="+tl.Body["eventsNextCursor"].(string), "", nil), 200)
+	if items := page.Body["items"].([]any); len(items) != 100 || items[0].(map[string]any)["year"] != 1900.0 || page.Body["nextCursor"] != nil {
+		t.Fatalf("página = %d itens, nextCursor %v", len(items), page.Body["nextCursor"])
+	}
+	bad := a.want(a.do("GET", "/api/timelines/grande/events?cursor=xyz", "", nil), 400)
+	if bad.Body["error"].(map[string]any)["fields"].(map[string]any)["cursor"] == nil {
+		t.Fatalf("cursor inválido = %s", bad.Raw)
+	}
+
+	sum := a.want(a.do("GET", "/api/timelines/grande/summary?buckets=4", "", nil), 200)
+	buckets := sum.Body["buckets"].([]any)
+	if sum.Body["mode"] != "faixas" || sum.Body["total"] != 200.0 || len(buckets) != 4 || len(sum.Body["events"].([]any)) != 0 {
+		t.Fatalf("resumo = %s", sum.Raw)
+	}
+	if b := buckets[0].(map[string]any); b["from"] != 1800.0 || b["to"] != 1849.0 || b["count"] != 50.0 || len(b["sample"].([]any)) != 3 {
+		t.Fatalf("faixa = %v", b)
+	}
+	zoom := a.want(a.do("GET", "/api/timelines/grande/summary?from=1810&to=1819", "", nil), 200)
+	if zoom.Body["mode"] != "eventos" || len(zoom.Body["events"].([]any)) != 10 {
+		t.Fatalf("zoom = %s", zoom.Raw)
+	}
+	a.want(a.do("GET", "/api/timelines/grande/summary?buckets=abc", "", nil), 400)
+
+	a.want(a.do("POST", "/api/timelines", ana, map[string]any{"title": "Outra", "category": "História", "events": []map[string]any{{"year": 1810, "title": "x"}}}), 201)
+	cmp := a.want(a.do("GET", "/api/compare?slugs=grande,outra&maxEvents=50&buckets=10", "", nil), 200)
+	lanes := cmp.Body["lanes"].([]any)
+	if lanes[0].(map[string]any)["mode"] != "faixas" || lanes[1].(map[string]any)["mode"] != "eventos" || cmp.Body["overlapsTotal"] != 1.0 {
+		t.Fatalf("comparação = %s", cmp.Raw)
+	}
+}
+
 type brokenTags struct{}
 
 func (brokenTags) Execute(context.Context, usecase.Empty) ([]domain.TagCount, error) {

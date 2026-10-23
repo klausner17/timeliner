@@ -156,10 +156,13 @@ func (r timelines) Stats(ctx context.Context, ids []string, viewerID string) (ma
 		(SELECT count(*) FROM suggestions s WHERE s.timeline_id=t.id AND s.status='pendente'),
 		(SELECT count(*) FROM timeline_follows f WHERE f.timeline_id=t.id),
 		EXISTS (SELECT 1 FROM timeline_follows f WHERE f.timeline_id=t.id AND f.user_id=$2),
-		COALESCE((SELECT array_agg(e.year ORDER BY e.year) FROM events e WHERE e.timeline_id=t.id), '{}'),
-		(SELECT min(e.year) FROM events e WHERE e.timeline_id=t.id),
-		(SELECT max(COALESCE(e.end_year, e.year)) FROM events e WHERE e.timeline_id=t.id)
-		FROM timelines t WHERE t.id = ANY($1)`, ids, viewerID)
+		COALESCE((SELECT array_agg(p ORDER BY p) FROM (
+			SELECT DISTINCT CASE WHEN r.hi = r.lo THEN 500 ELSE round((e.year - r.lo) * 1000.0 / (r.hi - r.lo))::int END AS p
+			FROM events e WHERE e.timeline_id=t.id) ps), '{}'),
+		r.lo, r.hi
+		FROM timelines t
+		CROSS JOIN LATERAL (SELECT min(e.year) AS lo, max(COALESCE(e.end_year, e.year)) AS hi FROM events e WHERE e.timeline_id=t.id) r
+		WHERE t.id = ANY($1)`, ids, viewerID)
 	if err != nil {
 		return nil, err
 	}
@@ -169,7 +172,7 @@ func (r timelines) Stats(ctx context.Context, ids []string, viewerID string) (ma
 		var id string
 		var s domain.TimelineStats
 		if err := rows.Scan(&id, &s.EventCount, &s.ContributorCount, &s.PendingSuggestions, &s.Followers,
-			&s.Following, &s.Years, &s.StartYear, &s.EndYear); err != nil {
+			&s.Following, &s.Positions, &s.StartYear, &s.EndYear); err != nil {
 			return nil, err
 		}
 		out[id] = s

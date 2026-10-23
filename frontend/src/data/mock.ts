@@ -337,3 +337,35 @@ export const featuredPairs = [
   { timelines: ['copas-do-mundo', 'presidentes-da-republica'], note: 'Cada Copa e quem estava no poder naquele ano.' },
   { timelines: ['evolucao-da-internet', 'ditadura-militar'], note: 'O que acontecia na rede enquanto o Brasil saía da ditadura.' },
 ]
+
+/**
+ * Timeline com milhares de eventos inventados, para ver paginação e faixas de anos
+ * funcionando. É gerada sempre igual (gerador com semente fixa).
+ */
+export function generatedTimeline(count = 20000): Timeline {
+  let x = 42
+  const rand = () => ((x = (x * 1103515245 + 12345) % 2147483648) / 2147483648)
+  const events: TimelineEvent[] = []
+  for (let i = 0; i < count; i++) {
+    // Mais eventos perto de hoje, como numa linha do tempo histórica de verdade.
+    const year = 2025 - Math.floor(4000 * rand() * rand() * rand())
+    events.push({ id: `g${i + 1}`, year, title: `Evento ${i + 1}`, description: 'Gerado para demonstrar timelines grandes.', by: '@memoria' })
+  }
+  return {
+    slug: 'demonstracao-20-mil-eventos',
+    title: 'Demonstração: 20 mil eventos',
+    description: 'Eventos inventados ao longo de quase 4 mil anos, para testar timelines muito grandes.',
+    category: 'História',
+    color: 'd',
+    owner: '@memoria',
+    visibility: 'publica',
+    contributions: 'fechada',
+    createdAt: 0,
+    updatedLabel: 'Gerada agora',
+    followers: 0,
+    tags: ['demonstração'],
+    eras: [],
+    events,
+    generated: true,
+  }
+}

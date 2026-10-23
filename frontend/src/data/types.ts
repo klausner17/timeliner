@@ -49,6 +49,8 @@ export type Timeline = {
   createdAt: number
   updatedLabel: string
   followers: number
+  /** Gerada para demonstração (não vai para o localStorage). */
+  generated?: boolean
 }
 
 export type SuggestionStatus = 'pendente' | 'aprovada' | 'recusada' | 'ajuste'

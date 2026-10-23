@@ -118,11 +118,13 @@ func toTimelines(vs []usecase.TimelineView) []timelineJSON {
 
 type timelineDetailJSON struct {
 	timelineJSON
-	Events []eventJSON `json:"events"`
+	// Events é só a primeira página; o resto vem de /timelines/{slug}/events?cursor=.
+	Events           []eventJSON `json:"events"`
+	EventsNextCursor *string     `json:"eventsNextCursor"`
 }
 
 func toTimelineDetail(v usecase.TimelineDetailView) timelineDetailJSON {
-	return timelineDetailJSON{timelineJSON: toTimeline(v.TimelineView), Events: toEvents(v.Events)}
+	return timelineDetailJSON{timelineJSON: toTimeline(v.TimelineView), Events: toEvents(v.Events.Items), EventsNextCursor: v.Events.NextCursor}
 }
 
 type timelinePageJSON struct {
@@ -193,6 +195,39 @@ func toEvents(vs []usecase.EventView) []eventJSON {
 	return out
 }
 
+type eventPageJSON struct {
+	Items      []eventJSON `json:"items"`
+	NextCursor *string     `json:"nextCursor"`
+}
+
+func toEventPage(p usecase.EventPage) eventPageJSON {
+	return eventPageJSON{Items: toEvents(p.Items), NextCursor: p.NextCursor}
+}
+
+type bucketJSON struct {
+	From   int         `json:"from"`
+	To     int         `json:"to"`
+	Count  int         `json:"count"`
+	Sample []eventJSON `json:"sample"`
+}
+
+type eventWindowJSON struct {
+	From    int                `json:"from"`
+	To      int                `json:"to"`
+	Total   int                `json:"total"`
+	Mode    usecase.WindowMode `json:"mode"`
+	Events  []eventJSON        `json:"events"`
+	Buckets []bucketJSON       `json:"buckets"`
+}
+
+func toEventWindow(w usecase.EventWindow) eventWindowJSON {
+	out := eventWindowJSON{From: w.From, To: w.To, Total: w.Total, Mode: w.Mode, Events: toEvents(w.Events), Buckets: make([]bucketJSON, len(w.Buckets))}
+	for i, b := range w.Buckets {
+		out.Buckets[i] = bucketJSON{From: b.From, To: b.To, Count: b.Count, Sample: toEvents(b.Sample)}
+	}
+	return out
+}
+
 type suggestionTimelineJSON struct {
 	Slug  string            `json:"slug"`
 	Title string            `json:"title"`
@@ -242,7 +277,7 @@ type laneJSON struct {
 	Name     string            `json:"name"`
 	Color    domain.TrackColor `json:"color"`
 	Timeline timelineJSON      `json:"timeline"`
-	Events   []eventJSON       `json:"events"`
+	eventWindowJSON
 }
 
 type overlapJSON struct {
@@ -251,16 +286,17 @@ type overlapJSON struct {
 }
 
 type comparisonJSON struct {
-	Start    int           `json:"start"`
-	End      int           `json:"end"`
-	Lanes    []laneJSON    `json:"lanes"`
-	Overlaps []overlapJSON `json:"overlaps"`
+	Start         int           `json:"start"`
+	End           int           `json:"end"`
+	Lanes         []laneJSON    `json:"lanes"`
+	Overlaps      []overlapJSON `json:"overlaps"`
+	OverlapsTotal int           `json:"overlapsTotal"`
 }
 
 func toComparison(v usecase.ComparisonView) comparisonJSON {
-	out := comparisonJSON{Start: v.Start, End: v.End, Lanes: make([]laneJSON, len(v.Lanes)), Overlaps: make([]overlapJSON, len(v.Overlaps))}
+	out := comparisonJSON{Start: v.Start, End: v.End, Lanes: make([]laneJSON, len(v.Lanes)), Overlaps: make([]overlapJSON, len(v.Overlaps)), OverlapsTotal: v.OverlapsTotal}
 	for i, l := range v.Lanes {
-		out.Lanes[i] = laneJSON{ID: l.Timeline.Timeline.Slug, Name: l.Timeline.Timeline.Title, Color: l.Color, Timeline: toTimeline(l.Timeline), Events: toEvents(l.Events)}
+		out.Lanes[i] = laneJSON{ID: l.Timeline.Timeline.Slug, Name: l.Timeline.Timeline.Title, Color: l.Color, Timeline: toTimeline(l.Timeline), eventWindowJSON: toEventWindow(l.Window)}
 	}
 	for i, o := range v.Overlaps {
 		out.Overlaps[i] = overlapJSON{Year: o.Year, LaneIDs: o.Slugs}

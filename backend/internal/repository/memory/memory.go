@@ -5,7 +5,9 @@ package memory
 import (
 	"cmp"
 	"context"
+	"math"
 	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -276,14 +278,15 @@ func (r timelines) Stats(_ context.Context, ids []string, viewerID string) (map[
 	out := map[string]domain.TimelineStats{}
 	for _, id := range ids {
 		t := r.timelines[id]
-		s := domain.TimelineStats{Years: []int{}}
+		s := domain.TimelineStats{Positions: []int{}}
+		years := []int{}
 		authors := map[string]bool{}
 		for _, e := range r.events {
 			if e.TimelineID != id {
 				continue
 			}
 			s.EventCount++
-			s.Years = append(s.Years, e.Year)
+			years = append(years, e.Year)
 			if e.AuthorID != t.OwnerID {
 				authors[e.AuthorID] = true
 			}
@@ -298,7 +301,16 @@ func (r timelines) Stats(_ context.Context, ids []string, viewerID string) (map[
 				s.EndYear = &end
 			}
 		}
-		slices.Sort(s.Years)
+		for _, y := range years {
+			p := 500
+			if *s.EndYear > *s.StartYear {
+				p = int(math.Round(float64(y-*s.StartYear) * 1000 / float64(*s.EndYear-*s.StartYear)))
+			}
+			if !slices.Contains(s.Positions, p) {
+				s.Positions = append(s.Positions, p)
+			}
+		}
+		slices.Sort(s.Positions)
 		s.ContributorCount = len(authors)
 		for _, sg := range r.suggestions {
 			if sg.TimelineID == id && sg.Status == domain.StatusPending {
@@ -378,34 +390,86 @@ func (r events) ByID(_ context.Context, id string) (*domain.Event, error) {
 	return found(e, ok)
 }
 
-func (r events) ListByTimeline(_ context.Context, timelineID string, from, to *int) ([]domain.Event, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
+func (r events) CreateMany(ctx context.Context, es []domain.Event) error {
+	for i := range es {
+		if err := r.Create(ctx, &es[i]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// touching devolve, em ordem cronológica, os eventos da timeline que tocam [from, to].
+func (r events) touching(timelineID string, from, to *int) []domain.Event {
 	out := []domain.Event{}
 	for _, e := range r.events {
-		end := e.Year
-		if e.EndYear != nil {
-			end = *e.EndYear
-		}
-		if e.TimelineID != timelineID || (from != nil && end < *from) || (to != nil && e.Year > *to) {
+		if e.TimelineID != timelineID || (from != nil && endOf(e) < *from) || (to != nil && e.Year > *to) {
 			continue
 		}
 		out = append(out, e)
 	}
 	SortEvents(out)
+	return out
+}
+
+func (r events) ListByTimeline(_ context.Context, q usecase.EventQuery) ([]domain.Event, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := r.touching(q.TimelineID, q.From, q.To)
+	if q.After != nil {
+		out = out[sort.Search(len(out), func(i int) bool { return compareCursor(domain.CursorOf(out[i]), *q.After) > 0 }):]
+	}
+	return out[:min(q.Limit, len(out))], nil
+}
+
+func (r events) Summary(_ context.Context, q usecase.SummaryQuery) ([]domain.YearBucket, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	span := q.To - q.From + 1
+	out := []domain.YearBucket{}
+	last := -1
+	for _, e := range r.touching(q.TimelineID, &q.From, &q.To) {
+		if b := domain.BucketOf(e.Year, q.From, span, q.Buckets); b != last {
+			from, to := domain.BucketRange(b, q.From, span, q.Buckets)
+			out = append(out, domain.YearBucket{From: from, To: to, Sample: []domain.Event{}})
+			last = b
+		}
+		cur := &out[len(out)-1]
+		cur.Count++
+		if len(cur.Sample) < q.Sample {
+			cur.Sample = append(cur.Sample, e)
+		}
+	}
 	return out, nil
+}
+
+func (r events) Overlaps(_ context.Context, timelineIDs []string, from, to, limit int) ([]domain.YearOverlap, int, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	byYear := map[int][]string{}
+	for _, e := range r.events {
+		if slices.Contains(timelineIDs, e.TimelineID) && e.Year >= from && e.Year <= to && !slices.Contains(byYear[e.Year], e.TimelineID) {
+			byYear[e.Year] = append(byYear[e.Year], e.TimelineID)
+		}
+	}
+	out := []domain.YearOverlap{}
+	for year, ids := range byYear {
+		if len(ids) >= 2 {
+			slices.Sort(ids)
+			out = append(out, domain.YearOverlap{Year: year, TimelineIDs: ids})
+		}
+	}
+	slices.SortFunc(out, func(a, b domain.YearOverlap) int { return a.Year - b.Year })
+	return out[:min(limit, len(out))], len(out), nil
 }
 
 // SortEvents é a ordem cronológica usada pelos dois repositories: ano, fim, criação, ID.
 func SortEvents(es []domain.Event) {
-	slices.SortFunc(es, func(a, b domain.Event) int {
-		return cmp.Or(
-			cmp.Compare(a.Year, b.Year),
-			cmp.Compare(endOf(a), endOf(b)),
-			a.CreatedAt.Compare(b.CreatedAt),
-			cmp.Compare(a.ID, b.ID),
-		)
-	})
+	slices.SortFunc(es, func(a, b domain.Event) int { return compareCursor(domain.CursorOf(a), domain.CursorOf(b)) })
+}
+
+func compareCursor(a, b domain.EventCursor) int {
+	return cmp.Or(cmp.Compare(a.Year, b.Year), cmp.Compare(a.EndYear, b.EndYear), a.CreatedAt.Compare(b.CreatedAt), cmp.Compare(a.ID, b.ID))
 }
 
 func endOf(e domain.Event) int {
