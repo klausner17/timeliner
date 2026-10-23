@@ -5,7 +5,8 @@ info:
   description: |
     Contrato entre o frontend (Vue) e o backend (Go).
     Todas as rotas ficam sob /api. Datas em ISO 8601 (UTC). Anos podem ser negativos (a.C.).
-    Autenticação por token Bearer obtido em /auth/login ou /auth/register.
+    Autenticação por token Bearer obtido em /auth/login ou /auth/register. Sem token, as rotas
+    públicas respondem como visitante; com token inválido ou expirado, qualquer rota responde 401.
 servers:
   - url: http://localhost:8080/api
 tags:
@@ -20,6 +21,24 @@ security:
   - bearer: []
 
 paths:
+  /health:
+    get:
+      tags: [auth]
+      security: []
+      summary: Saúde do serviço (confere o banco)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+        '503':
+          description: Banco fora do ar
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+
   /auth/register:
     post:
       tags: [auth]
@@ -600,8 +619,13 @@ components:
           type: object
           required: [code, message]
           properties:
-            code: { type: string, example: not_found }
-            message: { type: string }
+            code:
+              type: string
+              description: Estável, para a lógica do front
+              enum: [invalid, unauthorized, forbidden, not_found, conflict, method_not_allowed, internal, unavailable]
+            message:
+              type: string
+              description: Frase em português pronta para mostrar ao usuário. Nunca traz detalhes internos.
             fields:
               type: object
               additionalProperties: { type: string }
