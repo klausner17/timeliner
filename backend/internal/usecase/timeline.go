@@ -1,0 +1,294 @@
+package usecase
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strings"
+
+	"github.com/klausner17/timeliner/backend/internal/domain"
+)
+
+type ListTimelinesInput struct {
+	ActorID string
+	Query   string
+	// Category é o filtro "cat" do explorar.
+	Category    string
+	Tag         string
+	OwnerHandle string
+	OnlyOpen    bool
+	Sort        TimelineSort
+	Page        int
+	PageSize    int
+}
+
+type TimelinePage struct {
+	Items    []TimelineView
+	Page     int
+	PageSize int
+	Total    int
+}
+
+// ListTimelines é o explorar. Quando o dono lista as próprias (owner = seu handle ou "me"),
+// vêm também rascunhos, privadas e as de link.
+type ListTimelines struct{ d *Deps }
+
+func NewListTimelines(d *Deps) *ListTimelines { return &ListTimelines{d} }
+
+func (uc *ListTimelines) Execute(ctx context.Context, in ListTimelinesInput) (TimelinePage, error) {
+	f := fieldErrors{}
+	if in.Page == 0 {
+		in.Page = 1
+	}
+	if in.PageSize == 0 {
+		in.PageSize = 20
+	}
+	if in.Sort == "" {
+		in.Sort = SortPopular
+	}
+	f.check(in.Page >= 1, "page", "A página começa em 1.")
+	f.check(in.PageSize >= 1 && in.PageSize <= 100, "pageSize", "Use de 1 a 100.")
+	f.check(in.Sort == SortPopular || in.Sort == SortRecent, "sort", "Use popular ou recent.")
+	f.check(in.Category == "" || domain.ValidCategory(in.Category), "cat", "Categoria inválida.")
+	if err := f.err(); err != nil {
+		return TimelinePage{}, err
+	}
+	filter := TimelineFilter{
+		Query: strings.TrimSpace(in.Query), Category: in.Category, Tag: strings.ToLower(strings.TrimSpace(in.Tag)),
+		OnlyOpen: in.OnlyOpen, Sort: in.Sort, Limit: in.PageSize, Offset: (in.Page - 1) * in.PageSize,
+	}
+	switch {
+	case in.OwnerHandle == "me":
+		if err := requireActor(in.ActorID); err != nil {
+			return TimelinePage{}, err
+		}
+		filter.OwnerID, filter.IncludeUnlisted = in.ActorID, true
+	case in.OwnerHandle != "":
+		owner, err := uc.d.Users.ByHandle(ctx, in.OwnerHandle)
+		if err != nil {
+			if errors.Is(err, domain.ErrNotFound) {
+				return TimelinePage{Items: []TimelineView{}, Page: in.Page, PageSize: in.PageSize}, nil
+			}
+			return TimelinePage{}, err
+		}
+		filter.OwnerID = owner.ID
+		filter.IncludeUnlisted = owner.ID == in.ActorID
+	}
+	ts, total, err := uc.d.Timelines.List(ctx, filter)
+	if err != nil {
+		return TimelinePage{}, err
+	}
+	items, err := timelineViews(ctx, uc.d, ts, in.ActorID)
+	if err != nil {
+		return TimelinePage{}, err
+	}
+	return TimelinePage{Items: items, Page: in.Page, PageSize: in.PageSize, Total: total}, nil
+}
+
+type TimelineFields struct {
+	Title         *string
+	Description   *string
+	Category      *string
+	Color         *domain.TrackColor
+	Visibility    *domain.Visibility
+	Contributions *domain.ContributionMode
+	Draft         *bool
+	Eras          *[]domain.Era
+	Tags          *[]string
+}
+
+// apply copia os campos preenchidos para t e valida o resultado.
+func (in TimelineFields) apply(t *domain.Timeline) error {
+	f := fieldErrors{}
+	if in.Title != nil {
+		t.Title = strings.TrimSpace(*in.Title)
+	}
+	if in.Description != nil {
+		t.Description = strings.TrimSpace(*in.Description)
+	}
+	if in.Category != nil {
+		t.Category = *in.Category
+	}
+	if in.Color != nil {
+		t.Color = *in.Color
+	}
+	if in.Visibility != nil {
+		t.Visibility = *in.Visibility
+	}
+	if in.Contributions != nil {
+		t.Contributions = *in.Contributions
+	}
+	if in.Draft != nil {
+		t.Draft = *in.Draft
+	}
+	if in.Eras != nil {
+		t.Eras = *in.Eras
+	}
+	if in.Tags != nil {
+		t.Tags = normalizeTags(*in.Tags)
+	}
+	f.check(length(t.Title, 1, 120), "title", "O título precisa ter de 1 a 120 caracteres.")
+	f.check(length(t.Description, 0, 2000), "description", "A descrição pode ter até 2000 caracteres.")
+	f.check(domain.ValidCategory(t.Category), "category", "Categoria inválida.")
+	f.check(t.Color.Valid(), "color", "Cor inválida.")
+	f.check(t.Visibility.Valid(), "visibility", "Visibilidade inválida.")
+	f.check(t.Contributions.Valid(), "contributions", "Modo de contribuição inválido.")
+	f.check(len(t.Tags) <= 10, "tags", "No máximo 10 tags.")
+	for _, tag := range t.Tags {
+		f.check(length(tag, 1, 30), "tags", "Cada tag pode ter até 30 caracteres.")
+	}
+	names := map[string]bool{}
+	for i, era := range t.Eras {
+		p := fmt.Sprintf("eras[%d].", i)
+		f.check(length(era.Name, 1, 80), p+"name", "o nome do período precisa ter de 1 a 80 caracteres")
+		f.check(!names[era.Name], p+"name", "período repetido")
+		f.check(era.End == nil || *era.End >= era.Start, p+"end", "o fim precisa ser depois do início")
+		names[era.Name] = true
+	}
+	return f.err()
+}
+
+func normalizeTags(tags []string) []string {
+	out := []string{}
+	seen := map[string]bool{}
+	for _, t := range tags {
+		t = strings.ToLower(strings.TrimSpace(t))
+		if t != "" && !seen[t] {
+			seen[t] = true
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+type CreateTimelineInput struct {
+	ActorID string
+	TimelineFields
+	Events []domain.EventData
+}
+
+type CreateTimeline struct{ d *Deps }
+
+func NewCreateTimeline(d *Deps) *CreateTimeline { return &CreateTimeline{d} }
+
+func (uc *CreateTimeline) Execute(ctx context.Context, in CreateTimelineInput) (TimelineDetailView, error) {
+	if err := requireActor(in.ActorID); err != nil {
+		return TimelineDetailView{}, err
+	}
+	now := uc.d.Clock.Now()
+	t := domain.Timeline{
+		ID: uc.d.IDs.NewID("tl"), OwnerID: in.ActorID, Color: domain.ColorA,
+		Visibility: domain.VisibilityPublic, Contributions: domain.ContributionsSuggestions,
+		Eras: []domain.Era{}, Tags: []string{}, CreatedAt: now, UpdatedAt: now,
+	}
+	err := in.TimelineFields.apply(&t)
+	f := fieldErrors{}
+	if e, ok := err.(*domain.Error); ok {
+		f = e.Fields
+	} else if err != nil {
+		return TimelineDetailView{}, err
+	}
+	events := make([]domain.Event, len(in.Events))
+	for i, data := range in.Events {
+		data = normalizeEvent(data)
+		validateEvent(f, fmt.Sprintf("events[%d].", i), data, t.Eras)
+		events[i] = domain.Event{EventData: data, ID: uc.d.IDs.NewID("ev"), TimelineID: t.ID, AuthorID: in.ActorID, CreatedAt: now}
+	}
+	if err := f.err(); err != nil {
+		return TimelineDetailView{}, err
+	}
+	err = uc.d.Tx.WithinTx(ctx, func(ctx context.Context) error {
+		slug, err := uniqueSlug(ctx, uc.d, slugify(t.Title))
+		if err != nil {
+			return err
+		}
+		t.Slug = slug
+		if err := uc.d.Timelines.Create(ctx, &t); err != nil {
+			return err
+		}
+		for i := range events {
+			if err := uc.d.Events.Create(ctx, &events[i]); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return TimelineDetailView{}, err
+	}
+	return timelineDetail(ctx, uc.d, &t, in.ActorID)
+}
+
+func uniqueSlug(ctx context.Context, d *Deps, base string) (string, error) {
+	slug := base
+	for i := 2; ; i++ {
+		taken, err := d.Timelines.SlugTaken(ctx, slug)
+		if err != nil || !taken {
+			return slug, err
+		}
+		slug = fmt.Sprintf("%s-%d", base, i)
+	}
+}
+
+type SlugInput struct {
+	ActorID string
+	Slug    string
+}
+
+type GetTimeline struct{ d *Deps }
+
+func NewGetTimeline(d *Deps) *GetTimeline { return &GetTimeline{d} }
+
+func (uc *GetTimeline) Execute(ctx context.Context, in SlugInput) (TimelineDetailView, error) {
+	t, err := visibleTimeline(ctx, uc.d, in.Slug, in.ActorID)
+	if err != nil {
+		return TimelineDetailView{}, err
+	}
+	return timelineDetail(ctx, uc.d, t, in.ActorID)
+}
+
+type UpdateTimelineInput struct {
+	ActorID string
+	Slug    string
+	TimelineFields
+}
+
+type UpdateTimeline struct{ d *Deps }
+
+func NewUpdateTimeline(d *Deps) *UpdateTimeline { return &UpdateTimeline{d} }
+
+func (uc *UpdateTimeline) Execute(ctx context.Context, in UpdateTimelineInput) (TimelineDetailView, error) {
+	t, err := ownedTimeline(ctx, uc.d, in.Slug, in.ActorID)
+	if err != nil {
+		return TimelineDetailView{}, err
+	}
+	if err := in.TimelineFields.apply(t); err != nil {
+		return TimelineDetailView{}, err
+	}
+	t.UpdatedAt = uc.d.Clock.Now()
+	if err := uc.d.Timelines.Update(ctx, t); err != nil {
+		return TimelineDetailView{}, err
+	}
+	return timelineDetail(ctx, uc.d, t, in.ActorID)
+}
+
+type DeleteTimeline struct{ d *Deps }
+
+func NewDeleteTimeline(d *Deps) *DeleteTimeline { return &DeleteTimeline{d} }
+
+func (uc *DeleteTimeline) Execute(ctx context.Context, in SlugInput) (Empty, error) {
+	t, err := ownedTimeline(ctx, uc.d, in.Slug, in.ActorID)
+	if err != nil {
+		return Empty{}, err
+	}
+	return Empty{}, uc.d.Timelines.Delete(ctx, t.ID)
+}
+
+// ListTags são as tags mais usadas, para os chips do explorar.
+type ListTags struct{ d *Deps }
+
+func NewListTags(d *Deps) *ListTags { return &ListTags{d} }
+
+func (uc *ListTags) Execute(ctx context.Context, _ Empty) ([]domain.TagCount, error) {
+	return uc.d.Timelines.Tags(ctx, 30)
+}

@@ -1,0 +1,128 @@
+package usecase
+
+import (
+	"net/mail"
+	"net/url"
+	"regexp"
+	"strings"
+	"unicode"
+	"unicode/utf8"
+
+	"github.com/klausner17/timeliner/backend/internal/domain"
+	"golang.org/x/text/unicode/norm"
+)
+
+// fieldErrors junta erros de validação por campo.
+type fieldErrors map[string]string
+
+func (f fieldErrors) add(field, msg string) {
+	if _, ok := f[field]; !ok {
+		f[field] = msg
+	}
+}
+
+func (f fieldErrors) check(ok bool, field, msg string) {
+	if !ok {
+		f.add(field, msg)
+	}
+}
+
+func (f fieldErrors) err() error {
+	if len(f) == 0 {
+		return nil
+	}
+	return domain.Invalid(f)
+}
+
+func length(s string, minLen, maxLen int) bool {
+	n := utf8.RuneCountInString(strings.TrimSpace(s))
+	return n >= minLen && n <= maxLen
+}
+
+var handleRe = regexp.MustCompile(`^[a-z0-9_]{3,30}$`)
+
+func validEmail(s string) bool {
+	a, err := mail.ParseAddress(s)
+	return err == nil && a.Address == s
+}
+
+func validURL(s string) bool {
+	u, err := url.Parse(s)
+	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != ""
+}
+
+const (
+	minYear = -100000
+	maxYear = 3000
+)
+
+// validateEvent confere os campos de um evento. prefix vai na frente dos nomes dos campos
+// (ex.: "event." numa sugestão, "events[2]." na criação da timeline).
+func validateEvent(f fieldErrors, prefix string, e domain.EventData, eras []domain.Era) {
+	f.check(e.Year >= minYear && e.Year <= maxYear, prefix+"year", "Ano fora do intervalo.")
+	f.check(length(e.Title, 1, 160), prefix+"title", "O título precisa ter de 1 a 160 caracteres.")
+	f.check(length(e.Description, 0, 4000), prefix+"description", "A descrição pode ter até 4000 caracteres.")
+	if e.EndYear != nil {
+		f.check(*e.EndYear >= e.Year && *e.EndYear <= maxYear, prefix+"endYear", "O fim precisa ser depois do início.")
+	}
+	if e.Date != nil {
+		f.check(length(*e.Date, 1, 60), prefix+"date", "A data pode ter até 60 caracteres.")
+	}
+	if e.SourceURL != nil {
+		f.check(validURL(*e.SourceURL), prefix+"sourceUrl", "Link inválido.")
+	}
+	if e.Era != nil {
+		found := false
+		for _, era := range eras {
+			found = found || era.Name == *e.Era
+		}
+		f.check(found, prefix+"era", "Período não existe nesta timeline.")
+	}
+}
+
+// normalizeEvent limpa espaços e troca textos vazios opcionais por nil.
+func normalizeEvent(e domain.EventData) domain.EventData {
+	e.Title = strings.TrimSpace(e.Title)
+	e.Description = strings.TrimSpace(e.Description)
+	e.Date = emptyToNil(e.Date)
+	e.SourceURL = emptyToNil(e.SourceURL)
+	e.Era = emptyToNil(e.Era)
+	return e
+}
+
+func emptyToNil(s *string) *string {
+	if s == nil {
+		return nil
+	}
+	t := strings.TrimSpace(*s)
+	if t == "" {
+		return nil
+	}
+	return &t
+}
+
+// slugify transforma "História do Brasil" em "historia-do-brasil".
+func slugify(s string) string {
+	var b strings.Builder
+	dash := false
+	for _, r := range norm.NFD.String(strings.ToLower(s)) {
+		switch {
+		case unicode.Is(unicode.Mn, r):
+			// acento separado pela normalização
+		case r < unicode.MaxASCII && (unicode.IsLetter(r) || unicode.IsDigit(r)):
+			b.WriteRune(r)
+			dash = false
+		case !dash && b.Len() > 0:
+			b.WriteByte('-')
+			dash = true
+		}
+	}
+	out := strings.TrimSuffix(b.String(), "-")
+	if len(out) > 60 {
+		out = strings.TrimSuffix(out[:60], "-")
+	}
+	if out == "" {
+		out = "timeline"
+	}
+	return out
+}

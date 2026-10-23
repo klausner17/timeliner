@@ -7,7 +7,8 @@ Site para criar timelines, contribuir com as de outras pessoas e comparar duas h
 | Pasta | O que tem |
 | --- | --- |
 | `frontend/` | App web em Vue 3, Vite e TypeScript, com o design system |
-| `backend/` | API em Go (`net/http` da biblioteca padrão) |
+| `backend/` | API em Go com PostgreSQL (veja [backend/README.md](backend/README.md)) |
+| `api/` | Contrato da API em OpenAPI (`api/openapi.yaml`), compartilhado entre front e back |
 
 ## Rodando
 
@@ -24,9 +25,10 @@ npm run build      # checagem de tipos + build de produção
 Backend:
 
 ```bash
+# precisa de um PostgreSQL; o padrão é postgres://timeliner:timeliner@localhost:5432/timeliner
 cd backend
-go run ./cmd/api   # http://localhost:8080/api/health
-go test ./...
+go run ./cmd/api   # http://localhost:8080/api/health (aplica as migrations na subida)
+go test ./...      # sem banco: usecases e controllers com o repositório em memória
 ```
 
 Em desenvolvimento, o Vite repassa `/api` para `http://localhost:8080`, então o frontend chama a API pelo mesmo endereço.

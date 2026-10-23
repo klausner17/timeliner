@@ -24,6 +24,19 @@ jobs:
 
   backend:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: timeliner
+          POSTGRES_PASSWORD: timeliner
+          POSTGRES_DB: timeliner_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U timeliner"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 20
     defaults:
       run:
         working-directory: backend
@@ -32,7 +45,13 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: backend/go.mod
-          cache-dependency-path: backend/go.mod
+          cache-dependency-path: backend/go.sum
       - run: test -z "$(gofmt -l .)"
       - run: go vet ./...
-      - run: go test ./...
+      - name: Testes (repositório em memória)
+        run: go test ./...
+      - name: Testes (Postgres)
+        # -p 1: os pacotes limpam o mesmo banco de teste
+        run: go test -count=1 -p 1 ./...
+        env:
+          TEST_DATABASE_URL: postgres://timeliner:timeliner@localhost:5432/timeliner_test?sslmode=disable
