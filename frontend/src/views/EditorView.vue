@@ -16,6 +16,7 @@ import {
 import { addEvent, canEdit, deleteTimeline, findTimeline, publishTimeline, removeEvent, sortedEvents, updateEvent } from '@/data/store'
 import { categories, type TimelineEvent } from '@/data/types'
 import { yearLabel } from '@/lib/format'
+import { parseSheet } from '@/lib/importSheet'
 import NotFoundView from './NotFoundView.vue'
 
 const route = useRoute()
@@ -122,7 +123,7 @@ function remove(e: TimelineEvent) {
   if (timeline.value && window.confirm(`Remover “${e.title}”?`)) removeEvent(timeline.value, e.id)
 }
 
-// ---------- Importar planilha (CSV: ano; título; descrição; fonte) ----------
+// ---------- Importar planilha (CSV: ano ou data; título; descrição; fonte) ----------
 
 const importInput = ref<HTMLInputElement>()
 const importMsg = ref('')
@@ -131,17 +132,10 @@ async function importFile(ev: Event) {
   const t = timeline.value
   const file = (ev.target as HTMLInputElement).files?.[0]
   if (!t || !file) return
-  const lines = (await file.text()).split(/\r?\n/).filter((l) => l.trim())
-  let count = 0
-  for (const line of lines) {
-    const sep = line.includes(';') ? ';' : line.includes('\t') ? '\t' : ','
-    const [y, title, description = '', source = ''] = line.split(sep).map((c) => c.trim().replace(/^"|"$/g, ''))
-    const year = Number(y)
-    if (!Number.isInteger(year) || !title) continue // pula cabeçalho e linhas incompletas
-    addEvent(t, { year, title, description, sourceUrl: source || undefined })
-    count++
-  }
-  importMsg.value = count ? `${count} ${count === 1 ? 'evento importado' : 'eventos importados'}.` : 'Nenhuma linha válida. Use: ano; título; descrição; fonte.'
+  const imported = parseSheet(await file.text())
+  imported.forEach((e) => addEvent(t, e))
+  const count = imported.length
+  importMsg.value = count ? `${count} ${count === 1 ? 'evento importado' : 'eventos importados'}.` : 'Nenhuma linha válida. Use: ano ou data; título; descrição; fonte.'
   ;(ev.target as HTMLInputElement).value = ''
 }
 
@@ -267,7 +261,7 @@ function destroy() {
           </div>
         </TlCard>
         <TlCard v-else-if="!formOpen" tone="dashed" class="empty">
-          <p>Comece pelo primeiro evento. Você pode importar uma planilha com as colunas ano; título; descrição; fonte.</p>
+          <p>Comece pelo primeiro evento. Você pode importar uma planilha com as colunas ano ou data; título; descrição; fonte. A data pode ser 13/05/1888, 05/1888 ou 1888-05-13.</p>
           <TlButton variant="dark" icon="plus" @click="openNew">Novo evento</TlButton>
         </TlCard>
         <p class="main__note">Os eventos são ordenados pela data automaticamente.</p>
