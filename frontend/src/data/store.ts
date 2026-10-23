@@ -15,6 +15,7 @@ type State = {
   savedComparisons: SavedComparison[]
   following: string[]
   followedTimelines: string[]
+  bio: string
 }
 
 function initialState(): State {
@@ -24,6 +25,7 @@ function initialState(): State {
     savedComparisons: mock.savedComparisons,
     following: mock.following,
     followedTimelines: [],
+    bio: '',
   })
 }
 
@@ -88,7 +90,7 @@ export function yearRange(t: Timeline): [number, number] | undefined {
 
 export function rangeLabel(t: Timeline): string {
   const r = yearRange(t)
-  return r ? (r[0] === r[1] ? `${r[0]}` : `${r[0]}–${r[1]}`) : 'Sem eventos'
+  return r ? (r[0] === r[1] ? `${r[0]}` : `${r[0]}–${r[1]}`) : 'Sem datas'
 }
 
 /** Posições (0–100) para a faixa decorativa dos cartões: até 5 pontos espalhados. */
