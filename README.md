@@ -48,7 +48,7 @@ O `docker-compose.yml` da raiz sobe três serviços:
 | `backend` | `backend/Dockerfile`, a API em Go; roda as migrations ao subir | 8080 |
 | `frontend` | `frontend/Dockerfile`, o build do Vue servido pelo nginx, que repassa `/api` para o backend | 8000 |
 
-O serviço `seed` cria o usuário de dev `klausner` (login `klausner17@gmail.com`, senha `timeliner123`) pela API na primeira subida.
+O serviço `seed` cria o usuário de dev `klausner` (login `klausner@gmail.com`, senha `timeliner123`) pela API na primeira subida.
 
 As portas do host mudam com `POSTGRES_PORT`, `BACKEND_PORT` e `FRONTEND_PORT`. Para rodar só o banco e usar `go run`/`npm run dev` na máquina: `docker compose up -d postgres`.
 

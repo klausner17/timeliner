@@ -45,7 +45,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  # Cria o usuário de dev (klausner17@gmail.com / timeliner123) pela API, uma vez.
+  # Cria o usuário de dev (klausner@gmail.com / timeliner123) pela API, uma vez.
   # Se o usuário já existir, o cadastro falha e o serviço só avisa.
   seed:
     image: alpine:3.22
