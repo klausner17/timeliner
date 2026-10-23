@@ -1,0 +1,66 @@
+# Sobe o Timeliner inteiro: Postgres, API em Go e frontend servido pelo nginx.
+# Uso: docker compose up --build  ->  http://localhost:8000
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: timeliner
+      POSTGRES_PASSWORD: timeliner
+      POSTGRES_DB: timeliner
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U timeliner -d timeliner"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build: ./backend
+    environment:
+      PORT: "8080"
+      DATABASE_URL: postgres://timeliner:timeliner@postgres:5432/timeliner?sslmode=disable
+    ports:
+      - "${BACKEND_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    environment:
+      API_UPSTREAM: http://backend:8080
+    ports:
+      - "${FRONTEND_PORT:-8000}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Cria o usuário de dev (klausner17@gmail.com / timeliner123) pela API, uma vez.
+  # Se o usuário já existir, o cadastro falha e o serviço só avisa.
+  seed:
+    image: alpine:3.22
+    depends_on:
+      backend:
+        condition: service_healthy
+    command:
+      - sh
+      - -c
+      - >-
+        wget -qO- --header 'Content-Type: application/json'
+        --post-data '{"handle":"klausner","name":"Klausner","email":"klausner@gmail.com","password":"timeliner123"}'
+        http://backend:8080/api/auth/register && echo ' usuario criado'
+        || echo 'usuario ja existe'
+    restart: "no"
+
+volumes:
+  pgdata:
