@@ -4,7 +4,9 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
-RUN npm run build
+# Subcaminho de producao (ex.: /app/timeliner/); o padrao serve na raiz.
+ARG VITE_BASE=/
+RUN VITE_BASE=$VITE_BASE npm run build
 
 FROM nginx:1.27-alpine
 COPY nginx.conf /etc/nginx/templates/default.conf.template
