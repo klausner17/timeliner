@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import {
   TlAvatar,
   TlBadge,
@@ -15,33 +15,53 @@ import {
   type CompareEvent,
   type CompareLane,
 } from '@/design-system'
+import { errorMessage } from '@/data/api'
 import {
   canEdit,
-  canView,
-  contributors,
-  findTimeline,
-  findUser,
-  isFollowingTimeline,
+  followTimeline,
+  getTimeline,
+  handleLabel,
+  listTimelines,
   loadEvents,
   loadSummary,
   rangeLabel,
-  relatedTimelines,
-  suggestionsFor,
-  toggleFollowTimeline,
+  relatedTo,
+  session,
   yearRange,
 } from '@/data/store'
-import type { TimelineEvent } from '@/data/types'
+import type { TimelineDetail, TimelineEvent, TimelinePage } from '@/data/types'
 import type { EventWindow } from '@/data/windowing'
-import { copyLink, dateLabel, yearLabel } from '@/lib/format'
+import { copyLink, dateLabel, timeAgo, yearLabel } from '@/lib/format'
 import { useLatest } from '@/lib/useLatest'
 import NotFoundView from './NotFoundView.vue'
 import VideoExport from './timeline/VideoExport.vue'
 
 const route = useRoute()
-const timeline = computed(() => {
-  const t = findTimeline(String(route.params.slug))
-  return t && canView(t) ? t : undefined
-})
+const router = useRouter()
+
+// A API já esconde o que o usuário não pode ver (privada de outra pessoa = 404).
+const timeline = ref<TimelineDetail>()
+const status = ref<'loading' | 'ok' | 'missing' | 'error'>('loading')
+const statusError = ref('')
+let timelineSeq = 0
+watch(
+  () => route.params.slug,
+  async (slug) => {
+    const id = ++timelineSeq
+    status.value = 'loading'
+    try {
+      const t = await getTimeline(String(slug))
+      if (id !== timelineSeq) return
+      timeline.value = t
+      status.value = t ? 'ok' : 'missing'
+    } catch (e) {
+      if (id !== timelineSeq) return
+      statusError.value = errorMessage(e, 'Não deu para carregar a timeline.')
+      status.value = 'error'
+    }
+  },
+  { immediate: true },
+)
 
 const ALL = 'Tudo'
 const PAGE = 100
@@ -105,7 +125,7 @@ async function loadPage(reset: boolean) {
     if (id === listSeq) loading.value = false
   }
 }
-watch([() => timeline.value?.slug, eraRange, () => timeline.value?.events.length], () => loadPage(true), { immediate: true })
+watch([() => timeline.value?.slug, eraRange, () => timeline.value?.eventCount], () => loadPage(true), { immediate: true })
 
 
 type Group = { name: string; range?: string; events: TimelineEvent[] }
@@ -175,12 +195,35 @@ const windowEvents = computed(() => {
 const selectedEvent = computed(() => windowEvents.value.find((e) => e.id === selected.value) ?? windowEvents.value[0])
 const grouped = computed(() => (windowData.value?.mode === 'faixas' ? windowData.value : undefined))
 
-const people = computed(() => (timeline.value ? contributors(timeline.value).map(findUser) : []))
-const pending = computed(() => (timeline.value ? suggestionsFor(timeline.value.slug).filter((s) => s.status === 'pendente').length : 0))
-const related = computed(() => (timeline.value ? relatedTimelines(timeline.value) : []))
-const owner = computed(() => (timeline.value ? findUser(timeline.value.owner) : undefined))
+const pending = computed(() => timeline.value?.pendingSuggestions ?? 0)
+const owner = computed(() => timeline.value?.owner)
 const mine = computed(() => !!timeline.value && canEdit(timeline.value))
-const following = computed(() => !!timeline.value && isFollowingTimeline(timeline.value.slug))
+const following = computed(() => !!timeline.value?.following)
+
+// "Compare com": entre as públicas mais populares, as que têm mais anos em comum.
+const { data: popular } = useLatest(() => (timeline.value ? listTimelines({ pageSize: 50 }) : undefined), undefined as TimelinePage | undefined)
+const related = computed(() => (timeline.value && popular.value ? relatedTo(timeline.value, popular.value.items) : []))
+
+const followBusy = ref(false)
+async function toggleFollow() {
+  const t = timeline.value
+  if (!t || followBusy.value) return
+  if (!session.user) {
+    router.push({ name: 'login', query: { next: route.fullPath } })
+    return
+  }
+  followBusy.value = true
+  try {
+    await followTimeline(t.slug, !t.following)
+    t.followers += t.following ? -1 : 1
+    t.following = !t.following
+  } catch (e) {
+    shareMsg.value = errorMessage(e)
+    setTimeout(() => (shareMsg.value = ''), 2500)
+  } finally {
+    followBusy.value = false
+  }
+}
 
 const relatedColors = ['b', 'c', 'd'] as const
 
@@ -225,7 +268,11 @@ async function share() {
 </script>
 
 <template>
-  <NotFoundView v-if="!timeline" what="timeline" />
+  <main v-if="status === 'loading'" class="tl-container" aria-busy="true"></main>
+  <main v-else-if="status === 'error'" class="tl-container body">
+    <p class="body__note" role="alert">{{ statusError }}</p>
+  </main>
+  <NotFoundView v-else-if="!timeline" what="timeline" />
   <div v-else ref="root" class="view" :class="{ 'view--full': full }">
     <section class="top">
       <div class="tl-container top__inner">
@@ -242,12 +289,12 @@ async function share() {
             <div class="top__meta">
               <span class="top__owner">
                 <TlAvatar v-if="owner" :name="owner.handle" :tint="owner.tint" size="xs" decorative />
-                {{ timeline.owner }}
+                {{ handleLabel(timeline.owner.handle) }}
               </span>
               <span>{{ rangeLabel(timeline) }}</span>
-              <span>{{ timeline.events.length.toLocaleString('pt-BR') }} eventos</span>
-              <span>{{ people.length }} contribuidores</span>
-              <span>{{ timeline.updatedLabel }}</span>
+              <span>{{ timeline.eventCount.toLocaleString('pt-BR') }} eventos</span>
+              <span>{{ timeline.contributorCount }} {{ timeline.contributorCount === 1 ? 'contribuidor' : 'contribuidores' }}</span>
+              <span>Atualizada {{ timeAgo(timeline.updatedAt) }}</span>
               <TlBadge v-if="timeline.draft" tone="warning">Rascunho</TlBadge>
               <TlBadge v-else-if="timeline.visibility === 'privada'" tone="neutral">Privada</TlBadge>
               <TlBadge v-else-if="timeline.contributions === 'sugestoes'" tone="success">Aberta a contribuições</TlBadge>
@@ -259,7 +306,7 @@ async function share() {
               Sugerir evento
             </TlButton>
             <TlButton :to="{ path: '/comparar', query: { a: timeline.slug } }" icon="compare">Comparar com…</TlButton>
-            <TlButton v-if="!mine" :aria-pressed="following" @click="toggleFollowTimeline(timeline)">
+            <TlButton v-if="!mine" :aria-pressed="following" :disabled="followBusy" @click="toggleFollow">
               {{ following ? 'Seguindo' : 'Seguir' }}
             </TlButton>
             <VideoExport :timeline="timeline" />
@@ -305,7 +352,7 @@ async function share() {
 
     <div class="tl-container body">
       <main class="body__main">
-        <TlCard v-if="!timeline.events.length" tone="dashed" class="empty">
+        <TlCard v-if="!timeline.eventCount" tone="dashed" class="empty">
           <p>Esta timeline ainda não tem eventos.</p>
           <TlButton v-if="mine" :to="`/t/${timeline.slug}/editar`" variant="dark" icon="plus">Adicionar eventos</TlButton>
         </TlCard>
@@ -357,8 +404,8 @@ async function share() {
         <TlCard class="side">
           <h2 class="side__title">Contribuidores</h2>
           <div class="side__people">
-            <TlAvatar v-for="p in people.slice(0, 7)" :key="p.handle" :name="p.handle" :tint="p.tint" :title="p.handle" />
-            <TlAvatar v-if="people.length > 7" :name="`+${people.length - 7}`" :initial="`+${people.length - 7}`" />
+            <TlAvatar :name="timeline.owner.handle" :tint="timeline.owner.tint" :title="handleLabel(timeline.owner.handle)" />
+            <TlAvatar v-if="timeline.contributorCount > 1" :name="`+${timeline.contributorCount - 1}`" :initial="`+${timeline.contributorCount - 1}`" />
           </div>
           <p class="side__text">
             <template v-if="timeline.contributions === 'sugestoes'">Contribuições passam por aprovação do dono antes de aparecer.</template>

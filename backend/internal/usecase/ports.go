@@ -163,4 +163,6 @@ type Deps struct {
 	Hasher      PasswordHasher
 	Clock       Clock
 	IDs         IDGenerator
+	// SignupClosed fecha o POST /auth/register; contas novas so pelo comando create-user.
+	SignupClosed bool
 }

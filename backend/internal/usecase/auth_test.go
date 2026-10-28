@@ -2,6 +2,7 @@ package usecase_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/klausner17/timeliner/backend/internal/domain"
 	"github.com/klausner17/timeliner/backend/internal/usecase"
@@ -49,4 +50,35 @@ func TestRegisterValidationAndConflict(t *testing.T) {
 	if err.(*domain.Error).Fields["handle"] == "" {
 		t.Fatalf("conflito sem campo: %v", err)
 	}
+}
+
+func TestRegisterClosed(t *testing.T) {
+	d := newDeps()
+	d.SignupClosed = true
+	_, err := usecase.NewRegister(d).Execute(ctx, usecase.RegisterInput{Handle: "ana", Name: "Ana", Email: "ana@exemplo.com", Password: "12345678"})
+	wantKind(t, err, domain.KindForbidden)
+
+	out := must[usecase.AuthOutput](t)(usecase.NewAdminRegister(d).Execute(ctx, usecase.RegisterInput{Handle: "ana", Name: "Ana", Email: "ana@exemplo.com", Password: "12345678"}))
+	if out.User.Handle != "ana" {
+		t.Fatalf("usuário = %+v", out.User)
+	}
+}
+
+func TestLoginBlocksAfterTooManyFailures(t *testing.T) {
+	d := newDeps()
+	register(t, d, "ana")
+	login := usecase.NewLogin(d)
+	for i := 0; i < 10; i++ {
+		_, err := login.Execute(ctx, usecase.LoginInput{Email: "ana@exemplo.com", Password: "errada"})
+		wantKind(t, err, domain.KindUnauthorized)
+	}
+	// Bloqueado: nem a senha certa entra até a janela passar.
+	_, err := login.Execute(ctx, usecase.LoginInput{Email: "ANA@exemplo.com", Password: "senha-forte"})
+	wantKind(t, err, domain.KindUnauthorized)
+	if msg := err.(*domain.Error).Message; msg == "E-mail ou senha incorretos." {
+		t.Fatalf("esperava aviso de bloqueio, veio %q", msg)
+	}
+
+	d.Clock.(*fakeClock).t = d.Clock.Now().Add(15 * time.Minute)
+	must[usecase.AuthOutput](t)(login.Execute(ctx, usecase.LoginInput{Email: "ana@exemplo.com", Password: "senha-forte"}))
 }

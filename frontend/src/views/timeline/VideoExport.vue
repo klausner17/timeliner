@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
 import { TlButton } from '@/design-system'
-import { sortedEvents } from '@/data/store'
+import { errorMessage } from '@/data/api'
+import { loadAllEvents } from '@/data/store'
 import type { Timeline, TimelineEvent } from '@/data/types'
 import { dateLabel } from '@/lib/format'
 import { readTheme } from '@/lib/video/render'
@@ -20,7 +21,7 @@ const dialog = ref<HTMLDialogElement>()
 let abort: AbortController | undefined
 
 const toStory = (e: TimelineEvent): StoryEvent => ({ year: e.year, dateLabel: dateLabel(e), title: e.title, description: e.description, era: e.era })
-const canExport = computed(() => props.timeline.events.length > 0)
+const canExport = computed(() => props.timeline.eventCount > 0)
 
 function release() {
   if (state.value.kind === 'ready') URL.revokeObjectURL(state.value.url)
@@ -35,7 +36,16 @@ function showProgress(done: number) {
 async function generate() {
   release()
   dialog.value?.showModal()
-  const sb = buildStoryboard(props.timeline.title, sortedEvents(props.timeline).map(toStory))
+  state.value = { kind: 'rendering', percent: 0 }
+  let events: TimelineEvent[]
+  try {
+    // Já em ordem cronológica, como a API devolve.
+    events = await loadAllEvents(props.timeline.slug)
+  } catch (e) {
+    state.value = { kind: 'error', message: errorMessage(e, 'Não deu para carregar os eventos.') }
+    return
+  }
+  const sb = buildStoryboard(props.timeline.title, events.map(toStory))
   if (!sb) {
     state.value = { kind: 'error', message: 'A timeline ainda não tem eventos.' }
     return

@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
 import { TlAppHeader, type NavItem } from '@/design-system'
-import { currentUser } from '@/data/store'
+import { currentUser, session } from '@/data/store'
 
 const route = useRoute()
 
@@ -16,7 +16,13 @@ const nav = computed<NavItem[]>(() => [
 <template>
   <RouterView v-if="route.meta.bare" />
   <div v-else class="app">
-    <TlAppHeader :nav="nav" create-to="/nova" profile-to="/perfil" :user-name="currentUser.name" />
+    <TlAppHeader
+      :nav="nav"
+      create-to="/nova"
+      profile-to="/perfil"
+      :user-name="currentUser?.name"
+      :login-to="session.ready && route.name !== 'login' ? { name: 'login', query: { next: route.fullPath } } : undefined"
+    />
     <div class="app__main"><RouterView /></div>
     <footer class="app-footer">
       <div class="tl-container app-footer__inner">

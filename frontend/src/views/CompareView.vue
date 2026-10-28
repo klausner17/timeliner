@@ -17,8 +17,9 @@ import {
   type OverviewTrack,
   type TrackColor,
 } from '@/design-system'
-import { canView, findSavedComparison, findTimeline, loadComparison, loadSummary, publicTimelines, saveComparison, state, yearRange, type Comparison } from '@/data/store'
-import type { Timeline, TimelineEvent } from '@/data/types'
+import { errorMessage } from '@/data/api'
+import { currentUser, listSavedComparisons, listTimelines, loadComparison, loadSummary, saveComparison, yearRange, type Comparison } from '@/data/store'
+import type { SavedComparison, Timeline, TimelineEvent } from '@/data/types'
 import { extent, type EventWindow } from '@/data/windowing'
 import { copyLink, dateLabel } from '@/lib/format'
 import { useLatest } from '@/lib/useLatest'
@@ -29,10 +30,19 @@ const router = useRouter()
 const KEYS = ['a', 'b', 'c', 'd'] as const
 
 // Timelines que aparecem nos seletores: as públicas e as do usuário.
+const { data: choiceData, error: choiceError } = useLatest(
+  () => {
+    const me = currentUser.value?.handle
+    return Promise.all([listTimelines({ pageSize: 100 }), me ? listTimelines({ owner: 'me', pageSize: 100 }) : undefined]).then(([pub, own]) => ({ pub: pub.items, own: own?.items ?? [] }))
+  },
+  undefined as { pub: Timeline[]; own: Timeline[] } | undefined,
+)
 const choices = computed(() => {
-  const own = state.timelines.filter((t) => canView(t) && !publicTimelines.value.includes(t) && t.events.length)
-  return [...publicTimelines.value, ...own]
+  if (!choiceData.value) return []
+  const { pub, own } = choiceData.value
+  return [...pub, ...own.filter((t) => t.eventCount && !pub.some((p) => p.slug === t.slug))]
 })
+const findTimeline = (slug: string) => choices.value.find((t) => t.slug === slug)
 const options = computed(() => choices.value.map((t) => ({ value: t.slug, label: t.title })))
 
 const slugs = computed<string[]>(() => {
@@ -201,10 +211,31 @@ const overviewWindow = computed<[number, number] | undefined>({ get: () => view.
 
 // ---------- Salvar e compartilhar ----------
 
-const saved = computed(() => !!findSavedComparison(slugs.value, start.value, end.value))
+const savedList = ref<SavedComparison[]>([])
+watch(
+  () => currentUser.value?.handle,
+  async (me) => {
+    savedList.value = me ? await listSavedComparisons().catch(() => []) : []
+  },
+  { immediate: true },
+)
+const sameSlugs = (a: string[], b: string[]) => a.length === b.length && a.every((s, i) => s === b[i])
+const saved = computed(() => savedList.value.some((c) => sameSlugs(c.timelines, slugs.value) && c.start === start.value && c.end === end.value))
+const saving = ref(false)
 const shareMsg = ref('')
-function save() {
-  saveComparison(slugs.value, start.value, end.value)
+async function save() {
+  if (!currentUser.value) {
+    router.push({ path: '/entrar', query: { next: route.fullPath } })
+    return
+  }
+  saving.value = true
+  try {
+    savedList.value = [await saveComparison(slugs.value, start.value, end.value), ...savedList.value]
+  } catch (e) {
+    shareMsg.value = errorMessage(e, 'Não deu para salvar a comparação.')
+  } finally {
+    saving.value = false
+  }
 }
 async function share() {
   const url = new URL(router.resolve({ query: { ...route.query, a: slugs.value[0], b: slugs.value[1], de: String(start.value), ate: String(end.value) } }).href, window.location.origin)
@@ -219,6 +250,11 @@ async function share() {
       <h1 class="page__title">Comparar timelines</h1>
       <p class="page__lead">Coloque duas histórias no mesmo eixo de tempo e veja o que aconteceu junto.</p>
     </div>
+
+    <p v-if="choiceError" class="page__lead" role="alert">{{ choiceError }}</p>
+    <div v-else-if="!choiceData" aria-busy="true"></div>
+    <TlCard v-else-if="choices.length < 2" tone="muted" padding="lg">Ainda não há timelines suficientes para comparar. Volte quando houver pelo menos duas publicadas.</TlCard>
+    <template v-else>
 
     <div class="pickers">
       <template v-for="(t, i) in selected" :key="i">
@@ -310,12 +346,13 @@ async function share() {
         <p class="match__text">{{ highlightText || 'Nenhum ano com eventos nas duas timelines neste período.' }}</p>
         <p v-if="coincidenceCount" class="match__count">{{ coincidenceCount }}</p>
         <div class="match__actions">
-          <TlButton variant="inverse" :disabled="saved" @click="save">{{ saved ? 'Comparação salva' : 'Salvar comparação' }}</TlButton>
+          <TlButton variant="inverse" :disabled="saved || saving" @click="save">{{ saved ? 'Comparação salva' : 'Salvar comparação' }}</TlButton>
           <TlButton variant="ghost" class="match__ghost" @click="share">Compartilhar link</TlButton>
           <span class="match__toast" role="status">{{ shareMsg }}</span>
         </div>
       </TlCard>
     </div>
+    </template>
   </main>
 </template>
 

@@ -35,7 +35,7 @@ import {
   type CompareLane,
   type TrackColor,
 } from '@/design-system'
-import { generatedTimeline } from '@/data/mock'
+import { generatedEvents } from '@/data/demo'
 import { chronological, windowOf } from '@/data/windowing'
 import DsDemo from './design-system/DsDemo.vue'
 import DsSection from './design-system/DsSection.vue'
@@ -117,7 +117,7 @@ const lanes: CompareLane[] = [
 const overviewYears = [1500, 1549, 1580, 1630, 1654, 1695, 1720, 1763, 1789, 1808, 1815, 1822, 1831, 1840, 1850, 1865, 1888, 1889, 1910, 1922, 1930, 1937, 1945, 1954, 1964, 1968, 1985, 1988, 1994, 2002, 2016]
 
 // Timeline grande: 20 mil eventos gerados, com zoom e faixas de anos.
-const big = chronological(generatedTimeline().events)
+const big = chronological(generatedEvents())
 const bigView = ref<[number, number]>([-2000, 2030])
 const bigStart = computed({ get: () => bigView.value[0], set: (v) => (bigView.value = [v, bigView.value[1]]) })
 const bigEnd = computed({ get: () => bigView.value[1], set: (v) => (bigView.value = [bigView.value[0], v]) })

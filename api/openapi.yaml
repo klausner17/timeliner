@@ -44,6 +44,7 @@ paths:
       tags: [auth]
       security: []
       summary: Cria conta e devolve token
+      description: Com SIGNUP=closed no servidor, responde 403; contas novas só pelo comando `api create-user`.
       requestBody:
         required: true
         content:
@@ -56,6 +57,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/AuthResponse' }
         '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
         '409': { $ref: '#/components/responses/Conflict' }
 
   /auth/login:
@@ -63,6 +65,7 @@ paths:
       tags: [auth]
       security: []
       summary: Entra com e-mail e senha
+      description: Depois de 10 senhas erradas no mesmo e-mail em 15 minutos, recusa com 401 até a janela passar.
       requestBody:
         required: true
         content:

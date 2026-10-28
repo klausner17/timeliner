@@ -1,8 +1,8 @@
 /*
  * Paginação e faixas de anos, com as mesmas regras do backend (api/openapi.yaml):
- * GET /timelines/{slug}/events, /timelines/{slug}/summary e /compare. Enquanto o app
- * roda sobre os dados de exemplo, o store usa estas funções; quando ligar na API,
- * só o store muda.
+ * GET /timelines/{slug}/events, /timelines/{slug}/summary e /compare. Os dados vêm
+ * da API; aqui ficam os tipos das respostas, a ordem cronológica e o recorte que a
+ * página do design system faz localmente com os eventos gerados.
  */
 import type { TimelineEvent } from './types'
 
