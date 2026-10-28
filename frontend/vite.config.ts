@@ -3,6 +3,9 @@ import { defineConfig } from 'vitest/config'
 import vue from '@vitejs/plugin-vue'
 
 export default defineConfig({
+  // Caminho onde o app e servido. Em producao fica sob klausner.site/app/timeliner/
+  // (VITE_BASE no build da imagem); o router usa o mesmo valor via BASE_URL.
+  base: process.env.VITE_BASE ?? '/',
   plugins: [vue()],
   resolve: {
     alias: {
