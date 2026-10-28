@@ -1,231 +1,120 @@
 /*
- * Estado do app em memória, a partir dos dados de exemplo. Quando o backend Go
- * tiver as rotas, estas funções passam a chamar a API e as telas não mudam.
- * As mudanças ficam no localStorage para sobreviver a um recarregamento.
+ * Dados do app vindos da API (api/openapi.yaml): sessão, leituras e escritas. As
+ * telas guardam o que carregaram; aqui só ficam a sessão e as chamadas.
  */
-import { computed, markRaw, reactive, watch } from 'vue'
-import * as mock from './mock'
-import type { SavedComparison, Suggestion, Timeline, TimelineEvent, User } from './types'
-import { chronological, extent, overlapsOf, pageOf, windowOf, type EventPage, type EventWindow, type Overlap, type WindowOptions } from './windowing'
+import { computed, reactive } from 'vue'
+import { ApiError, del, get, getToken, handleUnauthorized, patch, post, setToken } from './api'
+import type {
+  EventInput,
+  EventPatch,
+  Profile,
+  SavedComparison,
+  Suggestion,
+  SuggestionKind,
+  Timeline,
+  TimelineDetail,
+  TimelineEvent,
+  TimelinePage,
+  TimelinePatch,
+  TimelineInput,
+  User,
+  UserSummary,
+} from './types'
+import type { EventPage, EventWindow, Overlap, WindowOptions } from './windowing'
 
-const STORAGE_KEY = 'timeliner:v1'
+// ---------- Nulos da API viram undefined ----------
 
-type State = {
-  timelines: Timeline[]
-  suggestions: Suggestion[]
-  savedComparisons: SavedComparison[]
-  following: string[]
-  followedTimelines: string[]
-  bio: string
+type Nullable<T> = { [K in keyof T]: T[K] | null }
+
+/** Tira os campos null, para os tipos com opcionais (endYear?, date?...). */
+function clean<T extends object>(o: Nullable<T>): T {
+  return Object.fromEntries(Object.entries(o).filter(([, v]) => v !== null)) as T
 }
 
-function initialState(): State {
-  return structuredClone({
-    timelines: mock.timelines,
-    suggestions: mock.suggestions,
-    savedComparisons: mock.savedComparisons,
-    following: mock.following,
-    followedTimelines: [],
-    bio: '',
-  })
+const cleanEvent = (e: Nullable<TimelineEvent>) => clean<TimelineEvent>(e)
+const cleanTimeline = <T extends Timeline>(t: Nullable<T>): T => {
+  const out = clean<T>(t)
+  out.eras = out.eras.map((e) => clean(e))
+  return out
+}
+const cleanWindow = (w: EventWindow): EventWindow => ({
+  ...w,
+  events: w.events.map(cleanEvent),
+  buckets: w.buckets.map((b) => ({ ...b, sample: b.sample.map(cleanEvent) })),
+})
+function cleanSuggestion(s: Nullable<Suggestion>): Suggestion {
+  const out = clean<Suggestion>(s)
+  out.event = clean(out.event)
+  if (out.previous) out.previous = cleanEvent(out.previous)
+  return out
 }
 
-function load(): State {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw) return withGenerated({ ...initialState(), ...JSON.parse(raw) })
-  } catch {
-    // Sem storage (aba anônima, testes): começa dos dados de exemplo.
-  }
-  return withGenerated(initialState())
-}
+// ---------- Sessão ----------
 
-/**
- * A timeline de demonstração com milhares de eventos é gerada a cada carga e não vai
- * para o localStorage (não caberia). Os eventos ficam fora da reatividade: o watch
- * profundo abaixo não precisa percorrer cada um.
- */
-function withGenerated(s: State): State {
-  const t = mock.generatedTimeline()
-  t.events = markRaw(t.events)
-  return { ...s, timelines: [...s.timelines.filter((x) => !x.generated), t] }
-}
+export const session = reactive({ user: null as User | null, ready: false })
+export const currentUser = computed(() => session.user)
 
-export const state = reactive<State>(load())
+handleUnauthorized(() => (session.user = null))
 
-watch(
-  state,
-  (s) => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...s, timelines: s.timelines.filter((t) => !t.generated) }))
-    } catch {
-      // Ignora: o app funciona sem persistência.
+let starting: Promise<void> | undefined
+
+/** Confere o token guardado uma vez, na primeira navegação. */
+export function initSession(): Promise<void> {
+  starting ??= (async () => {
+    if (getToken()) {
+      try {
+        session.user = await get<User>('/me')
+      } catch (e) {
+        // Fora do ar: segue sem usuário, mas guarda o token para a próxima carga.
+        if (e instanceof ApiError && e.status === 401) setToken(null)
+      }
     }
-  },
-  { deep: true },
-)
-
-/** Volta aos dados de exemplo (útil em testes e demonstrações). */
-export function resetStore() {
-  Object.assign(state, withGenerated(initialState()))
+    session.ready = true
+  })()
+  return starting
 }
 
-const uid = (prefix: string) => `${prefix}${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
-
-// ---------- Usuários ----------
-
-export const currentUser = computed(() => findUser(mock.currentUserHandle))
-
-export function findUser(handle: string): User {
-  return mock.users.find((u) => u.handle === handle) ?? { handle, name: handle.replace(/^@/, ''), tint: 'neutral' }
+export async function login(email: string, password: string) {
+  const out = await post<{ token: string; user: User }>('/auth/login', { email, password })
+  setToken(out.token)
+  session.user = out.user
 }
 
-export function isFollowingUser(handle: string) {
-  return state.following.includes(handle)
+export function logout() {
+  setToken(null)
+  session.user = null
 }
 
-export function toggleFollowUser(handle: string) {
-  state.following = isFollowingUser(handle) ? state.following.filter((h) => h !== handle) : [...state.following, handle]
+export async function updateMe(input: { name?: string; bio?: string; tint?: User['tint'] }) {
+  session.user = await patch<User>('/me', input)
 }
 
-// ---------- Timelines ----------
+// ---------- Ajudas sobre o resumo ----------
 
-export function sortedEvents(t: Timeline): TimelineEvent[] {
-  return chronological(t.events)
+export const handleLabel = (handle: string) => `@${handle}`
+
+export function yearRange(t: Pick<Timeline, 'startYear' | 'endYear'>): [number, number] | undefined {
+  return t.startYear !== undefined && t.endYear !== undefined ? [t.startYear, t.endYear] : undefined
 }
 
-export function yearRange(t: Timeline): [number, number] | undefined {
-  const lo = extent(t.events.map((e) => e.year))
-  const hi = extent(t.events.map((e) => e.endYear ?? e.year))
-  return lo && hi ? [lo[0], hi[1]] : undefined
-}
-
-export function rangeLabel(t: Timeline): string {
+export function rangeLabel(t: Pick<Timeline, 'startYear' | 'endYear'>): string {
   const r = yearRange(t)
   return r ? (r[0] === r[1] ? `${r[0]}` : `${r[0]}–${r[1]}`) : 'Sem datas'
 }
 
-/** Posições (0–100) para a faixa decorativa dos cartões: até 5 pontos espalhados. */
-export function trackPoints(t: Timeline): number[] {
+export function canEdit(t: Pick<Timeline, 'owner'>) {
+  return !!session.user && session.user.handle === t.owner.handle
+}
+
+/** Timelines com anos em comum, as que mais se sobrepõem primeiro ("Compare com"). */
+export function relatedTo(t: Timeline, others: Timeline[], limit = 3): Timeline[] {
   const r = yearRange(t)
   if (!r) return []
-  const span = Math.max(1, r[1] - r[0])
-  const pts = sortedEvents(t).map((e) => Math.round(((e.year - r[0]) / span) * 92 + 4))
-  if (pts.length <= 5) return pts
-  return [0, 1, 2, 3, 4].map((i) => pts[Math.round((i * (pts.length - 1)) / 4)])
-}
-
-export function contributors(t: Timeline): string[] {
-  const counts = new Map<string, number>()
-  for (const e of t.events) counts.set(e.by, (counts.get(e.by) ?? 0) + 1)
-  // Dono primeiro, depois quem mais contribuiu.
-  return [...counts.keys()].sort((a, b) => (a === t.owner ? -1 : b === t.owner ? 1 : (counts.get(b) ?? 0) - (counts.get(a) ?? 0)))
-}
-
-/** Timelines que qualquer pessoa vê na busca. */
-export const publicTimelines = computed(() => state.timelines.filter((t) => t.visibility === 'publica' && !t.draft))
-
-export function findTimeline(slug: string): Timeline | undefined {
-  return state.timelines.find((t) => t.slug === slug)
-}
-
-export function timelinesOf(handle: string) {
-  return state.timelines.filter((t) => t.owner === handle).sort((a, b) => a.createdAt - b.createdAt)
-}
-
-/** Quem pode ver a timeline: pública, por link ou do próprio usuário. */
-export function canView(t: Timeline) {
-  return t.visibility !== 'privada' || t.owner === mock.currentUserHandle
-}
-
-export function canEdit(t: Timeline) {
-  return t.owner === mock.currentUserHandle
-}
-
-function slugify(title: string) {
-  const base = title
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '')
-  let slug = base || 'timeline'
-  for (let i = 2; findTimeline(slug); i++) slug = `${base}-${i}`
-  return slug
-}
-
-export function createTimeline(title = 'Nova timeline'): Timeline {
-  // Reaproveita um rascunho vazio em vez de acumular vários iguais.
-  const blank = state.timelines.find((t) => t.owner === mock.currentUserHandle && t.draft && t.title === title && !t.events.length)
-  if (blank) return blank
-  const t: Timeline = {
-    slug: slugify(title),
-    title,
-    description: '',
-    category: 'História',
-    color: 'a',
-    owner: mock.currentUserHandle,
-    visibility: 'privada',
-    contributions: 'fechada',
-    draft: true,
-    eras: [],
-    events: [],
-    tags: [],
-    createdAt: Math.max(0, ...state.timelines.map((x) => x.createdAt)) + 1,
-    updatedLabel: 'Ainda não publicada',
-    followers: 0,
-  }
-  state.timelines.push(t)
-  return findTimeline(t.slug)!
-}
-
-export function publishTimeline(t: Timeline) {
-  t.draft = false
-  t.updatedLabel = 'Atualizada agora'
-}
-
-export function deleteTimeline(slug: string) {
-  state.timelines = state.timelines.filter((t) => t.slug !== slug)
-}
-
-export function addEvent(t: Timeline, e: Omit<TimelineEvent, 'id' | 'by'>, by = mock.currentUserHandle): TimelineEvent {
-  const event = { ...e, id: uid('e'), by }
-  t.events.push(event)
-  t.updatedLabel = 'Atualizada agora'
-  return event
-}
-
-export function updateEvent(t: Timeline, id: string, patch: Partial<Omit<TimelineEvent, 'id'>>) {
-  const e = t.events.find((x) => x.id === id)
-  if (e) Object.assign(e, patch)
-  t.updatedLabel = 'Atualizada agora'
-}
-
-export function removeEvent(t: Timeline, id: string) {
-  t.events = t.events.filter((e) => e.id !== id)
-  t.updatedLabel = 'Atualizada agora'
-}
-
-export function isFollowingTimeline(slug: string) {
-  return state.followedTimelines.includes(slug)
-}
-
-export function toggleFollowTimeline(t: Timeline) {
-  const on = isFollowingTimeline(t.slug)
-  state.followedTimelines = on ? state.followedTimelines.filter((s) => s !== t.slug) : [...state.followedTimelines, t.slug]
-  t.followers += on ? -1 : 1
-}
-
-/** Outras timelines com anos em comum, para "Comparada com frequência". */
-export function relatedTimelines(t: Timeline, limit = 3): Timeline[] {
-  const r = yearRange(t)
-  if (!r) return []
-  return publicTimelines.value
+  return others
     .filter((o) => o.slug !== t.slug)
     .map((o) => {
       const or = yearRange(o)
-      const overlap = or ? Math.min(r[1], or[1]) - Math.max(r[0], or[0]) : -1
-      return { o, overlap }
+      return { o, overlap: or ? Math.min(r[1], or[1]) - Math.max(r[0], or[0]) : -1 }
     })
     .filter((x) => x.overlap > 0)
     .sort((a, b) => b.overlap - a.overlap)
@@ -233,94 +122,128 @@ export function relatedTimelines(t: Timeline, limit = 3): Timeline[] {
     .map((x) => x.o)
 }
 
-// ---------- Leitura em partes (mesmo formato da API) ----------
-// São assíncronas como serão com o backend: as telas já tratam respostas fora de ordem.
+// ---------- Timelines ----------
+
+export type TimelineQuery = {
+  q?: string
+  cat?: string
+  tag?: string
+  /** Handle do dono, ou "me" para as próprias (com rascunhos e privadas). */
+  owner?: string
+  openToContributions?: boolean
+  sort?: 'popular' | 'recent'
+  page?: number
+  pageSize?: number
+}
+
+export async function listTimelines(query: TimelineQuery = {}): Promise<TimelinePage> {
+  const page = await get<TimelinePage>('/timelines', query)
+  return { ...page, items: page.items.map(cleanTimeline) }
+}
+
+/** Detalhe da timeline, ou undefined se não existe ou o usuário não pode ver. */
+export async function getTimeline(slug: string): Promise<TimelineDetail | undefined> {
+  try {
+    const t = cleanTimeline(await get<TimelineDetail>(`/timelines/${encodeURIComponent(slug)}`))
+    return { ...t, events: t.events.map(cleanEvent) }
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 404) return undefined
+    throw e
+  }
+}
+
+export const createTimeline = async (input: TimelineInput) => cleanTimeline(await post<TimelineDetail>('/timelines', input))
+export const updateTimeline = async (slug: string, input: TimelinePatch) => cleanTimeline(await patch<TimelineDetail>(`/timelines/${slug}`, input))
+export const deleteTimeline = (slug: string) => del(`/timelines/${slug}`)
+
+export function followTimeline(slug: string, on: boolean) {
+  return on ? post<void>(`/timelines/${slug}/follow`) : del(`/timelines/${slug}/follow`)
+}
+
+export async function listTags(): Promise<{ tag: string; count: number }[]> {
+  return (await get<{ items: { tag: string; count: number }[] }>('/tags')).items
+}
+
+// ---------- Eventos ----------
 
 /** GET /timelines/{slug}/events: uma página em ordem cronológica, por cursor. */
 export async function loadEvents(slug: string, opts: { from?: number; to?: number; cursor?: string | null; limit?: number } = {}): Promise<EventPage> {
-  const t = findTimeline(slug)
-  if (!t) throw new Error('Timeline não encontrada.')
-  return pageOf(sortedEvents(t), opts)
+  const page = await get<EventPage>(`/timelines/${slug}/events`, opts)
+  return { ...page, items: page.items.map(cleanEvent) }
+}
+
+/** Todos os eventos, página a página (editor e vídeo). */
+export async function loadAllEvents(slug: string): Promise<TimelineEvent[]> {
+  const out: TimelineEvent[] = []
+  let cursor: string | null = null
+  do {
+    const page: EventPage = await loadEvents(slug, { cursor, limit: 500 })
+    out.push(...page.items)
+    cursor = page.nextCursor
+  } while (cursor)
+  return out
 }
 
 /** GET /timelines/{slug}/summary: os eventos do trecho, ou faixas de anos se forem muitos. */
 export async function loadSummary(slug: string, opts: WindowOptions & { from?: number; to?: number } = {}): Promise<EventWindow> {
-  const t = findTimeline(slug)
-  if (!t) throw new Error('Timeline não encontrada.')
-  const r = yearRange(t) ?? [0, 0]
-  const from = opts.from ?? r[0]
-  const to = Math.max(from, opts.to ?? r[1])
-  return windowOf(sortedEvents(t), from, to, opts)
+  return cleanWindow(await get<EventWindow>(`/timelines/${slug}/summary`, opts))
 }
 
-export type Comparison = { start: number; end: number; lanes: EventWindow[]; overlaps: Overlap[]; overlapsTotal: number }
+export const createEvent = async (slug: string, input: EventInput) => cleanEvent(await post<TimelineEvent>(`/timelines/${slug}/events`, input))
+export const updateEvent = async (slug: string, id: string, input: EventPatch) =>
+  cleanEvent(await patch<TimelineEvent>(`/timelines/${slug}/events/${id}`, input))
+export const deleteEvent = (slug: string, id: string) => del(`/timelines/${slug}/events/${id}`)
+
+// ---------- Comparação ----------
+
+export type ComparisonLane = EventWindow & { id: string; name: string; color: Timeline['color']; timeline: Timeline }
+export type Comparison = { start: number; end: number; lanes: ComparisonLane[]; overlaps: Overlap[]; overlapsTotal: number }
 
 /** GET /compare: o mesmo nível de detalhe de loadSummary em cada trilha, mais as coincidências. */
 export async function loadComparison(slugs: string[], start: number, end: number, opts: WindowOptions = {}): Promise<Comparison> {
-  const ts = slugs.map((s) => findTimeline(s)).filter((t): t is Timeline => !!t)
-  const sorted = ts.map(sortedEvents)
-  const lanes = sorted.map((events) => windowOf(events, start, end, opts))
-  return { start, end, lanes, ...overlapsOf(ts.map((t, i) => ({ id: t.slug, events: sorted[i] })), start, end) }
+  const c = await get<Comparison>('/compare', { slugs: slugs.join(','), start, end, ...opts })
+  return { ...c, lanes: c.lanes.map((l) => ({ ...cleanWindow(l), id: l.id, name: l.name, color: l.color, timeline: cleanTimeline(l.timeline) })) }
 }
+
+export async function listSavedComparisons(): Promise<SavedComparison[]> {
+  return (await get<{ items: SavedComparison[] }>('/me/comparisons')).items
+}
+
+export const saveComparison = (timelines: string[], start: number, end: number) => post<SavedComparison>('/me/comparisons', { timelines, start, end })
+export const deleteSavedComparison = (id: string) => del(`/me/comparisons/${id}`)
 
 // ---------- Sugestões ----------
 
-export function suggestionsFor(slug: string) {
-  return state.suggestions.filter((s) => s.timeline === slug)
+export async function listSuggestions(slug: string): Promise<Suggestion[]> {
+  return (await get<{ items: Nullable<Suggestion>[] }>(`/timelines/${slug}/suggestions`)).items.map(cleanSuggestion)
 }
 
-export function suggestionsBy(handle: string) {
-  return state.suggestions.filter((s) => s.by === handle)
+export async function suggest(slug: string, input: { kind: SuggestionKind; event: EventInput; eventId?: string; note?: string }): Promise<Suggestion> {
+  return cleanSuggestion(await post<Nullable<Suggestion>>(`/timelines/${slug}/suggestions`, input))
 }
 
-export function suggest(s: Omit<Suggestion, 'id' | 'status' | 'when' | 'by'>): Suggestion {
-  const created: Suggestion = { ...s, id: uid('s'), status: 'pendente', when: 'agora', by: mock.currentUserHandle }
-  state.suggestions.unshift(created)
-  return created
+export async function reviewSuggestion(id: string, decision: 'approve' | 'reject' | 'request_changes', feedback?: string): Promise<Suggestion> {
+  return cleanSuggestion(await post<Nullable<Suggestion>>(`/suggestions/${id}/review`, { decision, feedback }))
 }
 
-/** Aprovar coloca o evento na timeline; desfazer tira de novo. */
-export function decideSuggestion(id: string, status: 'aprovada' | 'recusada' | 'ajuste', feedback?: string) {
-  const s = state.suggestions.find((x) => x.id === id)
-  const t = s && findTimeline(s.timeline)
-  if (!s || !t || s.status !== 'pendente') return
-  s.status = status
-  s.feedback = feedback
-  if (status !== 'aprovada') return
-  const same = s.kind !== 'Novo evento' ? t.events.find((e) => e.title === s.event.title) : undefined
-  if (same) {
-    s.previous = { ...same }
-    s.applied = same.id
-    updateEvent(t, same.id, s.event)
-  } else {
-    s.applied = addEvent(t, s.event, s.by).id
-  }
+/** Desfaz a revisão: volta para pendente e, se estava aprovada, desfaz o efeito. */
+export async function reopenSuggestion(id: string): Promise<Suggestion> {
+  return cleanSuggestion(await post<Nullable<Suggestion>>(`/suggestions/${id}/reopen`))
 }
 
-export function undoSuggestion(id: string) {
-  const s = state.suggestions.find((x) => x.id === id)
-  const t = s && findTimeline(s.timeline)
-  if (!s || !t) return
-  if (s.status === 'aprovada' && s.applied) {
-    if (s.previous) updateEvent(t, s.previous.id, s.previous)
-    else removeEvent(t, s.applied)
-  }
-  s.applied = undefined
-  s.previous = undefined
-  s.feedback = undefined
-  s.status = 'pendente'
+// ---------- Usuários ----------
+
+export const getProfile = (handle: string) => get<Profile>(`/users/${handle}`)
+
+export async function listFollowing(handle: string): Promise<{ users: UserSummary[]; timelines: Timeline[] }> {
+  const out = await get<{ users: UserSummary[]; timelines: Timeline[] }>(`/users/${handle}/following`)
+  return { users: out.users, timelines: out.timelines.map(cleanTimeline) }
 }
 
-// ---------- Comparações ----------
-
-export function saveComparison(timelines: string[], start: number, end: number): SavedComparison {
-  const found = findSavedComparison(timelines, start, end)
-  if (found) return found
-  const c: SavedComparison = { id: uid('c'), timelines: [...timelines], start, end, when: 'agora' }
-  state.savedComparisons.unshift(c)
-  return c
+export async function listContributions(handle: string): Promise<Suggestion[]> {
+  return (await get<{ items: Nullable<Suggestion>[] }>(`/users/${handle}/contributions`)).items.map(cleanSuggestion)
 }
 
-export function findSavedComparison(timelines: string[], start: number, end: number) {
-  return state.savedComparisons.find((c) => c.start === start && c.end === end && c.timelines.join() === timelines.join())
+export function followUser(handle: string, on: boolean) {
+  return on ? post<void>(`/users/${handle}/follow`) : del(`/users/${handle}/follow`)
 }

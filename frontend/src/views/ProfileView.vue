@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, shallowRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   TlAvatar,
@@ -17,38 +17,86 @@ import {
   type BadgeTone,
   type Tab,
 } from '@/design-system'
+import { errorMessage } from '@/data/api'
 import {
-  contributors,
   currentUser,
-  findTimeline,
-  findUser,
-  isFollowingUser,
+  followUser,
+  getProfile,
+  getTimeline,
+  handleLabel,
+  listContributions,
+  listFollowing,
+  listSavedComparisons,
+  listTimelines,
+  logout,
   rangeLabel,
-  state,
-  suggestionsBy,
-  timelinesOf,
-  toggleFollowUser,
-  trackPoints,
+  updateMe,
 } from '@/data/store'
-import type { SuggestionStatus, Timeline } from '@/data/types'
-import { copyLink } from '@/lib/format'
+import { suggestionKindLabel, type Profile, type SavedComparison, type Suggestion, type SuggestionStatus, type Timeline, type User, type UserSummary } from '@/data/types'
+import { copyLink, monthYear, timeAgo } from '@/lib/format'
 
 const route = useRoute()
 const router = useRouter()
 
-const me = currentUser
-const mine = computed(() => timelinesOf(me.value.handle))
-const contributions = computed(() => suggestionsBy(me.value.handle))
-const eventsCreated = computed(() => state.timelines.reduce((n, t) => n + t.events.filter((e) => e.by === me.value.handle).length, 0))
-const followers = computed(() => mine.value.reduce((n, t) => n + t.followers, 0))
+// A rota exige login, então currentUser existe aqui.
+const me = computed(() => currentUser.value as User)
+
+const status = ref<'loading' | 'ok' | 'error'>('loading')
+const statusError = ref('')
+const profile = shallowRef<Profile>()
+const mine = shallowRef<Timeline[]>([])
+const contributions = shallowRef<Suggestion[]>([])
+const comparisonsRaw = shallowRef<SavedComparison[]>([])
+const titles = shallowRef(new Map<string, Timeline>())
+const followedTimelines = shallowRef<Timeline[]>([])
 // Quem a pessoa segue, mais quem ela deixou de seguir nesta visita (para poder voltar atrás).
-const followList = ref([...state.following])
+const followList = ref<UserSummary[]>([])
+const followingNow = ref(new Set<string>())
+
+watch(
+  () => currentUser.value?.handle,
+  async (handle) => {
+    if (!handle) return
+    status.value = 'loading'
+    try {
+      const [p, own, contrib, saved, following] = await Promise.all([
+        getProfile(handle),
+        listTimelines({ owner: 'me', pageSize: 100, sort: 'recent' }),
+        listContributions(handle),
+        listSavedComparisons(),
+        listFollowing(handle),
+      ])
+      profile.value = p
+      mine.value = own.items
+      contributions.value = contrib
+      comparisonsRaw.value = saved
+      followedTimelines.value = following.timelines
+      followList.value = following.users
+      followingNow.value = new Set(following.users.map((u) => u.handle))
+      status.value = 'ok'
+      titles.value = await timelinesFor(saved, [...own.items, ...following.timelines])
+    } catch (e) {
+      statusError.value = errorMessage(e, 'Não deu para carregar o perfil.')
+      status.value = 'error'
+    }
+  },
+  { immediate: true },
+)
+
+/** Busca as timelines das comparações salvas que ainda não vieram nas listas. */
+async function timelinesFor(saved: SavedComparison[], known: Timeline[]) {
+  const out = new Map(known.map((t) => [t.slug, t]))
+  const missing = [...new Set(saved.flatMap((c) => c.timelines))].filter((s) => !out.has(s))
+  const found = await Promise.all(missing.map((s) => getTimeline(s).catch(() => undefined)))
+  for (const t of found) if (t) out.set(t.slug, t)
+  return out
+}
 
 const tabs = computed<Tab[]>(() => [
   { value: 'timelines', label: 'Timelines', count: mine.value.length },
   { value: 'contribuicoes', label: 'Contribuições', count: contributions.value.length },
-  { value: 'comparacoes', label: 'Comparações salvas', count: state.savedComparisons.length },
-  { value: 'seguindo', label: 'Seguindo', count: state.following.length },
+  { value: 'comparacoes', label: 'Comparações salvas', count: comparisonsRaw.value.length },
+  { value: 'seguindo', label: 'Seguindo', count: followingNow.value.size + followedTimelines.value.length },
 ])
 const tab = computed({
   get: () => (tabs.value.some((t) => t.value === route.query.aba) ? String(route.query.aba) : 'timelines'),
@@ -70,26 +118,52 @@ const statusBadge: Record<SuggestionStatus, { label: string; tone: BadgeTone }> 
 }
 
 const comparisons = computed(() =>
-  state.savedComparisons.map((c) => ({ ...c, items: c.timelines.map(findTimeline).filter((t): t is Timeline => !!t) })).filter((c) => c.items.length > 1),
+  comparisonsRaw.value.map((c) => ({ ...c, items: c.timelines.map((s) => titles.value.get(s)).filter((t): t is Timeline => !!t) })).filter((c) => c.items.length > 1),
 )
 const compareLink = (c: { timelines: string[]; start: number; end: number }) => ({
   path: '/comparar',
   query: { ...Object.fromEntries(c.timelines.map((s, i) => ['abcd'[i], s])), de: String(c.start), ate: String(c.end) },
 })
 
-const followCount = (handle: string) => timelinesOf(handle).filter((t) => t.visibility === 'publica' && !t.draft).length
+async function toggleFollowUser(handle: string) {
+  const on = !followingNow.value.has(handle)
+  try {
+    await followUser(handle, on)
+    const next = new Set(followingNow.value)
+    if (on) next.add(handle)
+    else next.delete(handle)
+    followingNow.value = next
+  } catch (e) {
+    shareMsg.value = errorMessage(e)
+  }
+}
 
 // ---------- Bio ----------
 
 const editingBio = ref(false)
 const bioDraft = ref('')
+const bioError = ref('')
+const savingBio = ref(false)
 function editBio() {
-  bioDraft.value = state.bio
+  bioDraft.value = me.value.bio
+  bioError.value = ''
   editingBio.value = true
 }
-function saveBio() {
-  state.bio = bioDraft.value.trim()
-  editingBio.value = false
+async function saveBio() {
+  savingBio.value = true
+  try {
+    await updateMe({ bio: bioDraft.value.trim() })
+    editingBio.value = false
+  } catch (e) {
+    bioError.value = errorMessage(e, 'Não deu para salvar a bio.')
+  } finally {
+    savingBio.value = false
+  }
+}
+
+function signOut() {
+  logout()
+  router.replace('/')
 }
 
 const shareMsg = ref('')
@@ -100,7 +174,7 @@ async function share() {
 </script>
 
 <template>
-  <div>
+  <div v-if="me">
     <section class="top">
       <div class="tl-container top__inner">
         <div class="who">
@@ -108,37 +182,43 @@ async function share() {
           <div class="who__text">
             <h1 class="who__name">{{ me.name }}</h1>
             <div class="who__meta">
-              <span>{{ me.handle }}</span>
-              <span v-if="me.memberSince">Membro desde {{ me.memberSince }}</span>
+              <span>{{ handleLabel(me.handle) }}</span>
+              <span v-if="me.memberSince">Membro desde {{ monthYear(me.memberSince) }}</span>
             </div>
             <form v-if="editingBio" class="bio" @submit.prevent="saveBio">
               <TlField v-slot="{ id }" label="Bio">
                 <TlTextarea :id="id" v-model="bioDraft" :rows="2" :maxlength="160" />
               </TlField>
+              <p v-if="bioError" class="who__error" role="alert">{{ bioError }}</p>
               <div class="bio__actions">
                 <TlButton size="sm" variant="ghost" @click="editingBio = false">Cancelar</TlButton>
-                <TlButton size="sm" type="submit" variant="primary">Salvar</TlButton>
+                <TlButton size="sm" type="submit" variant="primary" :disabled="savingBio">Salvar</TlButton>
               </div>
             </form>
-            <p v-else class="who__bio" :class="{ 'who__bio--empty': !state.bio }">{{ state.bio || 'Conte do que você gosta de fazer timelines.' }}</p>
+            <p v-else class="who__bio" :class="{ 'who__bio--empty': !me.bio }">{{ me.bio || 'Conte do que você gosta de fazer timelines.' }}</p>
           </div>
           <div class="who__actions">
             <TlButton v-if="!editingBio" @click="editBio">Editar perfil</TlButton>
             <TlButton icon="share" icon-only label="Compartilhar perfil" @click="share" />
+            <TlButton variant="ghost" @click="signOut">Sair</TlButton>
             <span class="who__toast" role="status">{{ shareMsg }}</span>
           </div>
         </div>
 
         <dl class="stats">
           <TlStat label="Timelines" :value="mine.length" />
-          <TlStat label="Eventos criados" :value="eventsCreated" />
-          <TlStat label="Contribuições aprovadas" :value="contributions.filter((c) => c.status === 'aprovada').length" />
-          <TlStat label="Seguidores" :value="followers" />
+          <TlStat label="Eventos criados" :value="profile?.stats.events ?? 0" />
+          <TlStat label="Contribuições aprovadas" :value="profile?.stats.approvedContributions ?? 0" />
+          <TlStat label="Seguidores" :value="profile?.stats.followers ?? 0" />
         </dl>
       </div>
     </section>
 
-    <main class="tl-container body">
+    <main v-if="status === 'loading'" class="tl-container body" aria-busy="true"></main>
+    <main v-else-if="status === 'error'" class="tl-container body">
+      <p class="who__error" role="alert">{{ statusError }}</p>
+    </main>
+    <main v-else class="tl-container body">
       <TlTabs v-model="tab" label="Seções do perfil" :tabs="tabs">
         <div class="panel">
           <div v-if="tab === 'timelines'" class="grid">
@@ -148,10 +228,10 @@ async function share() {
               :to="t.draft ? `/t/${t.slug}/editar` : `/t/${t.slug}`"
               :title="t.title"
               :color="t.color"
-              :points="trackPoints(t)"
+              :points="t.points"
               :range="rangeLabel(t)"
-              :events="t.events.length"
-              :contributors="t.visibility === 'privada' ? undefined : contributors(t).length"
+              :events="t.eventCount"
+              :contributors="t.visibility === 'privada' ? undefined : t.contributorCount"
               :badge="badgeOf(t)"
             />
             <TlCard to="/nova" tone="dashed" class="new">
@@ -166,7 +246,7 @@ async function share() {
                 <div class="contrib__text">
                   <span class="contrib__title">{{ c.event.title }}</span>
                   <span class="contrib__meta">
-                    {{ c.kind }} em <RouterLink :to="`/t/${c.timeline}`">{{ findTimeline(c.timeline)?.title ?? c.timeline }}</RouterLink> · {{ c.when }}
+                    {{ suggestionKindLabel[c.kind] }} em <RouterLink :to="`/t/${c.timeline.slug}`">{{ c.timeline.title }}</RouterLink> · {{ timeAgo(c.createdAt) }}
                   </span>
                   <span v-if="c.feedback" class="contrib__meta">Pedido do dono: “{{ c.feedback }}”</span>
                 </div>
@@ -180,24 +260,45 @@ async function share() {
             <div v-if="comparisons.length" class="grid grid--wide">
               <TlCard v-for="c in comparisons" :key="c.id" :to="compareLink(c)" class="cmp">
                 <TlTrackLabel v-for="(t, i) in c.items" :key="t.slug" :color="trackColors[i]">{{ t.title }}</TlTrackLabel>
-                <span class="cmp__meta">{{ c.start }}–{{ c.end }} · salva {{ c.when }}</span>
+                <span class="cmp__meta">{{ c.start }}–{{ c.end }} · salva {{ timeAgo(c.createdAt) }}</span>
               </TlCard>
             </div>
             <TlCard v-else tone="muted">Nenhuma comparação salva. Monte uma em Comparar e use “Salvar comparação”.</TlCard>
           </template>
 
-          <div v-else class="grid grid--people">
-            <TlCard v-for="h in followList" :key="h" padding="sm" class="person">
-              <TlAvatar :name="h" :tint="findUser(h).tint" size="lg" decorative />
-              <div class="person__text">
-                <span class="person__name">{{ h }}</span>
-                <span class="person__info">{{ followCount(h) }} {{ followCount(h) === 1 ? 'timeline' : 'timelines' }}</span>
-              </div>
-              <TlButton size="sm" :aria-pressed="isFollowingUser(h)" :variant="isFollowingUser(h) ? 'secondary' : 'dark'" @click="toggleFollowUser(h)">
-                {{ isFollowingUser(h) ? 'Seguindo' : 'Seguir' }}
-              </TlButton>
-            </TlCard>
-          </div>
+          <template v-else>
+            <div v-if="followedTimelines.length" class="grid">
+              <TlTimelineCard
+                v-for="t in followedTimelines"
+                :key="t.slug"
+                :to="`/t/${t.slug}`"
+                :title="t.title"
+                :color="t.color"
+                :points="t.points"
+                :range="rangeLabel(t)"
+                :events="t.eventCount"
+                :contributors="t.contributorCount"
+              />
+            </div>
+            <div v-if="followList.length" class="grid grid--people">
+              <TlCard v-for="u in followList" :key="u.handle" padding="sm" class="person">
+                <TlAvatar :name="u.handle" :initial="u.name.charAt(0)" :tint="u.tint" size="lg" decorative />
+                <div class="person__text">
+                  <span class="person__name">{{ u.name }}</span>
+                  <span class="person__info">{{ handleLabel(u.handle) }}</span>
+                </div>
+                <TlButton
+                  size="sm"
+                  :aria-pressed="followingNow.has(u.handle)"
+                  :variant="followingNow.has(u.handle) ? 'secondary' : 'dark'"
+                  @click="toggleFollowUser(u.handle)"
+                >
+                  {{ followingNow.has(u.handle) ? 'Seguindo' : 'Seguir' }}
+                </TlButton>
+              </TlCard>
+            </div>
+            <TlCard v-if="!followedTimelines.length && !followList.length" tone="muted">Você ainda não segue ninguém nem nenhuma timeline.</TlCard>
+          </template>
         </div>
       </TlTabs>
     </main>
@@ -253,6 +354,10 @@ async function share() {
   flex-wrap: wrap;
   align-items: center;
   gap: var(--tl-space-2);
+}
+.who__error {
+  font-size: var(--tl-text-md);
+  color: var(--tl-color-warning-strong);
 }
 .who__toast {
   font-size: var(--tl-text-sm);

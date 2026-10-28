@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { TlButton, TlCard, TlChip, TlInput, TlSegmented, TlTimelineCard, TlTrackLabel } from '@/design-system'
-import { featuredPairs } from '@/data/mock'
-import { contributors, findTimeline, publicTimelines, rangeLabel, trackPoints } from '@/data/store'
-import { categories, type Timeline } from '@/data/types'
+import { TlButton, TlCard, TlChip, TlInput, TlSegmented, TlTimelineCard } from '@/design-system'
+import { handleLabel, listTimelines, rangeLabel, type TimelineQuery } from '@/data/store'
+import { categories, type TimelinePage } from '@/data/types'
+import { useLatest } from '@/lib/useLatest'
 
 const route = useRoute()
 const router = useRouter()
@@ -21,19 +21,17 @@ const orders = [
   { value: 'abertas', label: 'Abertas a contribuição' },
 ]
 
-const normalize = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
-
-const results = computed(() => {
-  const words = normalize(query.value).split(/\s+/).filter(Boolean)
-  let list = publicTimelines.value.filter((t) => {
-    if (category.value && t.category !== category.value) return false
-    const text = normalize([t.title, t.description, ...t.tags].join(' '))
-    return words.every((w) => text.includes(w))
-  })
-  if (order.value === 'abertas') list = list.filter((t) => t.contributions === 'sugestoes')
-  const by = order.value === 'recentes' ? (t: Timeline) => -t.createdAt : (t: Timeline) => -t.followers
-  return [...list].sort((a, b) => by(a) - by(b))
-})
+// A busca (título, descrição e tags), a categoria e a ordem vão para a API.
+const params = computed<TimelineQuery>(() => ({
+  q: query.value || undefined,
+  cat: category.value || undefined,
+  sort: order.value === 'recentes' ? 'recent' : 'popular',
+  openToContributions: order.value === 'abertas' || undefined,
+  pageSize: 48,
+}))
+const { data: page, error } = useLatest(() => listTimelines(params.value), undefined as TimelinePage | undefined)
+const results = computed(() => page.value?.items ?? [])
+const total = computed(() => page.value?.total ?? 0)
 
 const filtering = computed(() => !!(query.value || category.value))
 
@@ -44,14 +42,6 @@ function submit() {
 function categoryLink(c: string) {
   return { query: { ...route.query, cat: category.value === c ? undefined : c } }
 }
-
-const pairs = computed(() =>
-  featuredPairs
-    .map((p) => ({ ...p, items: p.timelines.map(findTimeline).filter((t): t is Timeline => !!t) }))
-    .filter((p) => p.items.length === p.timelines.length),
-)
-
-const compareLink = (slugs: string[]) => ({ path: '/comparar', query: { a: slugs[0], b: slugs[1] } })
 
 // Faixa decorativa do topo: duas trilhas com um ano em comum marcado.
 const heroA = [8, 26, 47, 71, 90]
@@ -101,7 +91,7 @@ const heroB = [17, 47, 62, 84]
         <div class="home__head">
           <h2 id="destaque" class="home__h2">
             <template v-if="filtering">
-              {{ results.length }} {{ results.length === 1 ? 'timeline' : 'timelines' }}
+              {{ total }} {{ total === 1 ? 'timeline' : 'timelines' }}
               <template v-if="query"> para “{{ query }}”</template>
               <template v-if="category"> em {{ category }}</template>
             </template>
@@ -109,7 +99,9 @@ const heroB = [17, 47, 62, 84]
           </h2>
           <TlSegmented v-model="order" label="Ordenar timelines" :options="orders" />
         </div>
-        <div v-if="results.length" class="home__grid">
+        <p v-if="error" class="home__error" role="alert">{{ error }}</p>
+        <div v-if="!page" class="home__grid" aria-busy="true"></div>
+        <div v-else-if="results.length" class="home__grid">
           <TlTimelineCard
             v-for="t in results"
             :key="t.slug"
@@ -117,36 +109,21 @@ const heroB = [17, 47, 62, 84]
             :title="t.title"
             :description="t.description"
             :color="t.color"
-            :points="trackPoints(t)"
+            :points="t.points"
             :range="rangeLabel(t)"
-            :events="t.events.length"
-            :contributors="contributors(t).length"
-            :author="t.owner"
+            :events="t.eventCount"
+            :contributors="t.contributorCount"
+            :author="handleLabel(t.owner.handle)"
           />
         </div>
         <TlCard v-else tone="muted" class="home__empty">
-          <p>Nenhuma timeline encontrada. Tente outra busca ou crie a sua.</p>
+          <p v-if="filtering">Nenhuma timeline encontrada. Tente outra busca ou crie a sua.</p>
+          <p v-else>Ainda não há timelines públicas. Que tal criar a primeira?</p>
           <div class="home__empty-actions">
-            <TlButton :to="{ query: {} }">Limpar busca</TlButton>
+            <TlButton v-if="filtering" :to="{ query: {} }">Limpar busca</TlButton>
             <TlButton to="/nova" variant="dark" icon="plus">Criar timeline</TlButton>
           </div>
         </TlCard>
-      </section>
-
-      <section class="home__section" aria-labelledby="comparacoes">
-        <div class="home__head">
-          <h2 id="comparacoes" class="home__h2">Comparações populares</h2>
-          <RouterLink to="/comparar" class="home__more">Montar uma comparação</RouterLink>
-        </div>
-        <div class="home__grid home__grid--wide">
-          <TlCard v-for="p in pairs" :key="p.timelines.join()" :to="compareLink(p.timelines)" class="pair">
-            <div class="pair__names">
-              <TlTrackLabel color="a">{{ p.items[0].title }}</TlTrackLabel>
-              <TlTrackLabel color="b">{{ p.items[1].title }}</TlTrackLabel>
-            </div>
-            <p class="pair__note">{{ p.note }}</p>
-          </TlCard>
-        </div>
       </section>
 
       <TlCard tone="inverse" padding="lg" class="cta">
@@ -161,6 +138,10 @@ const heroB = [17, 47, 62, 84]
 </template>
 
 <style scoped>
+.home__error {
+  font-size: var(--tl-text-md);
+  color: var(--tl-color-warning-strong);
+}
 .hero {
   background: var(--tl-color-surface);
   border-bottom: 1px solid var(--tl-color-border);
@@ -279,17 +260,10 @@ const heroB = [17, 47, 62, 84]
 .home__h2 {
   font-size: var(--tl-text-3xl);
 }
-.home__more {
-  font-weight: var(--tl-weight-semibold);
-  padding: 10px 0;
-}
 .home__grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr));
   gap: var(--tl-space-5);
-}
-.home__grid--wide {
-  grid-template-columns: repeat(auto-fill, minmax(min(340px, 100%), 1fr));
 }
 .home__empty {
   display: flex;
@@ -301,20 +275,6 @@ const heroB = [17, 47, 62, 84]
   display: flex;
   flex-wrap: wrap;
   gap: var(--tl-space-2);
-}
-.pair {
-  display: flex;
-  flex-direction: column;
-  gap: var(--tl-space-4);
-}
-.pair__names {
-  display: flex;
-  flex-direction: column;
-  gap: var(--tl-space-2);
-}
-.pair__note {
-  font-size: var(--tl-text-md);
-  color: var(--tl-color-text-muted);
 }
 .cta {
   display: flex;

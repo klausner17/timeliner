@@ -13,6 +13,8 @@ withDefaults(
     createTo?: RouteLocationRaw
     profileTo?: RouteLocationRaw
     userName?: string
+    /** Sem usuário (userName vazio), mostra "Entrar" apontando para cá. */
+    loginTo?: RouteLocationRaw
   }>(),
   { home: '/' },
 )
@@ -37,6 +39,7 @@ withDefaults(
       <RouterLink v-if="profileTo && userName" :to="profileTo" class="tl-header__profile" aria-label="Seu perfil">
         <TlAvatar :name="userName" tint="a" decorative />
       </RouterLink>
+      <TlButton v-else-if="loginTo" :to="loginTo">Entrar</TlButton>
     </div>
   </header>
 </template>

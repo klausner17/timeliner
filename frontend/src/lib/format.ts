@@ -36,3 +36,29 @@ export async function copyLink(url: string): Promise<boolean> {
     return false
   }
 }
+
+/** "agora", "há 5 minutos", "há 3 dias"... a partir de uma data ISO da API. */
+export function timeAgo(iso: string, now = Date.now()): string {
+  const s = Math.max(0, Math.round((now - Date.parse(iso)) / 1000))
+  const steps: [number, string, string][] = [
+    [60, 'minuto', 'minutos'],
+    [3600, 'hora', 'horas'],
+    [86400, 'dia', 'dias'],
+    [2592000, 'mês', 'meses'],
+    [31536000, 'ano', 'anos'],
+  ]
+  if (s < 60) return 'agora'
+  let label = ''
+  for (const [size, one, many] of steps) {
+    if (s < size) break
+    const n = Math.floor(s / size)
+    label = `há ${n} ${n === 1 ? one : many}`
+  }
+  return label
+}
+
+/** "outubro de 2026", para "Membro desde". */
+export function monthYear(iso: string): string {
+  const d = new Date(iso)
+  return `${months[d.getUTCMonth()].toLowerCase()} de ${d.getUTCFullYear()}`
+}

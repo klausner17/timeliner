@@ -65,6 +65,13 @@ Toda resposta de erro tem o formato `{"error": {"code", "message", "fields?"}}`:
 | `PORT` | `8080` |
 | `DATABASE_URL` | `postgres://timeliner:timeliner@localhost:5432/timeliner?sslmode=disable` |
 | `MIGRATE` | as migrations rodam na subida; `false` pula essa etapa |
+| `SIGNUP` | aberto; `closed` faz o `POST /auth/register` responder 403 |
+
+Com o cadastro fechado, a conta é criada pelo próprio binário. A senha vem da primeira linha da entrada padrão:
+
+```sh
+printf '%s\n' "$SENHA" | api create-user -handle klausner -name Klausner -email voce@exemplo.com
+```
 
 As migrations ficam em `internal/repository/postgres/migrations/`, embutidas no binário.
 

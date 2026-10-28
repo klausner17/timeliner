@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import {
   TlAvatar,
@@ -15,19 +15,54 @@ import {
   TlTextarea,
   type BadgeTone,
 } from '@/design-system'
-import { canEdit, canView, decideSuggestion, findTimeline, findUser, suggest, suggestionsBy, suggestionsFor, undoSuggestion } from '@/data/store'
-import { currentUserHandle } from '@/data/mock'
-import type { Suggestion, SuggestionStatus, TimelineEvent } from '@/data/types'
-import { composeDate, dateLabel, months, yearLabel } from '@/lib/format'
+import { ApiError, errorMessage } from '@/data/api'
+import {
+  canEdit,
+  currentUser,
+  getTimeline,
+  handleLabel,
+  listContributions,
+  listSuggestions,
+  reopenSuggestion,
+  reviewSuggestion,
+  suggest,
+} from '@/data/store'
+import { suggestionKindLabel, type EventInput, type Suggestion, type SuggestionStatus, type Timeline } from '@/data/types'
+import { composeDate, dateLabel, months, timeAgo, yearLabel } from '@/lib/format'
 import NotFoundView from './NotFoundView.vue'
 
 const route = useRoute()
-const timeline = computed(() => {
-  const t = findTimeline(String(route.params.slug))
-  return t && canView(t) ? t : undefined
-})
+const status = ref<'loading' | 'ok' | 'missing' | 'error'>('loading')
+const statusError = ref('')
+const timeline = ref<Timeline>()
 const isOwner = computed(() => !!timeline.value && canEdit(timeline.value))
 const open = computed(() => timeline.value?.contributions === 'sugestoes')
+const loginPath = computed(() => `/entrar?next=${encodeURIComponent(route.fullPath)}`)
+
+/** Dono: a fila de sugestões. Outros: as próprias sugestões nesta timeline. */
+const suggestions = ref<Suggestion[]>([])
+
+watch(
+  [() => String(route.params.slug), () => currentUser.value?.handle],
+  async ([slug, me]) => {
+    status.value = 'loading'
+    try {
+      const t = await getTimeline(slug)
+      if (!t) {
+        status.value = 'missing'
+        return
+      }
+      timeline.value = t
+      if (canEdit(t)) suggestions.value = await listSuggestions(slug)
+      else suggestions.value = me ? (await listContributions(me)).filter((s) => s.timeline.slug === slug) : []
+      status.value = 'ok'
+    } catch (e) {
+      statusError.value = errorMessage(e, 'Não deu para carregar as sugestões.')
+      status.value = 'error'
+    }
+  },
+  { immediate: true },
+)
 
 // ---------- Formulário de sugestão ----------
 
@@ -48,8 +83,9 @@ const blank = () => ({
   note: '',
 })
 const form = reactive(blank())
-const image = ref<string>()
 const errors = ref<Record<string, string>>({})
+const sendError = ref('')
+const sending = ref(false)
 const sent = ref<Suggestion>()
 
 const monthOptions = [{ value: '', label: '—' }, ...months.map((m) => ({ value: m, label: m }))]
@@ -60,7 +96,7 @@ function eraFor(year: number) {
   return [...eras].reverse().find((e) => year >= e.start)?.name
 }
 
-const draft = computed<Omit<TimelineEvent, 'id' | 'by'> | undefined>(() => {
+const draft = computed<EventInput | undefined>(() => {
   const year = Number(form.year)
   if (!form.year || !Number.isInteger(year)) return undefined
   const endYear = form.period && form.endYear ? Number(form.endYear) : undefined
@@ -97,34 +133,67 @@ function validate() {
   return !Object.keys(e).length
 }
 
-function submit() {
-  if (!timeline.value || !validate() || !draft.value) {
-    // Leva o foco para o primeiro campo com erro.
-    const first = Object.keys(errors.value)[0]
-    if (first) document.querySelector<HTMLElement>(`[data-field="${first}"] input, [data-field="${first}"] textarea`)?.focus()
-    return
-  }
-  sent.value = suggest({ timeline: timeline.value.slug, kind: 'Novo evento', event: draft.value, note: form.note.trim() || undefined })
-  Object.assign(form, blank())
-  image.value = undefined
+function focusFirstError() {
+  const first = Object.keys(errors.value)[0]
+  if (first) document.querySelector<HTMLElement>(`[data-field="${first}"] input, [data-field="${first}"] textarea`)?.focus()
 }
 
-function pickImage(e: Event) {
-  image.value = (e.target as HTMLInputElement).files?.[0]?.name
+async function submit() {
+  sendError.value = ''
+  if (!timeline.value || !validate() || !draft.value) {
+    focusFirstError()
+    return
+  }
+  sending.value = true
+  try {
+    const s = await suggest(timeline.value.slug, { kind: 'new_event', event: draft.value, note: form.note.trim() || undefined })
+    suggestions.value = [s, ...suggestions.value]
+    sent.value = s
+    Object.assign(form, blank())
+  } catch (e) {
+    sendError.value = errorMessage(e, 'Não deu para enviar a sugestão.')
+    if (e instanceof ApiError && Object.keys(e.fields).length) {
+      errors.value = e.fields
+      focusFirstError()
+    }
+  } finally {
+    sending.value = false
+  }
 }
 
 // ---------- Revisão (dono) ----------
 
-const reviewing = computed(() => (timeline.value ? suggestionsFor(timeline.value.slug).filter((s) => s.by !== currentUserHandle || !isOwner.value) : []))
-const pendingCount = computed(() => reviewing.value.filter((s) => s.status === 'pendente').length)
-const mine = computed(() => (timeline.value ? suggestionsBy(currentUserHandle).filter((s) => s.timeline === timeline.value!.slug) : []))
+const pendingCount = computed(() => suggestions.value.filter((s) => s.status === 'pendente').length)
 
 const adjusting = ref<string>()
 const feedback = ref('')
-function askAdjust(id: string) {
-  decideSuggestion(id, 'ajuste', feedback.value.trim() || undefined)
-  adjusting.value = undefined
-  feedback.value = ''
+const busy = ref<string>()
+const reviewError = ref('')
+
+/** Troca a sugestão na lista pela versão que a API devolveu. */
+async function act(id: string, call: () => Promise<Suggestion>) {
+  busy.value = id
+  reviewError.value = ''
+  try {
+    const s = await call()
+    suggestions.value = suggestions.value.map((x) => (x.id === id ? s : x))
+    return true
+  } catch (e) {
+    reviewError.value = errorMessage(e, 'Não deu para registrar a decisão.')
+    return false
+  } finally {
+    busy.value = undefined
+  }
+}
+
+const decide = (id: string, decision: 'approve' | 'reject') => act(id, () => reviewSuggestion(id, decision))
+const undo = (id: string) => act(id, () => reopenSuggestion(id))
+
+async function askAdjust(id: string) {
+  if (await act(id, () => reviewSuggestion(id, 'request_changes', feedback.value.trim() || undefined))) {
+    adjusting.value = undefined
+    feedback.value = ''
+  }
 }
 
 const statusBadge: Record<SuggestionStatus, { label: string; tone: BadgeTone }> = {
@@ -136,7 +205,11 @@ const statusBadge: Record<SuggestionStatus, { label: string; tone: BadgeTone }> 
 </script>
 
 <template>
-  <NotFoundView v-if="!timeline" what="timeline" />
+  <main v-if="status === 'loading'" class="tl-container" aria-busy="true"></main>
+  <main v-else-if="status === 'error'" class="tl-container page">
+    <p class="page__lead" role="alert">{{ statusError }}</p>
+  </main>
+  <NotFoundView v-else-if="status === 'missing' || !timeline" what="timeline" />
   <main v-else class="tl-container page">
     <div class="page__head">
       <RouterLink :to="`/t/${timeline.slug}`" class="back"><TlIcon name="back" :size="14" />{{ timeline.title }}</RouterLink>
@@ -160,10 +233,15 @@ const statusBadge: Record<SuggestionStatus, { label: string; tone: BadgeTone }> 
         <TlButton :to="`/t/${timeline.slug}`">Voltar para a timeline</TlButton>
       </TlCard>
 
+      <TlCard v-else-if="!currentUser" tone="muted" padding="lg" class="closed">
+        <p>Entre na sua conta para sugerir eventos.</p>
+        <TlButton variant="primary" :to="loginPath">Entrar</TlButton>
+      </TlCard>
+
       <div v-else class="split">
         <TlCard v-if="sent" as="section" padding="lg" class="form sent" role="status">
           <h2 class="sent__title">Sugestão enviada</h2>
-          <p>“{{ sent.event.title }}” foi para {{ timeline.owner }}. Você acompanha a resposta no seu perfil, em Contribuições.</p>
+          <p>“{{ sent.event.title }}” foi para {{ handleLabel(timeline.owner.handle) }}. Você acompanha a resposta no seu perfil, em Contribuições.</p>
           <div class="sent__actions">
             <TlButton variant="primary" @click="sent = undefined">Sugerir outro evento</TlButton>
             <TlButton :to="`/t/${timeline.slug}`">Voltar para a timeline</TlButton>
@@ -210,22 +288,15 @@ const statusBadge: Record<SuggestionStatus, { label: string; tone: BadgeTone }> 
             </TlField>
           </div>
 
-          <div class="upload">
-            <span class="upload__label">Imagem (opcional)</span>
-            <label for="imagem" class="upload__drop">
-              <TlIcon name="image" :size="24" />
-              <span>{{ image ?? 'Arraste uma imagem ou clique para escolher' }}</span>
-              <input id="imagem" type="file" accept="image/*" class="tl-visually-hidden" @change="pickImage" />
-            </label>
-          </div>
 
           <TlField v-slot="{ id }" label="Recado para o dono (opcional)">
             <TlInput :id="id" v-model="form.note" placeholder="Por que esse evento deveria entrar?" />
           </TlField>
 
+          <p v-if="sendError" class="form__error" role="alert">{{ sendError }}</p>
           <div class="form__actions">
             <TlButton :to="`/t/${timeline.slug}`" variant="ghost">Cancelar</TlButton>
-            <TlButton type="submit" variant="primary">Enviar sugestão</TlButton>
+            <TlButton type="submit" variant="primary" :disabled="sending">{{ sending ? 'Enviando…' : 'Enviar sugestão' }}</TlButton>
           </div>
         </TlCard>
 
@@ -250,10 +321,10 @@ const statusBadge: Record<SuggestionStatus, { label: string; tone: BadgeTone }> 
               <li><span aria-hidden="true">3</span>Aprovado, o evento entra com seu nome como contribuidor.</li>
             </ol>
           </TlCard>
-          <TlCard v-if="mine.length" class="how">
+          <TlCard v-if="suggestions.length" class="how">
             <h2 class="how__title">Suas sugestões aqui</h2>
             <ul class="mine">
-              <li v-for="s in mine" :key="s.id">
+              <li v-for="s in suggestions" :key="s.id">
                 <span>{{ s.event.title }}</span>
                 <TlBadge :tone="statusBadge[s.status].tone">{{ statusBadge[s.status].label }}</TlBadge>
               </li>
@@ -269,15 +340,16 @@ const statusBadge: Record<SuggestionStatus, { label: string; tone: BadgeTone }> 
         <h2 id="revisar-titulo" class="review__title">Sugestões</h2>
         <span class="review__count">{{ pendingCount }} {{ pendingCount === 1 ? 'pendente' : 'pendentes' }}</span>
       </div>
-      <TlCard v-if="!reviewing.length" tone="muted">Ninguém sugeriu eventos ainda.</TlCard>
-      <TlCard v-for="s in reviewing" :key="s.id" as="article" class="sug">
-        <TlAvatar :name="s.by" :tint="findUser(s.by).tint" size="lg" decorative />
+      <p v-if="reviewError" class="form__error" role="alert">{{ reviewError }}</p>
+      <TlCard v-if="!suggestions.length" tone="muted">Ninguém sugeriu eventos ainda.</TlCard>
+      <TlCard v-for="s in suggestions" :key="s.id" as="article" class="sug">
+        <TlAvatar :name="s.by" tint="neutral" size="lg" decorative />
         <div class="sug__body">
           <div class="sug__line">
             <strong class="sug__title">{{ s.event.title }}</strong>
             <span class="sug__muted">{{ dateLabel(s.event) }}</span>
           </div>
-          <span class="sug__muted">{{ s.kind }} por {{ s.by }} · {{ s.when }}</span>
+          <span class="sug__muted">{{ suggestionKindLabel[s.kind] }} por {{ handleLabel(s.by) }} · {{ timeAgo(s.createdAt) }}</span>
           <p class="sug__desc">{{ s.event.description }}</p>
           <p v-if="s.note" class="sug__note">“{{ s.note }}”</p>
           <a v-if="s.event.sourceUrl" :href="s.event.sourceUrl" target="_blank" rel="noopener" class="sug__source">Fonte</a>
@@ -287,18 +359,18 @@ const statusBadge: Record<SuggestionStatus, { label: string; tone: BadgeTone }> 
             </TlField>
             <div class="adjust__actions">
               <TlButton size="sm" variant="ghost" @click="adjusting = undefined">Cancelar</TlButton>
-              <TlButton size="sm" type="submit" variant="primary">Enviar pedido</TlButton>
+              <TlButton size="sm" type="submit" variant="primary" :disabled="busy === s.id">Enviar pedido</TlButton>
             </div>
           </form>
         </div>
         <div v-if="s.status === 'pendente' && adjusting !== s.id" class="sug__actions">
-          <TlButton @click="decideSuggestion(s.id, 'recusada')">Recusar</TlButton>
-          <TlButton @click="adjusting = s.id">Pedir ajuste</TlButton>
-          <TlButton variant="success" icon="check" @click="decideSuggestion(s.id, 'aprovada')">Aprovar</TlButton>
+          <TlButton :disabled="busy === s.id" @click="decide(s.id, 'reject')">Recusar</TlButton>
+          <TlButton :disabled="busy === s.id" @click="adjusting = s.id">Pedir ajuste</TlButton>
+          <TlButton variant="success" icon="check" :disabled="busy === s.id" @click="decide(s.id, 'approve')">Aprovar</TlButton>
         </div>
         <div v-else-if="s.status !== 'pendente'" class="sug__actions">
           <TlBadge size="md" :tone="statusBadge[s.status].tone">{{ statusBadge[s.status].label }}</TlBadge>
-          <TlButton variant="ghost" @click="undoSuggestion(s.id)">Desfazer</TlButton>
+          <TlButton variant="ghost" :disabled="busy === s.id" @click="undo(s.id)">Desfazer</TlButton>
         </div>
       </TlCard>
     </section>
@@ -335,6 +407,10 @@ const statusBadge: Record<SuggestionStatus, { label: string; tone: BadgeTone }> 
   max-width: 640px;
   font-size: 16px;
   color: var(--tl-color-text-muted);
+}
+.form__error {
+  font-size: var(--tl-text-md);
+  color: var(--tl-color-warning-strong);
 }
 .closed {
   display: flex;
@@ -385,33 +461,6 @@ const statusBadge: Record<SuggestionStatus, { label: string; tone: BadgeTone }> 
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: var(--tl-space-4);
-}
-.upload {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.upload__label {
-  font-size: var(--tl-text-md);
-  font-weight: var(--tl-weight-semibold);
-}
-.upload__drop {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  padding: var(--tl-space-6);
-  border: 1.5px dashed var(--tl-color-border-strong);
-  border-radius: 12px;
-  background: var(--tl-color-surface-muted);
-  color: var(--tl-color-text-muted);
-  font-size: var(--tl-text-md);
-  text-align: center;
-  cursor: pointer;
-}
-.upload__drop:focus-within {
-  outline: 2px solid var(--tl-color-focus);
-  outline-offset: 2px;
 }
 .form__actions {
   display: flex;

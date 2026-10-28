@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/klausner17/timeliner/backend/internal/domain"
@@ -41,11 +42,21 @@ type RegisterInput struct {
 }
 
 // Register cria a conta e já devolve uma sessão.
-type Register struct{ d *Deps }
+type Register struct {
+	d *Deps
+	// ignoreClosed deixa o comando create-user criar contas com o cadastro fechado.
+	ignoreClosed bool
+}
 
-func NewRegister(d *Deps) *Register { return &Register{d} }
+func NewRegister(d *Deps) *Register { return &Register{d: d} }
+
+// NewAdminRegister cria contas mesmo com o cadastro fechado (comando create-user).
+func NewAdminRegister(d *Deps) *Register { return &Register{d: d, ignoreClosed: true} }
 
 func (uc *Register) Execute(ctx context.Context, in RegisterInput) (AuthOutput, error) {
+	if uc.d.SignupClosed && !uc.ignoreClosed {
+		return AuthOutput{}, domain.Forbidden("O cadastro está fechado no momento.")
+	}
 	in.Handle = strings.TrimSpace(in.Handle)
 	in.Name = strings.TrimSpace(in.Name)
 	in.Email = strings.ToLower(strings.TrimSpace(in.Email))
@@ -94,13 +105,35 @@ type LoginInput struct {
 	Password string
 }
 
-type Login struct{ d *Deps }
+// Limite de senhas erradas por e-mail, contra tentativa e erro numa conta. Por
+// e-mail e não por IP: atrás do proxy o IP do cliente não é confiável.
+const (
+	loginMaxFailures = 10
+	loginWindow      = 15 * time.Minute
+)
 
-func NewLogin(d *Deps) *Login { return &Login{d} }
+type loginFailures struct {
+	count int
+	since time.Time
+}
+
+type Login struct {
+	d        *Deps
+	mu       sync.Mutex
+	failures map[string]loginFailures
+}
+
+func NewLogin(d *Deps) *Login { return &Login{d: d, failures: map[string]loginFailures{}} }
 
 func (uc *Login) Execute(ctx context.Context, in LoginInput) (AuthOutput, error) {
-	u, err := uc.d.Users.ByEmail(ctx, strings.ToLower(strings.TrimSpace(in.Email)))
+	email := strings.ToLower(strings.TrimSpace(in.Email))
+	now := uc.d.Clock.Now()
+	if uc.blocked(email, now) {
+		return AuthOutput{}, domain.Unauthorized("Muitas tentativas com este e-mail. Espere alguns minutos e tente de novo.")
+	}
+	u, err := uc.d.Users.ByEmail(ctx, email)
 	if errors.Is(err, domain.ErrNotFound) || (err == nil && !uc.d.Hasher.Compare(u.PasswordHash, in.Password)) {
+		uc.fail(email, now)
 		return AuthOutput{}, domain.Unauthorized("E-mail ou senha incorretos.")
 	}
 	if err != nil {
@@ -110,7 +143,40 @@ func (uc *Login) Execute(ctx context.Context, in LoginInput) (AuthOutput, error)
 	if err != nil {
 		return AuthOutput{}, err
 	}
+	uc.mu.Lock()
+	delete(uc.failures, email)
+	uc.mu.Unlock()
 	return AuthOutput{Token: token, User: *u}, nil
+}
+
+func (uc *Login) blocked(email string, now time.Time) bool {
+	uc.mu.Lock()
+	defer uc.mu.Unlock()
+	f, ok := uc.failures[email]
+	if ok && now.Sub(f.since) >= loginWindow {
+		delete(uc.failures, email)
+		return false
+	}
+	return f.count >= loginMaxFailures
+}
+
+func (uc *Login) fail(email string, now time.Time) {
+	uc.mu.Lock()
+	defer uc.mu.Unlock()
+	// E-mails inventados também entram: de tempos em tempos, tira os vencidos.
+	if len(uc.failures) >= 10_000 {
+		for k, f := range uc.failures {
+			if now.Sub(f.since) >= loginWindow {
+				delete(uc.failures, k)
+			}
+		}
+	}
+	f := uc.failures[email]
+	if f.count == 0 {
+		f.since = now
+	}
+	f.count++
+	uc.failures[email] = f
 }
 
 // Authenticate troca um token pelo ID do usuário. O controller usa em toda requisição com token.
