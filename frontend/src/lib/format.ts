@@ -1,8 +1,10 @@
 import type { TimelineEvent } from '@/data/types'
+import { formatYear, formatYearRange } from '@/design-system/years'
 
-/** Ano curto para a coluna da timeline: "1992" ou "1983–84". */
+/** Ano curto para a coluna da timeline: "1992", "1983–84" ou "27 a.C.–14 d.C.". */
 export function yearLabel(e: Pick<TimelineEvent, 'year' | 'endYear'>): string {
-  if (!e.endYear || e.endYear === e.year) return `${e.year}`
+  if (!e.endYear || e.endYear === e.year) return formatYear(e.year)
+  if (e.year < 0) return formatYearRange(e.year, e.endYear)
   const end = `${e.endYear}`
   return `${e.year}–${end.slice(0, 2) === `${e.year}`.slice(0, 2) ? end.slice(2) : end}`
 }
@@ -12,7 +14,7 @@ type Dated = Moment & Pick<TimelineEvent, 'endYear'>
 
 /** Data montada com mês, dia e hora, ou o período em anos. */
 export function dateLabel(e: Dated): string {
-  return momentLabel(e) ?? (e.endYear && e.endYear !== e.year ? `${e.year}–${e.endYear}` : `${e.year}`)
+  return momentLabel(e) ?? formatYearRange(e.year, e.endYear ?? e.year)
 }
 
 /** A data ao lado do ano na timeline, só quando ela diz mais que o ano. */
@@ -31,14 +33,15 @@ export const monthOptions = [{ value: '', label: '—' }, ...months.map((m, i) =
 export function momentLabel(e: Moment): string | undefined {
   const name = e.month ? months[e.month - 1] : undefined
   if (!name) return undefined
-  if (!e.day) return `${name} de ${e.year}`
-  const date = `${e.day === 1 ? '1º' : e.day} de ${name.toLowerCase()} de ${e.year}`
+  if (!e.day) return `${name} de ${formatYear(e.year)}`
+  const date = `${e.day === 1 ? '1º' : e.day} de ${name.toLowerCase()} de ${formatYear(e.year)}`
   return e.time ? `${date}, às ${e.time}` : date
 }
 
-/** Dias do mês no calendário gregoriano, com a mesma regra de bissexto do backend. */
+/** Dias do mês no calendário gregoriano, com a mesma regra do backend: 1 a.C. (-1) é o ano 0 astronômico. */
 export function daysInMonth(year: number, month: number): number {
-  if (month === 2) return year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0) ? 29 : 28
+  const y = year < 0 ? year + 1 : year
+  if (month === 2) return y % 4 === 0 && (y % 100 !== 0 || y % 400 === 0) ? 29 : 28
   return [4, 6, 9, 11].includes(month) ? 30 : 31
 }
 

@@ -92,6 +92,6 @@ A vitrine com todos os tokens e componentes está em `/design-system` (`frontend
 | Grupo | Componentes |
 | --- | --- |
 | Base | `TlButton`, `TlIcon`, `TlLogo`, `TlCard`, `TlBadge`, `TlAvatar`, `TlStat` |
-| Formulário | `TlField`, `TlInput`, `TlTextarea`, `TlSelect`, `TlCheckbox`, `TlRadioGroup`, `TlColorPicker` |
+| Formulário | `TlField`, `TlInput`, `TlYearInput`, `TlTextarea`, `TlSelect`, `TlCheckbox`, `TlRadioGroup`, `TlColorPicker` |
 | Navegação e seleção | `TlAppHeader`, `TlTabs`, `TlSegmented`, `TlChip` |
 | Timeline | `TlTimelineCard`, `TlMiniTrack`, `TlTrackLabel`, `TlEventItem`, `TlOverviewBar`, `TlCompareTracks` |

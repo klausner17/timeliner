@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { TrackColor } from '../tokens'
+import { formatYear } from '../years'
 
 export type OverviewBucket = { from: number; to: number; count: number }
 /** Uma timeline no minimapa: anos soltos ou faixas já contadas (timelines grandes). */
@@ -127,7 +128,7 @@ function onKey(ev: KeyboardEvent) {
 <template>
   <div class="tl-overview" :class="{ 'tl-overview--interactive': interactive }" :style="{ '--track': `var(--tl-track-${color})` }">
     <div class="tl-overview__ticks" aria-hidden="true">
-      <span v-for="t in tickList" :key="t" :style="{ left: `${pct(t)}%` }">{{ t }}</span>
+      <span v-for="t in tickList" :key="t" :style="{ left: `${pct(t)}%` }">{{ formatYear(t) }}</span>
     </div>
     <div
       ref="bar"

@@ -8,9 +8,11 @@ type When = Pick<TimelineEvent, 'year' | 'month' | 'day' | 'time'>
 const brazilianDate = /^(?:(\d{1,2})\/)?(\d{1,2})\/(-?\d{1,4})(?:\s+(\d{1,2}:\d{2}))?$/
 const isoDate = /^(-?\d{1,4})-(\d{1,2})(?:-(\d{1,2})(?:[T\s](\d{1,2}:\d{2}))?)?$/
 
-function fromParts(day: string, month: string, year: string, time: string): When | undefined {
+const withEpoch = /^(.*\d)\s*([ad])\.?\s?c\.?$/i
+
+function fromParts(day: string, month: string, year: string, time: string, sign: number): When | undefined {
   const m = Number(month)
-  const y = Number(year)
+  const y = Number(year) * sign
   if (!Number.isInteger(y) || m < 1 || m > 12 || (time && !day)) return undefined
   if (!day) return { year: y, month: m }
   const d = Number(day)
@@ -19,12 +21,22 @@ function fromParts(day: string, month: string, year: string, time: string): When
   return time ? { year: y, month: m, day: d, time: t } : { year: y, month: m, day: d }
 }
 
+/** Lê "1888", "-500", "500 a.C.", "13/05/1888", "15/03/44 a.C.", "1888-05-13 14:30"... */
 export function parseWhen(cell: string): When | undefined {
-  if (/^-?\d+$/.test(cell)) return { year: Number(cell) }
+  const epoch = cell.match(withEpoch)
+  const core = epoch ? epoch[1].trim() : cell
+  const sign = epoch?.[2].toLowerCase() === 'a' ? -1 : 1
+  if (epoch && core.startsWith('-')) return undefined
+  const when = parseCore(core, sign)
+  return epoch && when?.year === 0 ? undefined : when
+}
+
+function parseCore(cell: string, sign: number): When | undefined {
+  if (/^-?\d+$/.test(cell)) return { year: Number(cell) * sign }
   const br = cell.match(brazilianDate)
-  if (br) return fromParts(br[1] ?? '', br[2], br[3], br[4] ?? '')
+  if (br) return fromParts(br[1] ?? '', br[2], br[3], br[4] ?? '', sign)
   const iso = cell.match(isoDate)
-  if (iso) return fromParts(iso[3] ?? '', iso[2], iso[1], iso[4] ?? '')
+  if (iso) return fromParts(iso[3] ?? '', iso[2], iso[1], iso[4] ?? '', sign)
   return undefined
 }
 

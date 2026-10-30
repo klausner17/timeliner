@@ -106,6 +106,7 @@ func TestEventMomentValidation(t *testing.T) {
 	}{
 		"dia sem mês":        {domain.EventData{Year: 1900, Day: ptr(3)}, "day"},
 		"29 de fevereiro":    {domain.EventData{Year: 1900, Month: ptr(2), Day: ptr(29)}, "day"},
+		"29/02 de 4 a.C.":    {domain.EventData{Year: -4, Month: ptr(2), Day: ptr(29)}, "day"},
 		"mês 13":             {domain.EventData{Year: 1900, Month: ptr(13)}, "month"},
 		"hora sem dia":       {domain.EventData{Year: 1900, Month: ptr(2), Time: ptr("10:00")}, "time"},
 		"hora fora do range": {domain.EventData{Year: 1900, Month: ptr(2), Day: ptr(3), Time: ptr("24:00")}, "time"},
@@ -123,6 +124,10 @@ func TestEventMomentValidation(t *testing.T) {
 		Event: domain.EventData{Year: 2024, Month: ptr(2), Day: ptr(29), Time: ptr(" "), Title: "Bissexto"}}))
 	if leap.Event.Time != nil {
 		t.Fatalf("hora em branco devia virar nil: %+v", leap.Event)
+	}
+	for _, year := range []int{-1, -5} {
+		must[usecase.EventView](t)(create.Execute(ctx, usecase.CreateEventInput{ActorID: ana.ID, Slug: "brasil",
+			Event: domain.EventData{Year: year, Month: ptr(2), Day: ptr(29), Title: "Bissexto a.C."}}))
 	}
 	updated := must[usecase.EventView](t)(usecase.NewUpdateEvent(d).Execute(ctx, usecase.UpdateEventInput{
 		ActorID: ana.ID, Slug: "brasil", EventID: leap.Event.ID, Patch: usecase.EventPatch{Time: ptr(ptr("23:59"))},

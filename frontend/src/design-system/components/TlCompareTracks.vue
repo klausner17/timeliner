@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { TrackColor } from '../tokens'
 import TlButton from './TlButton.vue'
+import { formatYear, formatYearRange } from '../years'
 import { clampWindow, layout, niceStep, zoomWindow, type CompareBucket, type CompareEvent, type TrackItem } from './trackLayout'
 
 export type { CompareBucket, CompareEvent }
@@ -113,9 +114,8 @@ function edgesOf(lane: CompareLane) {
   }
 }
 
-const label = computed(() => `Comparação de ${start.value} a ${end.value}`)
-/** "1930–1945", ou "-1813 a -876" quando o traço confundiria com o sinal de menos. */
-const rangeText = (from: number, to: number) => (from === to ? `${from}` : from < 0 || to < 0 ? `${from} a ${to}` : `${from}–${to}`)
+const label = computed(() => `Comparação de ${formatYear(start.value)} a ${formatYear(end.value)}`)
+const rangeText = formatYearRange
 
 // ---------- Zoom ----------
 
@@ -212,7 +212,7 @@ function onPointerUp(ev: PointerEvent) {
       <div class="tl-compare__row">
         <div></div>
         <div class="tl-compare__ticks" aria-hidden="true">
-          <span v-for="t in ticks" :key="t" :style="{ left: `${pct(t)}%` }">{{ t }}</span>
+          <span v-for="t in ticks" :key="t" :style="{ left: `${pct(t)}%` }">{{ formatYear(t) }}</span>
         </div>
       </div>
       <div class="tl-compare__row">
@@ -246,12 +246,12 @@ function onPointerUp(ev: PointerEvent) {
             <template v-if="lane.edges.before">
               <div class="tl-compare__void" :style="{ left: 0, width: `${lane.edges.before.x}%` }" aria-hidden="true"></div>
               <div class="tl-compare__cap" :style="{ left: `${lane.edges.before.x}%` }" aria-hidden="true"></div>
-              <span class="tl-compare__edge" :style="{ left: `${lane.edges.before.x}%` }">Início em {{ lane.edges.before.year }}</span>
+              <span class="tl-compare__edge" :style="{ left: `${lane.edges.before.x}%` }">Início em {{ formatYear(lane.edges.before.year) }}</span>
             </template>
             <template v-if="lane.edges.after">
               <div class="tl-compare__void" :style="{ left: `${lane.edges.after.x}%`, right: 0 }" aria-hidden="true"></div>
               <div class="tl-compare__cap" :style="{ left: `${lane.edges.after.x}%` }" aria-hidden="true"></div>
-              <span class="tl-compare__edge" :style="{ right: `${100 - lane.edges.after.x}%` }">Fim em {{ lane.edges.after.year }}</span>
+              <span class="tl-compare__edge" :style="{ right: `${100 - lane.edges.after.x}%` }">Fim em {{ formatYear(lane.edges.after.year) }}</span>
             </template>
             <div class="tl-compare__axis" :style="{ left: `${lane.edges.axis.left}%`, width: `${lane.edges.axis.width}%` }" aria-hidden="true"></div>
             <div
@@ -280,7 +280,7 @@ function onPointerUp(ev: PointerEvent) {
                 :aria-pressed="selected === e.event.id"
                 @click="selected = e.event.id"
               >
-                <span class="tl-compare__year">{{ e.event.year }}</span>
+                <span class="tl-compare__year">{{ formatYear(e.event.year) }}</span>
                 <span class="tl-compare__title" :title="e.event.title">{{ e.event.title }}</span>
               </button>
               <button
@@ -290,7 +290,7 @@ function onPointerUp(ev: PointerEvent) {
                 :class="{ 'tl-compare__event--end': e.alignEnd }"
                 :style="e.alignEnd ? { right: `${100 - e.x}%`, top: `${e.top}px` } : { left: `${e.x}%`, top: `${e.top}px` }"
                 :aria-label="`${e.count} eventos de ${e.from} a ${e.to}${zoomable ? '. Aproximar' : ''}`"
-                :title="e.sample.map((s) => `${s.year} · ${s.title}`).join('\n')"
+                :title="e.sample.map((s) => `${formatYear(s.year)} · ${s.title}`).join('\n')"
                 @click="openCluster(e)"
               >
                 <span class="tl-compare__year">{{ rangeText(e.from, e.to) }}</span>

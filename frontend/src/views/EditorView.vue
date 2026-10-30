@@ -12,6 +12,10 @@ import {
   TlRadioGroup,
   TlSelect,
   TlTextarea,
+  TlYearInput,
+  signedYear,
+  yearFields,
+  type Epoch,
 } from '@/design-system'
 import { errorMessage } from '@/data/api'
 import { canEdit, createEvent, deleteEvent, deleteTimeline, getTimeline, loadAllEvents, updateEvent, updateTimeline } from '@/data/store'
@@ -151,8 +155,20 @@ const inviteMsg = ref('')
 
 // ---------- Formulário de evento ----------
 
-type Form = { year: string; month: string; day: string; time: string; endYear: string; era: string; title: string; description: string; source: string }
-const blank = (): Form => ({ year: '', month: '', day: '', time: '', endYear: '', era: '', title: '', description: '', source: '' })
+type Form = {
+  year: string
+  yearEpoch: Epoch
+  month: string
+  day: string
+  time: string
+  endYear: string
+  endEpoch: Epoch
+  era: string
+  title: string
+  description: string
+  source: string
+}
+const blank = (): Form => ({ year: '', yearEpoch: 'dC', month: '', day: '', time: '', endYear: '', endEpoch: 'dC', era: '', title: '', description: '', source: '' })
 const form = reactive<Form>(blank())
 const formOpen = ref(false)
 const editing = ref<string>()
@@ -171,10 +187,14 @@ function openNew() {
 }
 
 function openEdit(e: TimelineEvent) {
+  const start = yearFields(e.year)
+  const end = yearFields(e.endYear)
   Object.assign(form, {
-    year: String(e.year),
+    year: start.text,
+    yearEpoch: start.epoch,
     ...momentFields(e),
-    endYear: e.endYear ? String(e.endYear) : '',
+    endYear: end.text,
+    endEpoch: end.epoch,
     era: e.era ?? '',
     title: e.title,
     description: e.description,
@@ -198,16 +218,16 @@ function place(e: TimelineEvent) {
 async function submit() {
   const t = timeline.value
   if (!t || sending.value) return
-  const year = Number(form.year)
-  const endYear = form.endYear ? Number(form.endYear) : undefined
-  const moment = readMoment(year, form)
+  const year = signedYear(form.year, form.yearEpoch)
+  const endYear = form.endYear.trim() ? signedYear(form.endYear, form.endEpoch) : undefined
+  const moment = readMoment(year ?? 1, form)
   const e: typeof errors.value = { ...moment.errors }
-  if (!form.year || !Number.isInteger(year)) e.year = 'Informe o ano.'
-  if (endYear !== undefined && (!Number.isInteger(endYear) || endYear < year)) e.endYear = 'O fim precisa ser depois do começo.'
+  if (year === undefined) e.year = 'Informe o ano, a partir de 1, e escolha a.C. ou d.C.'
+  if (form.endYear.trim() && (endYear === undefined || (year !== undefined && endYear < year))) e.endYear = 'O fim precisa ser depois do começo.'
   if (!form.title.trim()) e.title = 'Dê um título ao evento.'
   errors.value = e
   formError.value = ''
-  if (Object.keys(e).length) return
+  if (Object.keys(e).length || year === undefined) return
 
   const data: EventInput = {
     year,
@@ -389,10 +409,10 @@ async function destroy() {
           <h3 class="form__title">{{ editing ? 'Editar evento' : 'Novo evento' }}</h3>
           <div class="form__grid">
             <TlField v-slot="{ id, describedby, invalid }" label="Ano" :error="errors.year">
-              <TlInput :id="id" v-model="form.year" inputmode="numeric" :aria-describedby="describedby" :invalid="invalid" />
+              <TlYearInput :id="id" v-model="form.year" v-model:epoch="form.yearEpoch" :aria-describedby="describedby" :invalid="invalid" />
             </TlField>
             <TlField v-slot="{ id, describedby, invalid }" label="Até (opcional)" :error="errors.endYear">
-              <TlInput :id="id" v-model="form.endYear" inputmode="numeric" placeholder="Ano de fim" :aria-describedby="describedby" :invalid="invalid" />
+              <TlYearInput :id="id" v-model="form.endYear" v-model:epoch="form.endEpoch" placeholder="Ano de fim" :aria-describedby="describedby" :invalid="invalid" />
             </TlField>
             <TlField v-slot="{ id, describedby, invalid }" label="Mês (opcional)" :error="errors.month">
               <TlSelect :id="id" v-model="form.month" :options="monthOptions" :aria-describedby="describedby" :invalid="invalid" />
@@ -433,7 +453,7 @@ async function destroy() {
           </div>
         </TlCard>
         <TlCard v-else-if="!formOpen" tone="dashed" class="empty">
-          <p>Comece pelo primeiro evento. Você pode importar uma planilha com as colunas ano ou data; título; descrição; fonte. A data pode ser 13/05/1888, 05/1888 ou 1888-05-13, com hora opcional, como 13/05/1888 14:30.</p>
+          <p>Comece pelo primeiro evento. Você pode importar uma planilha com as colunas ano ou data; título; descrição; fonte. A data pode ser 13/05/1888, 05/1888 ou 1888-05-13, com hora opcional, como 13/05/1888 14:30. Para antes de Cristo, use 500 a.C. ou 15/03/44 a.C.</p>
           <TlButton variant="dark" icon="plus" @click="openNew">Novo evento</TlButton>
         </TlCard>
         <p class="main__note">Os eventos são ordenados pela data automaticamente.</p>
@@ -584,7 +604,7 @@ async function destroy() {
 }
 .form__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: var(--tl-space-3);
 }
 .form__actions {

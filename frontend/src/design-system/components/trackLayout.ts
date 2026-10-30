@@ -96,8 +96,9 @@ export function niceStep(span: number, target = 8): number {
 /** Marcações de um eixo de lo a hi: as pontas e os múltiplos de um passo legível, sem encostar nelas. */
 export function axisTicks(lo: number, hi: number, target = 8): number[] {
   const step = niceStep(hi - lo, target)
+  const clearance = step * 0.8
   const out = [lo]
-  for (let y = Math.ceil(lo / step) * step; y <= hi; y += step) if (y - lo >= step * 0.6 && hi - y >= step * 0.6) out.push(y)
+  for (let y = Math.ceil(lo / step) * step; y <= hi; y += step) if (y - lo >= clearance && hi - y >= clearance) out.push(y)
   return hi > lo ? [...out, hi] : out
 }
 

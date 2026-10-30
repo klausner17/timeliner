@@ -21,6 +21,7 @@ import type {
   UserSummary,
 } from './types'
 import type { EventPage, EventWindow, Overlap, WindowOptions } from './windowing'
+import { formatYearRange } from '@/design-system/years'
 
 // ---------- Nulos da API viram undefined ----------
 
@@ -99,7 +100,7 @@ export function yearRange(t: Pick<Timeline, 'startYear' | 'endYear'>): [number, 
 
 export function rangeLabel(t: Pick<Timeline, 'startYear' | 'endYear'>): string {
   const r = yearRange(t)
-  return r ? (r[0] === r[1] ? `${r[0]}` : `${r[0]}–${r[1]}`) : 'Sem datas'
+  return r ? formatYearRange(r[0], r[1]) : 'Sem datas'
 }
 
 export function canEdit(t: Pick<Timeline, 'owner'>) {

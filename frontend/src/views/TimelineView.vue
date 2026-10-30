@@ -32,6 +32,7 @@ import {
 import type { TimelineDetail, TimelineEvent, TimelinePage } from '@/data/types'
 import type { EventWindow } from '@/data/windowing'
 import { copyLink, dateLabel, detailedDateLabel, timeAgo, yearLabel } from '@/lib/format'
+import { formatYear, formatYearRange } from '@/design-system/years'
 import { useLatest } from '@/lib/useLatest'
 import NotFoundView from './NotFoundView.vue'
 import VideoExport from './timeline/VideoExport.vue'
@@ -135,7 +136,7 @@ const groups = computed<Group[]>(() => {
   if (!t) return []
   const events = loaded.value
   if (!t.eras.length) return [{ name: '', events }]
-  const out: Group[] = t.eras.map((e) => ({ name: e.name, range: `${e.start}–${e.end ?? 'hoje'}`, events: [] }))
+  const out: Group[] = t.eras.map((e) => ({ name: e.name, range: e.end === undefined ? `${formatYear(e.start)}–hoje` : formatYearRange(e.start, e.end), events: [] }))
   const loose: TimelineEvent[] = []
   for (const e of events) {
     const g = out.find((x) => x.name === e.era)

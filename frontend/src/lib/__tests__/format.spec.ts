@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { dateLabel, detailedDateLabel, momentLabel, readMoment } from '../format'
+import { dateLabel, daysInMonth, detailedDateLabel, momentLabel, readMoment, yearLabel } from '../format'
 
 describe('momentLabel', () => {
   it('monta a data com mês, dia e hora', () => {
@@ -36,5 +36,20 @@ describe('readMoment', () => {
     expect(read(1900, '2', '29').errors.day).toBeTruthy()
     expect(read(1961, '4', '31').errors.day).toBeTruthy()
     expect(read(1961, '4', '', '10:00').errors.time).toBeTruthy()
+  })
+})
+
+describe('antes de Cristo', () => {
+  it('mostra a.C. na data, no ano curto e no período', () => {
+    expect(momentLabel({ year: -44, month: 3, day: 15 })).toBe('15 de março de 44 a.C.')
+    expect(yearLabel({ year: -27, endYear: 14 })).toBe('27 a.C.–14 d.C.')
+    expect(yearLabel({ year: -500 })).toBe('500 a.C.')
+    expect(dateLabel({ year: -500, endYear: -450 })).toBe('500–450 a.C.')
+  })
+
+  it('usa o ano astronômico no bissexto: 1 a.C. e 5 a.C. são bissextos, 4 a.C. não', () => {
+    expect(daysInMonth(-1, 2)).toBe(29)
+    expect(daysInMonth(-5, 2)).toBe(29)
+    expect(daysInMonth(-4, 2)).toBe(28)
   })
 })

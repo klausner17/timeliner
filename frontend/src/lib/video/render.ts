@@ -1,4 +1,5 @@
 import type { TrackColor } from '@/design-system'
+import { formatYear } from '@/design-system/years'
 import { HOLD, beatAt, yearAt, type Beat, type Storyboard } from './storyboard'
 
 export const WIDTH = 1080
@@ -125,7 +126,7 @@ function drawChip(ctx: Ctx, theme: Theme, label: string, y: number) {
 
 function drawYear(ctx: Ctx, theme: Theme, year: number) {
   setText(ctx, `700 230px ${theme.display}`, theme.text, 'center')
-  ctx.fillText(`${Math.round(year)}`, WIDTH / 2, 720)
+  ctx.fillText(formatYear(Math.round(year)), WIDTH / 2, 720)
 }
 
 function axisX(sb: Storyboard, year: number) {

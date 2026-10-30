@@ -36,6 +36,17 @@ describe('parseWhen', () => {
     expect(parseWhen('ano')).toBeUndefined()
   })
 
+  it('aceita a.C. e d.C. depois do ano ou da data', () => {
+    expect(parseWhen('500 a.C.')).toEqual({ year: -500 })
+    expect(parseWhen('500aC')).toEqual({ year: -500 })
+    expect(parseWhen('15/03/44 a.C.')).toEqual({ year: -44, month: 3, day: 15 })
+    expect(parseWhen('14 d.C.')).toEqual({ year: 14 })
+    expect(parseWhen('29/02/1 a.C.')).toEqual({ year: -1, month: 2, day: 29 })
+    expect(parseWhen('29/02/4 a.C.')).toBeUndefined()
+    expect(parseWhen('0 a.C.')).toBeUndefined()
+    expect(parseWhen('-500 a.C.')).toBeUndefined()
+  })
+
   it('aceita 29 de fevereiro em ano bissexto', () => {
     expect(parseWhen('29/02/2000')).toEqual({ year: 2000, month: 2, day: 29 })
   })

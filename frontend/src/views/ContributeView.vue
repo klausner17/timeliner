@@ -13,7 +13,10 @@ import {
   TlInput,
   TlSelect,
   TlTextarea,
+  TlYearInput,
+  signedYear,
   type BadgeTone,
+  type Epoch,
 } from '@/design-system'
 import { ApiError, errorMessage } from '@/data/api'
 import {
@@ -74,9 +77,11 @@ const blank = () => ({
   month: '',
   time: '',
   year: '',
+  yearEpoch: 'dC' as Epoch,
   approximate: false,
   period: false,
   endYear: '',
+  endEpoch: 'dC' as Epoch,
   title: '',
   description: '',
   era: '',
@@ -97,14 +102,14 @@ function eraFor(year: number) {
 }
 
 const draft = computed<EventInput | undefined>(() => {
-  const year = Number(form.year)
-  if (!form.year || !Number.isInteger(year)) return undefined
-  const endYear = form.period && form.endYear ? Number(form.endYear) : undefined
+  const year = signedYear(form.year, form.yearEpoch)
+  if (year === undefined) return undefined
+  const endYear = form.period ? signedYear(form.endYear, form.endEpoch) : undefined
   const moment = readMoment(year, form)
   return {
     year,
     ...(form.approximate || Object.keys(moment.errors).length ? {} : moment.value),
-    endYear: endYear && Number.isInteger(endYear) ? endYear : undefined,
+    endYear,
     title: form.title.trim(),
     description: form.description.trim(),
     sourceUrl: form.source.trim() || undefined,
@@ -114,14 +119,14 @@ const draft = computed<EventInput | undefined>(() => {
 
 function validate() {
   const e: Record<string, string> = {}
-  const year = Number(form.year)
-  if (!form.year) e.year = 'Informe o ano.'
-  else if (!Number.isInteger(year) || year < -10000 || year > 2100) e.year = 'Use um ano válido, como 1992.'
-  if (!form.approximate) Object.assign(e, readMoment(year, form).errors)
+  const year = signedYear(form.year, form.yearEpoch)
+  if (!form.year.trim()) e.year = 'Informe o ano.'
+  else if (year === undefined || year < -10000 || year > 2100) e.year = 'Use um ano válido, como 1992, e escolha a.C. ou d.C.'
+  if (!form.approximate) Object.assign(e, readMoment(year ?? 1, form).errors)
   if (form.period) {
-    const end = Number(form.endYear)
-    if (!form.endYear) e.endYear = 'Informe o ano de fim.'
-    else if (!Number.isInteger(end) || end < year) e.endYear = 'O fim precisa ser depois do começo.'
+    const end = signedYear(form.endYear, form.endEpoch)
+    if (!form.endYear.trim()) e.endYear = 'Informe o ano de fim.'
+    else if (end === undefined || (year !== undefined && end < year)) e.endYear = 'O fim precisa ser depois do começo.'
   }
   if (!form.title.trim()) e.title = 'Dê um título ao evento.'
   if (!form.description.trim()) e.description = 'Conte o essencial em poucas linhas.'
@@ -262,8 +267,8 @@ const statusBadge: Record<SuggestionStatus, { label: string; tone: BadgeTone }> 
                   <TlSelect :id="id" v-model="form.month" :options="monthOptions" />
                 </TlField>
               </template>
-              <TlField v-slot="{ id, describedby, invalid }" label="Ano" tone="muted" :error="errors.year" data-field="year">
-                <TlInput :id="id" v-model="form.year" inputmode="numeric" :aria-describedby="describedby" :invalid="invalid" />
+              <TlField v-slot="{ id, describedby, invalid }" label="Ano" tone="muted" :error="errors.year" data-field="year" class="when__year">
+                <TlYearInput :id="id" v-model="form.year" v-model:epoch="form.yearEpoch" :aria-describedby="describedby" :invalid="invalid" />
               </TlField>
               <TlField v-if="!form.approximate" v-slot="{ id, describedby, invalid }" label="Hora" tone="muted" :error="errors.time" data-field="time">
                 <TlInput :id="id" v-model="form.time" type="time" :aria-describedby="describedby" :invalid="invalid" />
@@ -272,7 +277,7 @@ const statusBadge: Record<SuggestionStatus, { label: string; tone: BadgeTone }> 
             <TlCheckbox v-model="form.approximate" label="Data aproximada (mostrar só o ano)" />
             <TlCheckbox v-model="form.period" label="É um período (tem data de fim)" />
             <TlField v-if="form.period" v-slot="{ id, describedby, invalid }" label="Ano de fim" tone="muted" :error="errors.endYear" data-field="endYear" class="when__end">
-              <TlInput :id="id" v-model="form.endYear" inputmode="numeric" :aria-describedby="describedby" :invalid="invalid" />
+              <TlYearInput :id="id" v-model="form.endYear" v-model:epoch="form.endEpoch" :aria-describedby="describedby" :invalid="invalid" />
             </TlField>
           </fieldset>
 
@@ -457,10 +462,16 @@ const statusBadge: Record<SuggestionStatus, { label: string; tone: BadgeTone }> 
 }
 .when__grid--year {
   grid-template-columns: minmax(0, 1fr);
-  max-width: 200px;
+  max-width: 280px;
+}
+.when__year {
+  grid-column: span 2;
+}
+.when__grid--year .when__year {
+  grid-column: auto;
 }
 .when__end {
-  max-width: 200px;
+  max-width: 280px;
 }
 .form__row {
   display: grid;

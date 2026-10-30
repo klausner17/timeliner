@@ -22,6 +22,7 @@ import { currentUser, listSavedComparisons, listTimelines, loadComparison, loadS
 import type { SavedComparison, Timeline, TimelineEvent } from '@/data/types'
 import { extent, type EventWindow } from '@/data/windowing'
 import { copyLink, dateLabel } from '@/lib/format'
+import { formatYear } from '@/design-system/years'
 import { useLatest } from '@/lib/useLatest'
 
 const route = useRoute()
@@ -187,7 +188,7 @@ const highlightText = computed(() => {
   const parts = allEvents.value.filter((e) => e.year === h.year && h.laneIds.includes(e.timeline.slug)).map((e) => e.title)
   const names = h.laneIds.map((id) => findTimeline(id)?.title ?? id)
   const and = (xs: string[]) => (xs.length > 1 ? `${xs.slice(0, -1).join(', ')} e ${xs[xs.length - 1]}` : xs[0])
-  return parts.length > 1 ? `Em ${h.year}, ${and(parts)} aparecem no mesmo ano.` : `Em ${h.year}, ${and(names)} têm eventos no mesmo ano.`
+  return parts.length > 1 ? `Em ${formatYear(h.year)}, ${and(parts)} aparecem no mesmo ano.` : `Em ${formatYear(h.year)}, ${and(names)} têm eventos no mesmo ano.`
 })
 const coincidenceCount = computed(() => {
   const n = comparison.value?.overlapsTotal ?? 0
@@ -320,15 +321,15 @@ async function share() {
       <div v-for="r in visibleRows" :key="r.year" class="list__row">
         <template v-if="selected.length === 2">
           <div class="list__cell list__a">{{ r.cells[0].map((e) => e.title).join(' · ') }}</div>
-          <div class="list__year" :class="{ 'list__year--shared': r.shared }">{{ r.year }}</div>
+          <div class="list__year" :class="{ 'list__year--shared': r.shared }">{{ formatYear(r.year) }}</div>
           <div class="list__cell">{{ r.cells[1].map((e) => e.title).join(' · ') }}</div>
         </template>
         <template v-else>
-          <div class="list__year" :class="{ 'list__year--shared': r.shared }">{{ r.year }}</div>
+          <div class="list__year" :class="{ 'list__year--shared': r.shared }">{{ formatYear(r.year) }}</div>
           <div v-for="(c, i) in r.cells" :key="i" class="list__cell">{{ c.map((e) => e.title).join(' · ') }}</div>
         </template>
       </div>
-      <p v-if="!rows.length" class="list__empty">Nenhum evento entre {{ start }} e {{ end }}.</p>
+      <p v-if="!rows.length" class="list__empty">Nenhum evento entre {{ formatYear(start) }} e {{ formatYear(end) }}.</p>
       <div v-if="rows.length > rowsShown" class="list__more">
         <TlButton size="sm" @click="rowsShown += ROWS_STEP">Ver mais ({{ (rows.length - rowsShown).toLocaleString('pt-BR') }} anos)</TlButton>
       </div>

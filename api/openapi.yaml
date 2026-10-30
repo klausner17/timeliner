@@ -4,7 +4,7 @@ info:
   version: 0.1.0
   description: |
     Contrato entre o frontend (Vue) e o backend (Go).
-    Todas as rotas ficam sob /api. Datas em ISO 8601 (UTC). Anos podem ser negativos (a.C.).
+    Todas as rotas ficam sob /api. Datas em ISO 8601 (UTC). Anos negativos são a.C. (-500 é 500 a.C.); no bissexto, -1 (1 a.C.) conta como o ano 0 astronômico.
     Autenticação por token Bearer obtido em /auth/login ou /auth/register. Sem token, as rotas
     públicas respondem como visitante; com token inválido ou expirado, qualquer rota responde 401.
 servers:

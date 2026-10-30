@@ -96,10 +96,14 @@ func validateMoment(f fieldErrors, prefix string, e domain.EventData) {
 	}
 }
 
-// validDay diz se o dia existe no mês daquele ano, no calendário gregoriano.
+// validDay diz se o dia existe no mês daquele ano, no calendário gregoriano. Ano negativo
+// é a.C. e não há ano 0, então -1 (1 a.C.) é o ano 0 astronômico, que é bissexto.
 func validDay(year, month, day int) bool {
 	if day < 1 || day > 31 {
 		return false
+	}
+	if year < 0 {
+		year++
 	}
 	return time.Date(year, time.Month(month), day, 0, 0, 0, 0, time.UTC).Day() == day
 }

@@ -32,6 +32,7 @@ import {
   TlTextarea,
   TlTimelineCard,
   TlTrackLabel,
+  TlYearInput,
   type CompareLane,
   type TrackColor,
 } from '@/design-system'
@@ -305,7 +306,7 @@ const usage = {
               <TlField v-slot="{ id }" label="Mês" tone="muted">
                 <TlSelect :id="id" v-model="mes" :options="['Outubro', 'Novembro', 'Dezembro']" />
               </TlField>
-              <TlField v-slot="{ id }" label="Ano" tone="muted"><TlInput :id="id" model-value="1992" /></TlField>
+              <TlField v-slot="{ id }" label="Ano" tone="muted"><TlYearInput :id="id" model-value="1992" /></TlField>
             </div>
             <div>
               <TlCheckbox v-model="aproximada" label="Data aproximada (mostrar só o ano)" />

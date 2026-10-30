@@ -5,6 +5,8 @@ ALTER TABLE events ADD COLUMN month smallint, ADD COLUMN day smallint, ADD COLUM
 -- no mesmo ano do evento, viram mês e dia. As outras se perdem com a coluna date.
 WITH parsed AS (
     SELECT events.id,
+           -- ano astronômico: 1 a.C. (-1) é o ano 0, para a regra do bissexto
+           CASE WHEN events.year < 0 THEN events.year + 1 ELSE events.year END AS astro,
            m[1]::smallint AS day,
            array_position(ARRAY['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho',
                                 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'], lower(m[2]))::smallint AS month
@@ -16,7 +18,7 @@ UPDATE events SET month = parsed.month, day = parsed.day
 FROM parsed
 WHERE events.id = parsed.id
   AND (parsed.day IS NULL OR parsed.day BETWEEN 1 AND CASE
-        WHEN parsed.month = 2 AND events.year % 4 = 0 AND (events.year % 100 <> 0 OR events.year % 400 = 0) THEN 29
+        WHEN parsed.month = 2 AND parsed.astro % 4 = 0 AND (parsed.astro % 100 <> 0 OR parsed.astro % 400 = 0) THEN 29
         WHEN parsed.month = 2 THEN 28
         WHEN parsed.month IN (4, 6, 9, 11) THEN 30
         ELSE 31

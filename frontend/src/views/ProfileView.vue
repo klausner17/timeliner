@@ -34,6 +34,7 @@ import {
 } from '@/data/store'
 import { suggestionKindLabel, type Profile, type SavedComparison, type Suggestion, type SuggestionStatus, type Timeline, type User, type UserSummary } from '@/data/types'
 import { copyLink, monthYear, timeAgo } from '@/lib/format'
+import { formatYearRange } from '@/design-system/years'
 
 const route = useRoute()
 const router = useRouter()
@@ -260,7 +261,7 @@ async function share() {
             <div v-if="comparisons.length" class="grid grid--wide">
               <TlCard v-for="c in comparisons" :key="c.id" :to="compareLink(c)" class="cmp">
                 <TlTrackLabel v-for="(t, i) in c.items" :key="t.slug" :color="trackColors[i]">{{ t.title }}</TlTrackLabel>
-                <span class="cmp__meta">{{ c.start }}–{{ c.end }} · salva {{ timeAgo(c.createdAt) }}</span>
+                <span class="cmp__meta">{{ formatYearRange(c.start, c.end) }} · salva {{ timeAgo(c.createdAt) }}</span>
               </TlCard>
             </div>
             <TlCard v-else tone="muted">Nenhuma comparação salva. Monte uma em Comparar e use “Salvar comparação”.</TlCard>
