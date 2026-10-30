@@ -28,7 +28,7 @@ internal/platform/    bcrypt, relógio e geração de IDs
 
 Nenhuma rota devolve todos os eventos de uma vez:
 
-- `GET /timelines/{slug}/events` pagina por cursor (keyset sobre `year, fim, created_at, id`, coberto
+- `GET /timelines/{slug}/events` pagina por cursor (keyset sobre `year, month, day, time_of_day, fim, created_at, id`, coberto
   pelo índice `events_timeline_order_idx`), 100 por página por padrão e até 500.
 - `GET /timelines/{slug}` traz só a primeira página e o `eventsNextCursor`.
 - `GET /timelines/{slug}/summary` e cada trilha de `GET /compare` devolvem os eventos do trecho se

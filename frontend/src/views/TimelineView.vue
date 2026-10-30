@@ -31,7 +31,7 @@ import {
 } from '@/data/store'
 import type { TimelineDetail, TimelineEvent, TimelinePage } from '@/data/types'
 import type { EventWindow } from '@/data/windowing'
-import { copyLink, dateLabel, timeAgo, yearLabel } from '@/lib/format'
+import { copyLink, dateLabel, detailedDateLabel, timeAgo, yearLabel } from '@/lib/format'
 import { useLatest } from '@/lib/useLatest'
 import NotFoundView from './NotFoundView.vue'
 import VideoExport from './timeline/VideoExport.vue'
@@ -367,7 +367,7 @@ async function share() {
               v-for="e in g.events"
               :key="e.id"
               :year="yearLabel(e)"
-              :date="e.date ?? (e.endYear ? dateLabel(e) : undefined)"
+              :date="detailedDateLabel(e)"
               :title="e.title"
               :description="e.description"
               :source-url="e.sourceUrl"

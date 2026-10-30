@@ -87,6 +87,9 @@ func touch(ctx context.Context, d *Deps, t *domain.Timeline) error {
 
 type EventPatch struct {
 	Year        *int
+	Month       **int
+	Day         **int
+	Time        **string
 	EndYear     **int
 	Date        **string
 	Title       *string
@@ -114,6 +117,15 @@ func (uc *UpdateEvent) Execute(ctx context.Context, in UpdateEventInput) (EventV
 	p := in.Patch
 	if p.Year != nil {
 		e.Year = *p.Year
+	}
+	if p.Month != nil {
+		e.Month = *p.Month
+	}
+	if p.Day != nil {
+		e.Day = *p.Day
+	}
+	if p.Time != nil {
+		e.Time = *p.Time
 	}
 	if p.EndYear != nil {
 		e.EndYear = *p.EndYear

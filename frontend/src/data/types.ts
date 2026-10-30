@@ -31,9 +31,15 @@ export type Profile = UserSummary & {
 export type TimelineEvent = {
   id: string
   year: number
+  /** Mês de 1 a 12. */
+  month?: number
+  /** Dia do mês; só existe com o mês. */
+  day?: number
+  /** Hora "14:30"; só existe com o dia. */
+  time?: string
   /** Fim de um período (ex.: 1964–1985). */
   endYear?: number
-  /** Data por extenso, quando conhecida. Sem ela, mostra só o ano. */
+  /** Rótulo livre da data ("verão de 1969"). Sem ele, a data sai de mês, dia e hora. */
   date?: string
   title: string
   description: string

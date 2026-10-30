@@ -53,6 +53,9 @@ func eventPage(ctx context.Context, d *Deps, q EventQuery) (EventPage, error) {
 
 type cursorJSON struct {
 	Year      int       `json:"y"`
+	Month     int       `json:"m"`
+	Day       int       `json:"d"`
+	Time      string    `json:"t"`
 	EndYear   int       `json:"e"`
 	CreatedAt time.Time `json:"c"`
 	ID        string    `json:"i"`

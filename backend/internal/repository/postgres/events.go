@@ -14,28 +14,38 @@ import (
 
 type events struct{ *db }
 
-const eventCols = `id, timeline_id, year, end_year, date, title, description, source_url, era, author_id, created_at`
+const eventCols = `id, timeline_id, year, month, day, time_of_day, end_year, date, title, description, source_url, era, author_id, created_at`
+
+// eventFields são os destinos do Scan na ordem de eventCols.
+func eventFields(e *domain.Event) []any {
+	return []any{&e.ID, &e.TimelineID, &e.Year, &e.Month, &e.Day, &e.Time, &e.EndYear, &e.Date, &e.Title, &e.Description,
+		&e.SourceURL, &e.Era, &e.AuthorID, &e.CreatedAt}
+}
+
+// eventValues são os valores do evento na ordem de eventCols.
+func eventValues(e *domain.Event) []any {
+	return []any{e.ID, e.TimelineID, e.Year, e.Month, e.Day, e.Time, e.EndYear, e.Date, e.Title, e.Description,
+		e.SourceURL, e.Era, e.AuthorID, e.CreatedAt}
+}
 
 func scanEvent(row pgx.Row) (*domain.Event, error) {
 	var e domain.Event
-	err := row.Scan(&e.ID, &e.TimelineID, &e.Year, &e.EndYear, &e.Date, &e.Title, &e.Description,
-		&e.SourceURL, &e.Era, &e.AuthorID, &e.CreatedAt)
-	if err != nil {
+	if err := row.Scan(eventFields(&e)...); err != nil {
 		return nil, translate(err)
 	}
 	return &e, nil
 }
 
 func (r events) Create(ctx context.Context, e *domain.Event) error {
-	_, err := r.q(ctx).Exec(ctx, `INSERT INTO events (`+eventCols+`) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-		e.ID, e.TimelineID, e.Year, e.EndYear, e.Date, e.Title, e.Description, e.SourceURL, e.Era, e.AuthorID, e.CreatedAt)
+	_, err := r.q(ctx).Exec(ctx, `INSERT INTO events (`+eventCols+`) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+		eventValues(e)...)
 	return translate(err)
 }
 
 func (r events) Update(ctx context.Context, e *domain.Event) error {
-	return mustAffect(r.q(ctx).Exec(ctx, `UPDATE events SET year=$2, end_year=$3, date=$4, title=$5,
-		description=$6, source_url=$7, era=$8 WHERE id=$1`,
-		e.ID, e.Year, e.EndYear, e.Date, e.Title, e.Description, e.SourceURL, e.Era))
+	return mustAffect(r.q(ctx).Exec(ctx, `UPDATE events SET year=$2, month=$3, day=$4, time_of_day=$5, end_year=$6,
+		date=$7, title=$8, description=$9, source_url=$10, era=$11 WHERE id=$1`,
+		e.ID, e.Year, e.Month, e.Day, e.Time, e.EndYear, e.Date, e.Title, e.Description, e.SourceURL, e.Era))
 }
 
 func (r events) Delete(ctx context.Context, id string) error {
@@ -48,28 +58,28 @@ func (r events) ByID(ctx context.Context, id string) (*domain.Event, error) {
 
 func (r events) CreateMany(ctx context.Context, es []domain.Event) error {
 	rows := make([][]any, len(es))
-	for i, e := range es {
-		rows[i] = []any{e.ID, e.TimelineID, e.Year, e.EndYear, e.Date, e.Title, e.Description, e.SourceURL, e.Era, e.AuthorID, e.CreatedAt}
+	for i := range es {
+		rows[i] = eventValues(&es[i])
 	}
 	_, err := r.q(ctx).CopyFrom(ctx, pgx.Identifier{"events"}, strings.Split(strings.ReplaceAll(eventCols, " ", ""), ","), pgx.CopyFromRows(rows))
 	return translate(err)
 }
 
 // eventOrder é a ordem cronológica, igual a memory.SortEvents e ao índice events_timeline_order_idx.
-const eventOrder = `year, COALESCE(end_year, year), created_at, id`
+const eventOrder = `year, COALESCE(month, 0), COALESCE(day, 0), COALESCE(time_of_day, ''), COALESCE(end_year, year), created_at, id`
 
 // touches filtra os eventos da timeline $1 que tocam o intervalo [$2, $3]; nulos não filtram.
 const touches = `timeline_id=$1 AND ($2::int IS NULL OR COALESCE(end_year, year) >= $2) AND ($3::int IS NULL OR year <= $3)`
 
 func (r events) ListByTimeline(ctx context.Context, q usecase.EventQuery) ([]domain.Event, error) {
-	after := []any{nil, nil, nil, nil}
+	after := []any{nil, nil, nil, nil, nil, nil, nil}
 	if c := q.After; c != nil {
-		after = []any{c.Year, c.EndYear, c.CreatedAt, c.ID}
+		after = []any{c.Year, c.Month, c.Day, c.Time, c.EndYear, c.CreatedAt, c.ID}
 	}
 	args := append([]any{q.TimelineID, q.From, q.To}, append(after, q.Limit)...)
 	rows, err := r.q(ctx).Query(ctx, `SELECT `+eventCols+` FROM events
-		WHERE `+touches+` AND ($4::int IS NULL OR (`+eventOrder+`) > ($4, $5::int, $6::timestamptz, $7::text))
-		ORDER BY `+eventOrder+` LIMIT $8`, args...)
+		WHERE `+touches+` AND ($4::int IS NULL OR (`+eventOrder+`) > ($4, $5::int, $6::int, $7::text, $8::int, $9::timestamptz, $10::text))
+		ORDER BY `+eventOrder+` LIMIT $11`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -89,7 +99,7 @@ func (r events) Summary(ctx context.Context, q usecase.SummaryQuery) ([]domain.Y
 				AND year <= $2 + ((c.b + 1)::bigint * $5 + $4 - 1) / $4 - 1
 				AND year >= CASE WHEN c.b = 0 THEN -2147483648 ELSE $2 + (c.b::bigint * $5 + $4 - 1) / $4 END
 			ORDER BY `+eventOrder+` LIMIT $6) s
-		ORDER BY c.b, s.year, COALESCE(s.end_year, s.year), s.created_at, s.id`, q.TimelineID, q.From, q.To, q.Buckets, span, q.Sample)
+		ORDER BY c.b, s.year, COALESCE(s.month, 0), COALESCE(s.day, 0), COALESCE(s.time_of_day, ''), COALESCE(s.end_year, s.year), s.created_at, s.id`, q.TimelineID, q.From, q.To, q.Buckets, span, q.Sample)
 	if err != nil {
 		return nil, err
 	}
@@ -99,8 +109,7 @@ func (r events) Summary(ctx context.Context, q usecase.SummaryQuery) ([]domain.Y
 	for rows.Next() {
 		var b, n int
 		var e domain.Event
-		if err := rows.Scan(&b, &n, &e.ID, &e.TimelineID, &e.Year, &e.EndYear, &e.Date, &e.Title, &e.Description,
-			&e.SourceURL, &e.Era, &e.AuthorID, &e.CreatedAt); err != nil {
+		if err := rows.Scan(append([]any{&b, &n}, eventFields(&e)...)...); err != nil {
 			return nil, err
 		}
 		if b != last {
@@ -154,6 +163,9 @@ type eventJSON struct {
 	AuthorID    string     `json:"authorId,omitempty"`
 	CreatedAt   *time.Time `json:"createdAt,omitempty"`
 	Year        int        `json:"year"`
+	Month       *int       `json:"month,omitempty"`
+	Day         *int       `json:"day,omitempty"`
+	Time        *string    `json:"time,omitempty"`
 	EndYear     *int       `json:"endYear,omitempty"`
 	Date        *string    `json:"date,omitempty"`
 	Title       string     `json:"title"`
@@ -163,11 +175,11 @@ type eventJSON struct {
 }
 
 func dataToJSON(d domain.EventData) eventJSON {
-	return eventJSON{Year: d.Year, EndYear: d.EndYear, Date: d.Date, Title: d.Title, Description: d.Description, SourceURL: d.SourceURL, Era: d.Era}
+	return eventJSON{Year: d.Year, Month: d.Month, Day: d.Day, Time: d.Time, EndYear: d.EndYear, Date: d.Date, Title: d.Title, Description: d.Description, SourceURL: d.SourceURL, Era: d.Era}
 }
 
 func (j eventJSON) data() domain.EventData {
-	return domain.EventData{Year: j.Year, EndYear: j.EndYear, Date: j.Date, Title: j.Title, Description: j.Description, SourceURL: j.SourceURL, Era: j.Era}
+	return domain.EventData{Year: j.Year, Month: j.Month, Day: j.Day, Time: j.Time, EndYear: j.EndYear, Date: j.Date, Title: j.Title, Description: j.Description, SourceURL: j.SourceURL, Era: j.Era}
 }
 
 func marshalEvent(e *domain.Event) ([]byte, error) {

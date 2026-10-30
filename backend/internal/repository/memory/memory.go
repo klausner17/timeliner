@@ -403,7 +403,7 @@ func (r events) CreateMany(ctx context.Context, es []domain.Event) error {
 func (r events) touching(timelineID string, from, to *int) []domain.Event {
 	out := []domain.Event{}
 	for _, e := range r.events {
-		if e.TimelineID != timelineID || (from != nil && endOf(e) < *from) || (to != nil && e.Year > *to) {
+		if e.TimelineID != timelineID || (from != nil && e.End() < *from) || (to != nil && e.Year > *to) {
 			continue
 		}
 		out = append(out, e)
@@ -463,20 +463,15 @@ func (r events) Overlaps(_ context.Context, timelineIDs []string, from, to, limi
 	return out[:min(limit, len(out))], len(out), nil
 }
 
-// SortEvents é a ordem cronológica usada pelos dois repositories: ano, fim, criação, ID.
+// SortEvents é a ordem cronológica usada pelos dois repositories: ano, mês, dia, hora,
+// fim, criação, ID.
 func SortEvents(es []domain.Event) {
 	slices.SortFunc(es, func(a, b domain.Event) int { return compareCursor(domain.CursorOf(a), domain.CursorOf(b)) })
 }
 
 func compareCursor(a, b domain.EventCursor) int {
-	return cmp.Or(cmp.Compare(a.Year, b.Year), cmp.Compare(a.EndYear, b.EndYear), a.CreatedAt.Compare(b.CreatedAt), cmp.Compare(a.ID, b.ID))
-}
-
-func endOf(e domain.Event) int {
-	if e.EndYear != nil {
-		return *e.EndYear
-	}
-	return e.Year
+	return cmp.Or(cmp.Compare(a.Year, b.Year), cmp.Compare(a.Month, b.Month), cmp.Compare(a.Day, b.Day), cmp.Compare(a.Time, b.Time),
+		cmp.Compare(a.EndYear, b.EndYear), a.CreatedAt.Compare(b.CreatedAt), cmp.Compare(a.ID, b.ID))
 }
 
 // Suggestions

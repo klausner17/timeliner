@@ -28,7 +28,7 @@ import {
   suggest,
 } from '@/data/store'
 import { suggestionKindLabel, type EventInput, type Suggestion, type SuggestionStatus, type Timeline } from '@/data/types'
-import { composeDate, dateLabel, months, timeAgo, yearLabel } from '@/lib/format'
+import { dateLabel, monthOptions, readMoment, timeAgo, yearLabel } from '@/lib/format'
 import NotFoundView from './NotFoundView.vue'
 
 const route = useRoute()
@@ -72,6 +72,7 @@ const MAX_DESC = 280
 const blank = () => ({
   day: '',
   month: '',
+  time: '',
   year: '',
   approximate: false,
   period: false,
@@ -88,7 +89,6 @@ const sendError = ref('')
 const sending = ref(false)
 const sent = ref<Suggestion>()
 
-const monthOptions = [{ value: '', label: '—' }, ...months.map((m) => ({ value: m, label: m }))]
 const eraOptions = computed(() => [{ value: '', label: 'Escolher pelo ano' }, ...(timeline.value?.eras ?? []).map((e) => ({ value: e.name, label: e.name }))])
 
 function eraFor(year: number) {
@@ -100,10 +100,11 @@ const draft = computed<EventInput | undefined>(() => {
   const year = Number(form.year)
   if (!form.year || !Number.isInteger(year)) return undefined
   const endYear = form.period && form.endYear ? Number(form.endYear) : undefined
+  const moment = readMoment(year, form)
   return {
     year,
+    ...(form.approximate || Object.keys(moment.errors).length ? {} : moment.value),
     endYear: endYear && Number.isInteger(endYear) ? endYear : undefined,
-    date: form.approximate ? undefined : composeDate(form.day, form.month, year),
     title: form.title.trim(),
     description: form.description.trim(),
     sourceUrl: form.source.trim() || undefined,
@@ -116,6 +117,7 @@ function validate() {
   const year = Number(form.year)
   if (!form.year) e.year = 'Informe o ano.'
   else if (!Number.isInteger(year) || year < -10000 || year > 2100) e.year = 'Use um ano válido, como 1992.'
+  if (!form.approximate) Object.assign(e, readMoment(year, form).errors)
   if (form.period) {
     const end = Number(form.endYear)
     if (!form.endYear) e.endYear = 'Informe o ano de fim.'
@@ -253,8 +255,8 @@ const statusBadge: Record<SuggestionStatus, { label: string; tone: BadgeTone }> 
             <legend class="when__legend">Quando aconteceu</legend>
             <div class="when__grid" :class="{ 'when__grid--year': form.approximate }">
               <template v-if="!form.approximate">
-                <TlField v-slot="{ id }" label="Dia" tone="muted">
-                  <TlInput :id="id" v-model="form.day" inputmode="numeric" maxlength="2" />
+                <TlField v-slot="{ id, describedby, invalid }" label="Dia" tone="muted" :error="errors.day" data-field="day">
+                  <TlInput :id="id" v-model="form.day" inputmode="numeric" maxlength="2" :aria-describedby="describedby" :invalid="invalid" />
                 </TlField>
                 <TlField v-slot="{ id }" label="Mês" tone="muted">
                   <TlSelect :id="id" v-model="form.month" :options="monthOptions" />
@@ -262,6 +264,9 @@ const statusBadge: Record<SuggestionStatus, { label: string; tone: BadgeTone }> 
               </template>
               <TlField v-slot="{ id, describedby, invalid }" label="Ano" tone="muted" :error="errors.year" data-field="year">
                 <TlInput :id="id" v-model="form.year" inputmode="numeric" :aria-describedby="describedby" :invalid="invalid" />
+              </TlField>
+              <TlField v-if="!form.approximate" v-slot="{ id, describedby, invalid }" label="Hora" tone="muted" :error="errors.time" data-field="time">
+                <TlInput :id="id" v-model="form.time" type="time" :aria-describedby="describedby" :invalid="invalid" />
               </TlField>
             </div>
             <TlCheckbox v-model="form.approximate" label="Data aproximada (mostrar só o ano)" />
@@ -447,7 +452,7 @@ const statusBadge: Record<SuggestionStatus, { label: string; tone: BadgeTone }> 
 }
 .when__grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   gap: 10px;
 }
 .when__grid--year {

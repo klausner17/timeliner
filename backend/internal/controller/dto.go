@@ -137,6 +137,9 @@ type timelinePageJSON struct {
 // eventInputJSON é o EventInput do contrato, usado na entrada e no "event" das sugestões.
 type eventInputJSON struct {
 	Year        *int    `json:"year"`
+	Month       *int    `json:"month"`
+	Day         *int    `json:"day"`
+	Time        *string `json:"time"`
 	EndYear     *int    `json:"endYear"`
 	Date        *string `json:"date"`
 	Title       string  `json:"title"`
@@ -146,7 +149,7 @@ type eventInputJSON struct {
 }
 
 func (e eventInputJSON) data() domain.EventData {
-	d := domain.EventData{EndYear: e.EndYear, Date: e.Date, Title: e.Title, Description: e.Description, SourceURL: e.SourceURL, Era: e.Era}
+	d := domain.EventData{Month: e.Month, Day: e.Day, Time: e.Time, EndYear: e.EndYear, Date: e.Date, Title: e.Title, Description: e.Description, SourceURL: e.SourceURL, Era: e.Era}
 	if e.Year != nil {
 		d.Year = *e.Year
 	}
@@ -163,12 +166,15 @@ func (e eventInputJSON) requireYear(fields map[string]string, prefix string) {
 
 func toEventInput(d domain.EventData) eventInputJSON {
 	y := d.Year
-	return eventInputJSON{Year: &y, EndYear: d.EndYear, Date: d.Date, Title: d.Title, Description: d.Description, SourceURL: d.SourceURL, Era: d.Era}
+	return eventInputJSON{Year: &y, Month: d.Month, Day: d.Day, Time: d.Time, EndYear: d.EndYear, Date: d.Date, Title: d.Title, Description: d.Description, SourceURL: d.SourceURL, Era: d.Era}
 }
 
 type eventJSON struct {
 	ID          string    `json:"id"`
 	Year        int       `json:"year"`
+	Month       *int      `json:"month"`
+	Day         *int      `json:"day"`
+	Time        *string   `json:"time"`
 	EndYear     *int      `json:"endYear"`
 	Date        *string   `json:"date"`
 	Title       string    `json:"title"`
@@ -182,7 +188,7 @@ type eventJSON struct {
 func toEvent(v usecase.EventView) eventJSON {
 	e := v.Event
 	return eventJSON{
-		ID: e.ID, Year: e.Year, EndYear: e.EndYear, Date: e.Date, Title: e.Title, Description: e.Description,
+		ID: e.ID, Year: e.Year, Month: e.Month, Day: e.Day, Time: e.Time, EndYear: e.EndYear, Date: e.Date, Title: e.Title, Description: e.Description,
 		SourceURL: e.SourceURL, By: v.AuthorHandle, Era: e.Era, CreatedAt: e.CreatedAt,
 	}
 }

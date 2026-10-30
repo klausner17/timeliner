@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -62,6 +63,7 @@ func validateEvent(f fieldErrors, prefix string, e domain.EventData, eras []doma
 	f.check(e.Year >= minYear && e.Year <= maxYear, prefix+"year", "Ano fora do intervalo.")
 	f.check(length(e.Title, 1, 160), prefix+"title", "O título precisa ter de 1 a 160 caracteres.")
 	f.check(length(e.Description, 0, 4000), prefix+"description", "A descrição pode ter até 4000 caracteres.")
+	validateMoment(f, prefix, e)
 	if e.EndYear != nil {
 		f.check(*e.EndYear >= e.Year && *e.EndYear <= maxYear, prefix+"endYear", "O fim precisa ser depois do início.")
 	}
@@ -80,10 +82,36 @@ func validateEvent(f fieldErrors, prefix string, e domain.EventData, eras []doma
 	}
 }
 
+var timeRe = regexp.MustCompile(`^([01]\d|2[0-3]):[0-5]\d$`)
+
+// validateMoment confere mês, dia e hora: cada um só vale com o anterior preenchido.
+func validateMoment(f fieldErrors, prefix string, e domain.EventData) {
+	if e.Month != nil {
+		f.check(*e.Month >= 1 && *e.Month <= 12, prefix+"month", "Mês inválido.")
+	}
+	if e.Day != nil {
+		f.check(e.Month != nil, prefix+"day", "Informe o mês antes do dia.")
+		f.check(e.Month == nil || validDay(e.Year, *e.Month, *e.Day), prefix+"day", "Este dia não existe no mês.")
+	}
+	if e.Time != nil {
+		f.check(e.Day != nil, prefix+"time", "Informe o dia antes da hora.")
+		f.check(timeRe.MatchString(*e.Time), prefix+"time", "Use a hora no formato 14:30.")
+	}
+}
+
+// validDay diz se o dia existe no mês daquele ano, no calendário gregoriano.
+func validDay(year, month, day int) bool {
+	if day < 1 || day > 31 {
+		return false
+	}
+	return time.Date(year, time.Month(month), day, 0, 0, 0, 0, time.UTC).Day() == day
+}
+
 // normalizeEvent limpa espaços e troca textos vazios opcionais por nil.
 func normalizeEvent(e domain.EventData) domain.EventData {
 	e.Title = strings.TrimSpace(e.Title)
 	e.Description = strings.TrimSpace(e.Description)
+	e.Time = emptyToNil(e.Time)
 	e.Date = emptyToNil(e.Date)
 	e.SourceURL = emptyToNil(e.SourceURL)
 	e.Era = emptyToNil(e.Era)
