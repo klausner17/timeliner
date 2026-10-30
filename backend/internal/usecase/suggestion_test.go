@@ -80,19 +80,19 @@ func TestApproveFixKeepsPreviousAndReopenRestores(t *testing.T) {
 	original := w.timeline.Events.Items[0].Event
 	s := w.suggest(t, usecase.CreateSuggestionInput{
 		Kind: domain.SuggestionDateFix, EventID: &original.ID,
-		Event: domain.EventData{Year: 1992, Date: ptr("29 de setembro de 1992"), Title: "Impeachment"},
+		Event: domain.EventData{Year: 1992, Month: ptr(9), Day: ptr(29), Title: "Impeachment"},
 	})
 	approved := must[usecase.SuggestionView](t)(w.review(t, s.Suggestion.ID, usecase.DecisionApprove, nil))
-	if approved.Previous == nil || approved.Previous.Event.Date != nil || approved.Previous.AuthorHandle != "ana" {
+	if approved.Previous == nil || approved.Previous.Event.Day != nil || approved.Previous.AuthorHandle != "ana" {
 		t.Fatalf("previous = %+v", approved.Previous)
 	}
 	evs := w.events(t)
-	if *evs[0].Event.Date != "29 de setembro de 1992" || evs[0].AuthorHandle != "ana" {
+	if *evs[0].Event.Month != 9 || *evs[0].Event.Day != 29 || evs[0].AuthorHandle != "ana" {
 		t.Fatalf("evento corrigido = %+v", evs[0])
 	}
 
 	must[usecase.SuggestionView](t)(usecase.NewReopenSuggestion(w.d).Execute(ctx, usecase.SuggestionRefInput{ActorID: w.owner.ID, SuggestionID: s.Suggestion.ID}))
-	if evs := w.events(t); evs[0].Event.Date != nil {
+	if evs := w.events(t); evs[0].Event.Day != nil {
 		t.Fatalf("devia voltar ao original: %+v", evs[0])
 	}
 }

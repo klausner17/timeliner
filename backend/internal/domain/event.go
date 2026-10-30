@@ -2,11 +2,14 @@ package domain
 
 import "time"
 
-// EventData são os campos que o usuário escreve num evento.
+// EventData são os campos que o usuário escreve num evento. Month, Day e Time detalham o
+// início: o dia pede o mês e a hora ("15:04") pede o dia.
 type EventData struct {
 	Year        int
+	Month       *int
+	Day         *int
+	Time        *string
 	EndYear     *int
-	Date        *string
 	Title       string
 	Description string
 	SourceURL   *string
@@ -21,10 +24,14 @@ type Event struct {
 	CreatedAt  time.Time
 }
 
-// EventCursor é a posição de um evento na ordem cronológica (ano, fim, criação, ID).
-// Serve para pedir a página seguinte a partir dele.
+// EventCursor é a posição de um evento na ordem cronológica (ano, mês, dia, hora, fim,
+// criação, ID). Mês e dia sem valor valem 0 e hora sem valor vale "", para o evento só
+// com o ano vir antes dos detalhados. Serve para pedir a página seguinte a partir dele.
 type EventCursor struct {
 	Year      int
+	Month     int
+	Day       int
+	Time      string
 	EndYear   int
 	CreatedAt time.Time
 	ID        string
@@ -32,11 +39,26 @@ type EventCursor struct {
 
 // CursorOf devolve a posição do evento na ordem cronológica.
 func CursorOf(e Event) EventCursor {
-	end := e.Year
-	if e.EndYear != nil {
-		end = *e.EndYear
+	return EventCursor{
+		Year: e.Year, Month: orZero(e.Month), Day: orZero(e.Day), Time: orZero(e.Time),
+		EndYear: e.End(), CreatedAt: e.CreatedAt, ID: e.ID,
 	}
-	return EventCursor{Year: e.Year, EndYear: end, CreatedAt: e.CreatedAt, ID: e.ID}
+}
+
+// End é o ano em que o evento termina: o EndYear ou, sem ele, o próprio ano.
+func (e EventData) End() int {
+	if e.EndYear != nil {
+		return *e.EndYear
+	}
+	return e.Year
+}
+
+func orZero[T any](p *T) T {
+	var zero T
+	if p == nil {
+		return zero
+	}
+	return *p
 }
 
 // YearBucket é uma faixa de anos com quantos eventos começam nela e os primeiros deles.

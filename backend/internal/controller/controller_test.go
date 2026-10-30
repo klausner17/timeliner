@@ -176,13 +176,13 @@ func TestTimelineSuggestionCompareFlow(t *testing.T) {
 	a.want(a.do("GET", "/api/tags", "", nil), 200)
 
 	evID := tl.Body["events"].([]any)[1].(map[string]any)["id"].(string)
-	upd := a.want(a.do("PATCH", "/api/timelines/historia-do-brasil/events/"+evID, ana, map[string]any{"year": 1500, "title": "Chegada", "date": "22 de abril"}), 200)
-	if upd.Body["date"] != "22 de abril" {
+	upd := a.want(a.do("PATCH", "/api/timelines/historia-do-brasil/events/"+evID, ana, map[string]any{"year": 1500, "title": "Chegada", "month": 4, "day": 22}), 200)
+	if upd.Body["day"] != 22.0 || upd.Body["month"] != 4.0 {
 		t.Fatalf("evento = %s", upd.Raw)
 	}
-	upd = a.want(a.do("PATCH", "/api/timelines/historia-do-brasil/events/"+evID, ana, map[string]any{"date": nil}), 200)
-	if upd.Body["date"] != nil || upd.Body["title"] != "Chegada" {
-		t.Fatalf("date null devia limpar só a data: %s", upd.Raw)
+	upd = a.want(a.do("PATCH", "/api/timelines/historia-do-brasil/events/"+evID, ana, map[string]any{"day": nil}), 200)
+	if upd.Body["day"] != nil || upd.Body["month"] != 4.0 || upd.Body["title"] != "Chegada" {
+		t.Fatalf("day null devia limpar só o dia: %s", upd.Raw)
 	}
 	a.want(a.do("PATCH", "/api/timelines/historia-do-brasil/events/"+evID, beto, map[string]any{"title": "x"}), 403)
 

@@ -84,3 +84,17 @@ it('extent aguenta muitos valores', () => {
   expect(extent(Array.from({ length: 300000 }, (_, i) => i - 5))).toEqual([-5, 299994])
   expect(extent([])).toBeUndefined()
 })
+
+describe('chronological', () => {
+  it('ordena pelo mês, dia e hora dentro do ano, com o evento só com ano na frente', () => {
+    const at = (id: string, month?: number, day?: number, time?: string, endYear?: number): TimelineEvent => ({ ...ev(id, 1961, endYear), month, day, time })
+    const events = [at('goulart', 9, 7, undefined, 1964), at('mazzilli', 8, 25), at('renuncia', 8, 25, '15:00'), at('janio', 1, 31, '09:30'), at('ano'), at('janeiro', 1)]
+    expect(chronological(events).map((e) => e.id)).toEqual(['ano', 'janeiro', 'janio', 'mazzilli', 'renuncia', 'goulart'])
+  })
+
+  it('pagina por cursor com mês, dia e hora', () => {
+    const events = chronological(Array.from({ length: 6 }, (_, i) => ({ ...ev(`e${i}`, 2000), month: 6 - i, day: 1, time: '10:00' })))
+    const first = pageOf(events, { limit: 4 })
+    expect(pageOf(events, { cursor: first.nextCursor, limit: 4 }).items.map((e) => e.id)).toEqual(['e1', 'e0'])
+  })
+})

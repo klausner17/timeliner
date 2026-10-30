@@ -32,13 +32,17 @@ export type WindowOptions = { buckets?: number; maxEvents?: number }
 
 const endOf = (e: TimelineEvent) => e.endYear ?? e.year
 
-type Key = [number, number, string]
-const keyOf = (e: TimelineEvent): Key => [e.year, endOf(e), e.id]
+type Key = [year: number, month: number, day: number, time: string, end: number, id: string]
+const keyOf = (e: TimelineEvent): Key => [e.year, e.month ?? 0, e.day ?? 0, e.time ?? '', endOf(e), e.id]
+const KEY_SIZE = 6
 function compareKey(a: Key, b: Key) {
-  return a[0] - b[0] || a[1] - b[1] || (a[2] < b[2] ? -1 : a[2] > b[2] ? 1 : 0)
+  for (let i = 0; i < KEY_SIZE; i++) {
+    if (a[i] !== b[i]) return a[i] < b[i] ? -1 : 1
+  }
+  return 0
 }
 
-/** Ordem cronológica: ano, fim do período, id. */
+/** Ordem cronológica: ano, mês, dia, hora, fim do período, id. Sem mês, dia ou hora, vem antes. */
 export function chronological(events: readonly TimelineEvent[]): TimelineEvent[] {
   return [...events].sort((a, b) => compareKey(keyOf(a), keyOf(b)))
 }
@@ -55,7 +59,7 @@ function encodeCursor(e: TimelineEvent) {
 function decodeCursor(cursor: string): Key | undefined {
   try {
     const k = JSON.parse(decodeURIComponent(atob(cursor)))
-    return Array.isArray(k) && k.length === 3 ? (k as Key) : undefined
+    return Array.isArray(k) && k.length === KEY_SIZE ? (k as Key) : undefined
   } catch {
     return undefined
   }

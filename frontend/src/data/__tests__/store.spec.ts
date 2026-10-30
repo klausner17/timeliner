@@ -105,7 +105,7 @@ describe('leituras', () => {
         startYear: null,
         endYear: null,
         eras: [{ name: 'X', start: 1, end: null }],
-        events: [{ id: 'e1', year: 1, endYear: null, date: null, title: 'E', description: '', sourceUrl: null, by: 'klausner', era: null }],
+        events: [{ id: 'e1', year: 1, endYear: null, title: 'E', description: '', sourceUrl: null, by: 'klausner', era: null }],
         eventsNextCursor: null,
       }),
     )
