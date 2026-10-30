@@ -8,16 +8,16 @@ export function yearLabel(e: Pick<TimelineEvent, 'year' | 'endYear'>): string {
 }
 
 export type Moment = Pick<TimelineEvent, 'year' | 'month' | 'day' | 'time'>
-type Dated = Moment & Pick<TimelineEvent, 'endYear' | 'date'>
+type Dated = Moment & Pick<TimelineEvent, 'endYear'>
 
-/** Rótulo livre, data montada com mês, dia e hora, ou o período em anos. */
+/** Data montada com mês, dia e hora, ou o período em anos. */
 export function dateLabel(e: Dated): string {
-  return e.date ?? momentLabel(e) ?? (e.endYear && e.endYear !== e.year ? `${e.year}–${e.endYear}` : `${e.year}`)
+  return momentLabel(e) ?? (e.endYear && e.endYear !== e.year ? `${e.year}–${e.endYear}` : `${e.year}`)
 }
 
 /** A data ao lado do ano na timeline, só quando ela diz mais que o ano. */
 export function detailedDateLabel(e: Dated): string | undefined {
-  return e.date || e.month || (e.endYear && e.endYear !== e.year) ? dateLabel(e) : undefined
+  return e.month || (e.endYear && e.endYear !== e.year) ? dateLabel(e) : undefined
 }
 
 export const months = [

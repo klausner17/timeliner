@@ -39,8 +39,6 @@ export type TimelineEvent = {
   time?: string
   /** Fim de um período (ex.: 1964–1985). */
   endYear?: number
-  /** Rótulo livre da data ("verão de 1969"). Sem ele, a data sai de mês, dia e hora. */
-  date?: string
   title: string
   description: string
   sourceUrl?: string

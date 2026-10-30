@@ -20,9 +20,9 @@ func TestEventsCRUD(t *testing.T) {
 	_, err := create.Execute(ctx, usecase.CreateEventInput{ActorID: beto.ID, Slug: "brasil", Event: ev(1964, "Golpe")})
 	wantKind(t, err, domain.KindForbidden)
 	golpe := must[usecase.EventView](t)(create.Execute(ctx, usecase.CreateEventInput{
-		ActorID: ana.ID, Slug: "brasil", Event: domain.EventData{Year: 1964, Title: " Golpe ", Era: ptr("Ditadura"), Date: ptr("")},
+		ActorID: ana.ID, Slug: "brasil", Event: domain.EventData{Year: 1964, Title: " Golpe ", Era: ptr("Ditadura")},
 	}))
-	if golpe.Event.Title != "Golpe" || golpe.Event.Date != nil || golpe.AuthorHandle != "ana" {
+	if golpe.Event.Title != "Golpe" || golpe.AuthorHandle != "ana" {
 		t.Fatalf("evento = %+v", golpe)
 	}
 

@@ -3,15 +3,13 @@ package domain
 import "time"
 
 // EventData são os campos que o usuário escreve num evento. Month, Day e Time detalham o
-// início: o dia pede o mês e a hora ("15:04") pede o dia. Date é um rótulo livre que
-// substitui a data montada a partir deles.
+// início: o dia pede o mês e a hora ("15:04") pede o dia.
 type EventData struct {
 	Year        int
 	Month       *int
 	Day         *int
 	Time        *string
 	EndYear     *int
-	Date        *string
 	Title       string
 	Description string
 	SourceURL   *string

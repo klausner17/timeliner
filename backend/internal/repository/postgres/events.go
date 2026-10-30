@@ -14,17 +14,17 @@ import (
 
 type events struct{ *db }
 
-const eventCols = `id, timeline_id, year, month, day, time_of_day, end_year, date, title, description, source_url, era, author_id, created_at`
+const eventCols = `id, timeline_id, year, month, day, time_of_day, end_year, title, description, source_url, era, author_id, created_at`
 
 // eventFields são os destinos do Scan na ordem de eventCols.
 func eventFields(e *domain.Event) []any {
-	return []any{&e.ID, &e.TimelineID, &e.Year, &e.Month, &e.Day, &e.Time, &e.EndYear, &e.Date, &e.Title, &e.Description,
+	return []any{&e.ID, &e.TimelineID, &e.Year, &e.Month, &e.Day, &e.Time, &e.EndYear, &e.Title, &e.Description,
 		&e.SourceURL, &e.Era, &e.AuthorID, &e.CreatedAt}
 }
 
 // eventValues são os valores do evento na ordem de eventCols.
 func eventValues(e *domain.Event) []any {
-	return []any{e.ID, e.TimelineID, e.Year, e.Month, e.Day, e.Time, e.EndYear, e.Date, e.Title, e.Description,
+	return []any{e.ID, e.TimelineID, e.Year, e.Month, e.Day, e.Time, e.EndYear, e.Title, e.Description,
 		e.SourceURL, e.Era, e.AuthorID, e.CreatedAt}
 }
 
@@ -37,15 +37,15 @@ func scanEvent(row pgx.Row) (*domain.Event, error) {
 }
 
 func (r events) Create(ctx context.Context, e *domain.Event) error {
-	_, err := r.q(ctx).Exec(ctx, `INSERT INTO events (`+eventCols+`) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+	_, err := r.q(ctx).Exec(ctx, `INSERT INTO events (`+eventCols+`) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
 		eventValues(e)...)
 	return translate(err)
 }
 
 func (r events) Update(ctx context.Context, e *domain.Event) error {
 	return mustAffect(r.q(ctx).Exec(ctx, `UPDATE events SET year=$2, month=$3, day=$4, time_of_day=$5, end_year=$6,
-		date=$7, title=$8, description=$9, source_url=$10, era=$11 WHERE id=$1`,
-		e.ID, e.Year, e.Month, e.Day, e.Time, e.EndYear, e.Date, e.Title, e.Description, e.SourceURL, e.Era))
+		title=$7, description=$8, source_url=$9, era=$10 WHERE id=$1`,
+		e.ID, e.Year, e.Month, e.Day, e.Time, e.EndYear, e.Title, e.Description, e.SourceURL, e.Era))
 }
 
 func (r events) Delete(ctx context.Context, id string) error {
@@ -167,7 +167,6 @@ type eventJSON struct {
 	Day         *int       `json:"day,omitempty"`
 	Time        *string    `json:"time,omitempty"`
 	EndYear     *int       `json:"endYear,omitempty"`
-	Date        *string    `json:"date,omitempty"`
 	Title       string     `json:"title"`
 	Description string     `json:"description"`
 	SourceURL   *string    `json:"sourceUrl,omitempty"`
@@ -175,11 +174,11 @@ type eventJSON struct {
 }
 
 func dataToJSON(d domain.EventData) eventJSON {
-	return eventJSON{Year: d.Year, Month: d.Month, Day: d.Day, Time: d.Time, EndYear: d.EndYear, Date: d.Date, Title: d.Title, Description: d.Description, SourceURL: d.SourceURL, Era: d.Era}
+	return eventJSON{Year: d.Year, Month: d.Month, Day: d.Day, Time: d.Time, EndYear: d.EndYear, Title: d.Title, Description: d.Description, SourceURL: d.SourceURL, Era: d.Era}
 }
 
 func (j eventJSON) data() domain.EventData {
-	return domain.EventData{Year: j.Year, Month: j.Month, Day: j.Day, Time: j.Time, EndYear: j.EndYear, Date: j.Date, Title: j.Title, Description: j.Description, SourceURL: j.SourceURL, Era: j.Era}
+	return domain.EventData{Year: j.Year, Month: j.Month, Day: j.Day, Time: j.Time, EndYear: j.EndYear, Title: j.Title, Description: j.Description, SourceURL: j.SourceURL, Era: j.Era}
 }
 
 func marshalEvent(e *domain.Event) ([]byte, error) {

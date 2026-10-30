@@ -2,7 +2,7 @@
 ALTER TABLE events ADD COLUMN month smallint, ADD COLUMN day smallint, ADD COLUMN time_of_day text;
 
 -- Datas por extenso como "13 de maio de 1888", "1º de julho de 1994" ou "Fevereiro de 1922",
--- no mesmo ano do evento, viram mês e dia. O texto sai, porque o frontend monta o mesmo rótulo.
+-- no mesmo ano do evento, viram mês e dia. As outras se perdem com a coluna date.
 WITH parsed AS (
     SELECT events.id,
            m[1]::smallint AS day,
@@ -12,7 +12,7 @@ WITH parsed AS (
          regexp_match(trim(date), '^(?:(\d{1,2})º? de )?(janeiro|fevereiro|março|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro) de (-?\d{1,6})$', 'i') AS m
     WHERE m[3]::int = events.year
 )
-UPDATE events SET month = parsed.month, day = parsed.day, date = NULL
+UPDATE events SET month = parsed.month, day = parsed.day
 FROM parsed
 WHERE events.id = parsed.id
   AND (parsed.day IS NULL OR parsed.day BETWEEN 1 AND CASE
@@ -27,7 +27,12 @@ CREATE INDEX events_timeline_order_v2_idx ON events (timeline_id, year, (COALESC
 DROP INDEX events_timeline_order_idx;
 ALTER INDEX events_timeline_order_v2_idx RENAME TO events_timeline_order_idx;
 
+ALTER TABLE events DROP COLUMN date;
+UPDATE suggestions SET proposed = proposed - 'date', previous = previous - 'date'
+WHERE proposed ? 'date' OR previous ? 'date';
+
 -- +goose Down
+ALTER TABLE events ADD COLUMN date text;
 CREATE INDEX events_timeline_order_v1_idx ON events (timeline_id, year, (COALESCE(end_year, year)), created_at, id);
 DROP INDEX events_timeline_order_idx;
 ALTER INDEX events_timeline_order_v1_idx RENAME TO events_timeline_order_idx;

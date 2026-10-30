@@ -26,7 +26,7 @@ import type { EventPage, EventWindow, Overlap, WindowOptions } from './windowing
 
 type Nullable<T> = { [K in keyof T]: T[K] | null }
 
-/** Tira os campos null, para os tipos com opcionais (endYear?, date?...). */
+/** Tira os campos null, para os tipos com opcionais (endYear?, month?...). */
 function clean<T extends object>(o: Nullable<T>): T {
   return Object.fromEntries(Object.entries(o).filter(([, v]) => v !== null)) as T
 }

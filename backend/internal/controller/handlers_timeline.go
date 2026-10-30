@@ -225,7 +225,6 @@ func (c *Controller) updateEvent(w http.ResponseWriter, r *http.Request) {
 		Day         Optional[int]    `json:"day"`
 		Time        Optional[string] `json:"time"`
 		EndYear     Optional[int]    `json:"endYear"`
-		Date        Optional[string] `json:"date"`
 		Title       *string          `json:"title"`
 		Description *string          `json:"description"`
 		SourceURL   Optional[string] `json:"sourceUrl"`
@@ -239,7 +238,7 @@ func (c *Controller) updateEvent(w http.ResponseWriter, r *http.Request) {
 	v, err := c.uc.UpdateEvent.Execute(r.Context(), usecase.UpdateEventInput{
 		ActorID: in.ActorID, Slug: in.Slug, EventID: chi.URLParam(r, "eventId"),
 		Patch: usecase.EventPatch{
-			Year: body.Year, Month: body.Month.ptr(), Day: body.Day.ptr(), Time: body.Time.ptr(), EndYear: body.EndYear.ptr(), Date: body.Date.ptr(), Title: body.Title,
+			Year: body.Year, Month: body.Month.ptr(), Day: body.Day.ptr(), Time: body.Time.ptr(), EndYear: body.EndYear.ptr(), Title: body.Title,
 			Description: body.Description, SourceURL: body.SourceURL.ptr(), Era: body.Era.ptr(),
 		},
 	})

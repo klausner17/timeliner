@@ -151,8 +151,8 @@ const inviteMsg = ref('')
 
 // ---------- Formulário de evento ----------
 
-type Form = { year: string; month: string; day: string; time: string; endYear: string; date: string; era: string; title: string; description: string; source: string }
-const blank = (): Form => ({ year: '', month: '', day: '', time: '', endYear: '', date: '', era: '', title: '', description: '', source: '' })
+type Form = { year: string; month: string; day: string; time: string; endYear: string; era: string; title: string; description: string; source: string }
+const blank = (): Form => ({ year: '', month: '', day: '', time: '', endYear: '', era: '', title: '', description: '', source: '' })
 const form = reactive<Form>(blank())
 const formOpen = ref(false)
 const editing = ref<string>()
@@ -175,7 +175,6 @@ function openEdit(e: TimelineEvent) {
     year: String(e.year),
     ...momentFields(e),
     endYear: e.endYear ? String(e.endYear) : '',
-    date: e.date ?? '',
     era: e.era ?? '',
     title: e.title,
     description: e.description,
@@ -214,7 +213,6 @@ async function submit() {
     year,
     ...moment.value,
     endYear,
-    date: form.date.trim() || undefined,
     era: form.era || undefined,
     title: form.title.trim(),
     description: form.description.trim(),
@@ -224,7 +222,7 @@ async function submit() {
   try {
     // Na edição, campo apagado vai como null para a API limpar.
     const result = editing.value
-      ? await updateEvent(t.slug, editing.value, { ...data, month: data.month ?? null, day: data.day ?? null, time: data.time ?? null, endYear: data.endYear ?? null, date: data.date ?? null, era: data.era ?? null, sourceUrl: data.sourceUrl ?? null })
+      ? await updateEvent(t.slug, editing.value, { ...data, month: data.month ?? null, day: data.day ?? null, time: data.time ?? null, endYear: data.endYear ?? null, era: data.era ?? null, sourceUrl: data.sourceUrl ?? null })
       : await createEvent(t.slug, data)
     justEdited.value = !!editing.value
     justAdded.value = result.id
@@ -404,9 +402,6 @@ async function destroy() {
             </TlField>
             <TlField v-slot="{ id, describedby, invalid }" label="Hora (opcional)" :error="errors.time">
               <TlInput :id="id" v-model="form.time" type="time" :aria-describedby="describedby" :invalid="invalid" />
-            </TlField>
-            <TlField v-slot="{ id, describedby }" label="Data por extenso (opcional)" hint="Substitui a data montada com mês, dia e hora.">
-              <TlInput :id="id" v-model="form.date" placeholder="Ex.: verão de 1888" :aria-describedby="describedby" />
             </TlField>
             <TlField v-if="timeline.eras.length" v-slot="{ id }" label="Período">
               <TlSelect :id="id" v-model="form.era" :options="eraOptions" />

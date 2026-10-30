@@ -91,7 +91,6 @@ type EventPatch struct {
 	Day         **int
 	Time        **string
 	EndYear     **int
-	Date        **string
 	Title       *string
 	Description *string
 	SourceURL   **string
@@ -129,9 +128,6 @@ func (uc *UpdateEvent) Execute(ctx context.Context, in UpdateEventInput) (EventV
 	}
 	if p.EndYear != nil {
 		e.EndYear = *p.EndYear
-	}
-	if p.Date != nil {
-		e.Date = *p.Date
 	}
 	if p.Title != nil {
 		e.Title = *p.Title

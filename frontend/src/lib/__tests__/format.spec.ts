@@ -11,8 +11,7 @@ describe('momentLabel', () => {
 })
 
 describe('dateLabel', () => {
-  it('prefere o rótulo livre, depois a data montada, depois os anos', () => {
-    expect(dateLabel({ year: 1969, month: 7, date: 'verão de 1969' })).toBe('verão de 1969')
+  it('usa a data montada e, sem mês, os anos', () => {
     expect(dateLabel({ year: 1961, month: 1, day: 31, endYear: 1961 })).toBe('31 de janeiro de 1961')
     expect(dateLabel({ year: 1964, endYear: 1985 })).toBe('1964–1985')
     expect(dateLabel({ year: 1500 })).toBe('1500')

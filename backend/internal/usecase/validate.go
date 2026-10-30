@@ -67,9 +67,6 @@ func validateEvent(f fieldErrors, prefix string, e domain.EventData, eras []doma
 	if e.EndYear != nil {
 		f.check(*e.EndYear >= e.Year && *e.EndYear <= maxYear, prefix+"endYear", "O fim precisa ser depois do início.")
 	}
-	if e.Date != nil {
-		f.check(length(*e.Date, 1, 60), prefix+"date", "A data pode ter até 60 caracteres.")
-	}
 	if e.SourceURL != nil {
 		f.check(validURL(*e.SourceURL), prefix+"sourceUrl", "Link inválido.")
 	}
@@ -112,7 +109,6 @@ func normalizeEvent(e domain.EventData) domain.EventData {
 	e.Title = strings.TrimSpace(e.Title)
 	e.Description = strings.TrimSpace(e.Description)
 	e.Time = emptyToNil(e.Time)
-	e.Date = emptyToNil(e.Date)
 	e.SourceURL = emptyToNil(e.SourceURL)
 	e.Era = emptyToNil(e.Era)
 	return e
