@@ -62,7 +62,7 @@ const (
 func validateEvent(f fieldErrors, prefix string, e domain.EventData, eras []domain.Era, r yearRules) {
 	f.check(e.Year >= r.Lo && e.Year <= r.Hi, prefix+"year", "Ano fora do intervalo.")
 	if r.YearOnly {
-		f.check(e.Month == nil, prefix+"month", "Timelines com calendário próprio usam só o ano.")
+		f.check(e.Month == nil, prefix+"month", r.YearOnlyMsg)
 	}
 	f.check(length(e.Title, 1, 160), prefix+"title", "O título precisa ter de 1 a 160 caracteres.")
 	f.check(length(e.Description, 0, 4000), prefix+"description", "A descrição pode ter até 4000 caracteres.")

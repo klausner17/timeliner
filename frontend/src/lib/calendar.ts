@@ -6,6 +6,7 @@
 import type { CalendarEra, TimelineCalendar } from '@/data/types'
 import { gregorianYears, type YearFormat } from '@/design-system/components/yearFormat'
 import { axisTicks, niceStep } from '@/design-system/components/trackLayout'
+import { isScale, scaleTicks, scaleYearFormat, type Reckoning } from './scale'
 
 /** Até onde vai, no eixo, a era sem duração (a última). Igual ao backend. */
 export const OPEN_ERA_YEARS = 100000
@@ -93,9 +94,10 @@ export function parseEraYear(text: string, cal: Pick<TimelineCalendar, 'eras'>):
   return era ? fromEraYear(era.id, Number(m[2]), cal) : undefined
 }
 
-/** Como os componentes escrevem os anos de uma timeline: gregoriano ou com as eras. */
-export function yearFormatOf(cal?: TimelineCalendar): YearFormat {
+/** Como os componentes escrevem os anos de uma timeline: gregoriano, com as eras ou na escala fixa. */
+export function yearFormatOf(cal?: Reckoning): YearFormat {
   if (!cal) return gregorianYears
+  if (isScale(cal)) return scaleYearFormat(cal)
   return {
     year: (y) => formatEraYear(y, cal),
     ticks: (lo, hi, step) => eraTicks(lo, hi, step, cal),
@@ -105,7 +107,8 @@ export function yearFormatOf(cal?: TimelineCalendar): YearFormat {
   }
 }
 
-/** Marcações do minimapa: as de sempre no gregoriano, ou as das eras (com cerca de 6 entre elas). */
-export function overviewTicksFor(lo: number, hi: number, cal?: TimelineCalendar): number[] {
+/** Marcações do minimapa: as de sempre no gregoriano, ou as das eras ou da escala (cerca de 6). */
+export function overviewTicksFor(lo: number, hi: number, cal?: Reckoning): number[] {
+  if (isScale(cal)) return scaleTicks(lo, hi, niceStep(hi - lo, 6))
   return cal ? eraTicks(lo, hi, niceStep(hi - lo, 6), cal) : axisTicks(lo, hi)
 }

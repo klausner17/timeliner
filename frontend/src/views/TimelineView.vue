@@ -43,6 +43,7 @@ import type { EventWindow } from '@/data/windowing'
 import { copyLink, dateLabel, detailedDateLabel, timeAgo, yearLabel } from '@/lib/format'
 import { useLatest } from '@/lib/useLatest'
 import { overviewTicksFor, yearFormatOf } from '@/lib/calendar'
+import { reckoningOf, scaleName } from '@/lib/scale'
 import NotFoundView from './NotFoundView.vue'
 
 const route = useRoute()
@@ -87,9 +88,10 @@ watch(
 )
 
 const range = computed(() => (timeline.value ? yearRange(timeline.value) : undefined))
-/** Como os anos são escritos: gregoriano, ou "T.A. 3019" numa timeline ficcional. */
+/** Como os anos são escritos: gregoriano, "T.A. 3019" numa ficcional ou "Dia 60" numa fixa. */
 const cal = computed(() => timeline.value?.calendar)
-const years = computed(() => yearFormatOf(cal.value))
+const reck = computed(() => reckoningOf(timeline.value))
+const years = computed(() => yearFormatOf(reck.value))
 provideYearFormat(years)
 
 /** Os períodos com a cor que cada um mostra (a escolhida ou a da posição na lista). */
@@ -179,7 +181,7 @@ const groups = computed<Group[]>(() => {
 
 // ---------- Minimapa ----------
 
-const overviewTicks = computed(() => (range.value ? overviewTicksFor(range.value[0], range.value[1], cal.value) : []))
+const overviewTicks = computed(() => (range.value ? overviewTicksFor(range.value[0], range.value[1], reck.value) : []))
 
 // Histograma do eixo completo: 100 faixas, sem trazer os eventos.
 const { data: overview } = useLatest(
@@ -344,6 +346,8 @@ async function share() {
               </span>
               <span>{{ rangeLabel(timeline) }}</span>
               <RouterLink v-if="cal" :to="`/calendarios/${cal.id}`" class="top__calendar">Calendário {{ cal.name }}</RouterLink>
+              <span v-if="timeline.scale">Em {{ scaleName(timeline.scale) }} desde o início</span>
+              <TlBadge v-if="timeline.cyclic" tone="info" title="Depois do fim, o ciclo recomeça">Cíclica</TlBadge>
               <span>{{ timeline.eventCount.toLocaleString('pt-BR') }} eventos</span>
               <span>{{ timeline.contributorCount }} {{ timeline.contributorCount === 1 ? 'contribuidor' : 'contribuidores' }}</span>
               <span>Atualizada {{ timeAgo(timeline.updatedAt) }}</span>
@@ -425,8 +429,8 @@ async function share() {
             <TlEventItem
               v-for="e in g.events"
               :key="e.id"
-              :year="yearLabel(e, cal)"
-              :date="detailedDateLabel(e, cal)"
+              :year="yearLabel(e, reck)"
+              :date="detailedDateLabel(e, reck)"
               :title="e.title"
               :description="e.description"
               :source-url="e.sourceUrl"
@@ -437,6 +441,7 @@ async function share() {
           </section>
           <p v-if="!loaded.length && !loading" class="body__note">Nenhum evento neste período.</p>
           <p v-if="loadError" class="body__note" role="alert">{{ loadError }}</p>
+          <p v-if="timeline.cyclic && !nextCursor && loaded.length" class="body__cycle">↻ Depois daqui, o ciclo recomeça do início.</p>
           <div v-if="nextCursor" ref="sentinel" class="more">
             <TlButton :disabled="loading" @click="loadPage(false)">{{ loading ? 'Carregando…' : 'Carregar mais eventos' }}</TlButton>
           </div>
@@ -448,7 +453,7 @@ async function share() {
             {{ grouped.total.toLocaleString('pt-BR') }} eventos neste trecho, agrupados por período. Clique num grupo ou aproxime para ver cada evento.
           </p>
           <TlCard v-if="selectedEvent" padding="lg" class="detail">
-            <span class="detail__date">{{ dateLabel(selectedEvent, cal) }}</span>
+            <span class="detail__date">{{ dateLabel(selectedEvent, reck) }}</span>
             <h2 class="detail__title">{{ selectedEvent.title }}</h2>
             <p>{{ selectedEvent.description }}</p>
             <span class="detail__by">
@@ -496,6 +501,11 @@ async function share() {
 </template>
 
 <style scoped>
+.body__cycle {
+  margin-top: var(--tl-space-4);
+  font-size: var(--tl-text-sm);
+  color: var(--tl-color-text-muted);
+}
 .top__calendar {
   color: inherit;
   text-decoration: underline;

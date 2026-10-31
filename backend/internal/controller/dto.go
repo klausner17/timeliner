@@ -90,6 +90,8 @@ type timelineJSON struct {
 	Eras               []eraJSON               `json:"eras"`
 	Tags               []string                `json:"tags"`
 	Calendar           *timelineCalendarJSON   `json:"calendar"`
+	Scale              *domain.Scale           `json:"scale"`
+	Cyclic             bool                    `json:"cyclic"`
 	StartYear          *int                    `json:"startYear"`
 	EndYear            *int                    `json:"endYear"`
 	EventCount         int                     `json:"eventCount"`
@@ -121,8 +123,8 @@ func toTimeline(v usecase.TimelineView) timelineJSON {
 		cal = &timelineCalendarJSON{ID: v.Calendar.ID, Name: v.Calendar.Name, Eras: eras}
 	}
 	return timelineJSON{
-		Calendar: cal,
-		Slug:     t.Slug, Title: t.Title, Description: t.Description, Category: t.Category, Color: t.Color,
+		Calendar: cal, Scale: t.Scale, Cyclic: t.Cyclic,
+		Slug: t.Slug, Title: t.Title, Description: t.Description, Category: t.Category, Color: t.Color,
 		Owner: toUserSummary(v.Owner), Visibility: t.Visibility, Contributions: t.Contributions, Draft: t.Draft,
 		Eras: eras, Tags: tags, StartYear: v.Stats.StartYear, EndYear: v.Stats.EndYear,
 		EventCount: v.Stats.EventCount, ContributorCount: v.Stats.ContributorCount,

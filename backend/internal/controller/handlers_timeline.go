@@ -21,6 +21,7 @@ type timelineFieldsJSON struct {
 	Draft         *bool                    `json:"draft"`
 	Eras          *[]eraInputJSON          `json:"eras"`
 	Tags          *[]string                `json:"tags"`
+	Cyclic        *bool                    `json:"cyclic"`
 }
 
 // eraInputJSON é um período como chega na requisição: previousName diz que ele foi
@@ -34,6 +35,7 @@ func (b timelineFieldsJSON) fields() usecase.TimelineFields {
 	f := usecase.TimelineFields{
 		Title: b.Title, Description: b.Description, Category: b.Category, Color: b.Color,
 		Visibility: b.Visibility, Contributions: b.Contributions, Draft: b.Draft, Tags: b.Tags,
+		Cyclic: b.Cyclic,
 	}
 	if b.Eras != nil {
 		eras := make([]domain.Era, len(*b.Eras))
@@ -82,6 +84,7 @@ func (c *Controller) createTimeline(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		timelineFieldsJSON
 		CalendarID *string          `json:"calendarId"`
+		Scale      *domain.Scale    `json:"scale"`
 		Events     []eventInputJSON `json:"events"`
 	}
 	if err := decode(r, &body); err != nil {
@@ -98,7 +101,7 @@ func (c *Controller) createTimeline(w http.ResponseWriter, r *http.Request) {
 		c.fail(w, r, err)
 		return
 	}
-	v, err := c.uc.CreateTimeline.Execute(r.Context(), usecase.CreateTimelineInput{ActorID: actor(r), TimelineFields: body.fields(), CalendarID: deref(body.CalendarID), Events: events})
+	v, err := c.uc.CreateTimeline.Execute(r.Context(), usecase.CreateTimelineInput{ActorID: actor(r), TimelineFields: body.fields(), CalendarID: deref(body.CalendarID), Scale: body.Scale, Events: events})
 	if err != nil {
 		c.fail(w, r, err)
 		return

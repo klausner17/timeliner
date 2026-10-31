@@ -99,6 +99,8 @@ type TimelineFields struct {
 	// eventos acompanharem a troca de nome. Só vale junto com Eras.
 	RenamedEras map[string]string
 	Tags        *[]string
+	// Cyclic só vale em timeline fixa.
+	Cyclic *bool
 }
 
 // MaxEras é quantos períodos uma timeline pode ter.
@@ -139,6 +141,10 @@ func (in TimelineFields) apply(t *domain.Timeline, r yearRules) error {
 	if in.Tags != nil {
 		t.Tags = normalizeTags(*in.Tags)
 	}
+	if in.Cyclic != nil {
+		t.Cyclic = *in.Cyclic
+	}
+	f.check(!t.Cyclic || t.Scale != nil, "cyclic", "Só timelines fixas podem ser cíclicas.")
 	f.check(length(t.Title, 1, 120), "title", "O título precisa ter de 1 a 120 caracteres.")
 	f.check(length(t.Description, 0, 2000), "description", "A descrição pode ter até 2000 caracteres.")
 	f.check(domain.ValidCategory(t.Category), "category", "Categoria inválida.")
@@ -158,7 +164,7 @@ func (in TimelineFields) apply(t *domain.Timeline, r yearRules) error {
 		f.check(era.Start >= r.Lo && era.Start <= r.Hi, p+"start", "Ano fora do intervalo.")
 		f.check(era.End == nil || *era.End <= r.Hi, p+"end", "Ano fora do intervalo.")
 		if r.YearOnly {
-			f.check(era.StartMonth == nil && era.EndMonth == nil, p+"startMonth", "Timelines com calendário próprio usam só o ano.")
+			f.check(era.StartMonth == nil && era.EndMonth == nil, p+"startMonth", r.YearOnlyMsg)
 		}
 		validateEraDay(f, p+"start", era.Start, era.StartMonth, era.StartDay)
 		if era.End != nil {
@@ -234,7 +240,9 @@ type CreateTimelineInput struct {
 	TimelineFields
 	// CalendarID escolhe um calendário ficcional (do usuário ou compartilhado); vazio é o gregoriano.
 	CalendarID string
-	Events     []domain.EventData
+	// Scale faz uma timeline fixa, contada do início nessa unidade, sem calendário.
+	Scale  *domain.Scale
+	Events []domain.EventData
 }
 
 type CreateTimeline struct{ d *Deps }
@@ -252,7 +260,20 @@ func (uc *CreateTimeline) Execute(ctx context.Context, in CreateTimelineInput) (
 		Eras: []domain.Era{}, Tags: []string{}, CreatedAt: now, UpdatedAt: now,
 	}
 	var cal *domain.Calendar
-	if id := strings.TrimSpace(in.CalendarID); id != "" {
+	if in.Scale != nil {
+		f := map[string]string{}
+		if !in.Scale.Valid() {
+			f["scale"] = "Escala inválida."
+		}
+		if strings.TrimSpace(in.CalendarID) != "" {
+			f["calendarId"] = "Uma timeline fixa não usa calendário."
+		}
+		if len(f) > 0 {
+			return TimelineDetailView{}, domain.Invalid(f)
+		}
+		s := *in.Scale
+		t.Scale = &s
+	} else if id := strings.TrimSpace(in.CalendarID); id != "" {
 		c, err := usableCalendar(ctx, uc.d, id, in.ActorID)
 		if err != nil {
 			if domain.KindOf(err) == domain.KindNotFound {
@@ -263,6 +284,9 @@ func (uc *CreateTimeline) Execute(ctx context.Context, in CreateTimelineInput) (
 		cal, t.CalendarID = c, &c.ID
 	}
 	rules := rulesFor(cal)
+	if t.Scale != nil {
+		rules = scaleRules()
+	}
 	err := in.TimelineFields.apply(&t, rules)
 	f := fieldErrors{}
 	if e, ok := err.(*domain.Error); ok {

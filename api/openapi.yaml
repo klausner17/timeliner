@@ -769,7 +769,7 @@ components:
 
     Category:
       type: string
-      enum: [História, Política, Esporte, Ciência e tecnologia, Cultura, Ficção, Pessoal]
+      enum: [História, Política, Esporte, Ciência e tecnologia, Cultura, Natureza, Ficção, Pessoal]
 
     UserSummary:
       type: object
@@ -893,7 +893,7 @@ components:
       description: Resumo usado em listas e cartões (sem eventos)
       required:
         [slug, title, description, category, color, owner, visibility, contributions, draft, eras, tags,
-         calendar, startYear, endYear, eventCount, contributorCount, pendingSuggestions, followers, following,
+         calendar, scale, cyclic, startYear, endYear, eventCount, contributorCount, pendingSuggestions, followers, following,
          points, createdAt, updatedAt]
       properties:
         slug: { type: string, example: historia-do-brasil }
@@ -910,6 +910,15 @@ components:
           oneOf:
             - $ref: '#/components/schemas/TimelineCalendar'
             - type: 'null'
+        scale:
+          description: >-
+            Timeline fixa (ex.: ciclo de vida do lagarto): sem calendário, o year de eventos e
+            períodos é a posição a partir do início (0) nessa unidade, sem mês nem dia. null nas
+            timelines com calendário. Só se comparam timelines fixas da mesma escala.
+          oneOf:
+            - $ref: '#/components/schemas/Scale'
+            - type: 'null'
+        cyclic: { type: boolean, description: 'Timeline fixa em que o fim volta ao começo. Sempre false nas outras.' }
         eras:
           type: array
           items: { $ref: '#/components/schemas/Era' }
@@ -1043,6 +1052,11 @@ components:
               abbr: { type: string, minLength: 1, maxLength: 12 }
               years: { type: [integer, 'null'], minimum: 1, maximum: 100000 }
 
+    Scale:
+      type: string
+      description: Unidade de uma timeline fixa.
+      enum: [dias, semanas, meses, anos]
+
     TimelineCalendar:
       type: object
       description: O calendário dentro da timeline, para a tela escrever os anos.
@@ -1070,6 +1084,12 @@ components:
           description: >-
             Calendário ficcional (do usuário ou compartilhado). Sem ele, a timeline usa o
             gregoriano. Só se escolhe na criação.
+        scale:
+          description: Faz uma timeline fixa nessa escala. Só na criação e sem calendarId.
+          oneOf:
+            - $ref: '#/components/schemas/Scale'
+            - type: 'null'
+        cyclic: { type: boolean, default: false, description: Só em timeline fixa. }
         eras:
           type: array
           maxItems: 60
@@ -1095,6 +1115,7 @@ components:
         visibility: { $ref: '#/components/schemas/Visibility' }
         contributions: { $ref: '#/components/schemas/ContributionMode' }
         draft: { type: boolean }
+        cyclic: { type: boolean, description: Só em timeline fixa. }
         eras:
           type: array
           maxItems: 60
