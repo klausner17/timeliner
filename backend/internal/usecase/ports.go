@@ -96,6 +96,9 @@ type EventRepository interface {
 	// Summary devolve só as faixas com eventos, em ordem, cada uma com a contagem e
 	// os primeiros q.Sample eventos.
 	Summary(ctx context.Context, q SummaryQuery) ([]domain.YearBucket, error)
+	// RemapEras troca o período dos eventos da timeline: cada nome antigo vira o novo, ou
+	// nenhum período quando o valor é nil. Tudo de uma vez, para trocas como A↔B.
+	RemapEras(ctx context.Context, timelineID string, remap map[string]*string) error
 	// Overlaps devolve até limit anos de [from, to] em que duas ou mais das timelines têm
 	// evento começando, em ordem, e o total desses anos.
 	Overlaps(ctx context.Context, timelineIDs []string, from, to, limit int) ([]domain.YearOverlap, int, error)

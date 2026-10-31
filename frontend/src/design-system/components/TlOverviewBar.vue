@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { TrackColor } from '../tokens'
+import { periodRange, stackPeriods, type TrackPeriod } from './periodLayout'
 
 export type OverviewBucket = { from: number; to: number; count: number }
-/** Uma timeline no minimapa: anos soltos ou faixas já contadas (timelines grandes). */
-export type OverviewTrack = { color: TrackColor; years?: number[]; buckets?: OverviewBucket[]; label?: string }
+/** Uma timeline no minimapa: anos soltos ou faixas já contadas (timelines grandes), e os períodos dela. */
+export type OverviewTrack = { color: TrackColor; years?: number[]; buckets?: OverviewBucket[]; label?: string; periods?: TrackPeriod[] }
 
 /**
  * Minimapa: um histograma de quantos eventos há em cada parte do eixo completo e a
@@ -17,6 +18,8 @@ const props = withDefaults(
     end: number
     years?: number[]
     buckets?: OverviewBucket[]
+    /** Períodos, em faixas finas embaixo do histograma. */
+    periods?: TrackPeriod[]
     /** Várias timelines empilhadas (tela de comparação). Substitui years/buckets. */
     tracks?: OverviewTrack[]
     ticks?: number[]
@@ -35,7 +38,10 @@ const clamp = (y: number) => Math.min(Math.max(y, props.start), props.end)
 const pct = (y: number) => ((clamp(y) - props.start) / span.value) * 100
 const tickList = computed(() => props.ticks ?? [props.start, props.end])
 
-const trackList = computed<OverviewTrack[]>(() => props.tracks ?? [{ color: props.color, years: props.years, buckets: props.buckets }])
+const trackList = computed<OverviewTrack[]>(() => props.tracks ?? [{ color: props.color, years: props.years, buckets: props.buckets, periods: props.periods }])
+
+const PERIOD_ROW = 6
+const THIS_YEAR = new Date().getFullYear()
 
 const histograms = computed(() =>
   trackList.value.map((t) => {
@@ -50,7 +56,10 @@ const histograms = computed(() =>
     const total = bins.reduce((a, b) => a + b, 0)
     // Raiz quadrada: uma década cheia não esconde as faixas com poucos eventos.
     const bars = bins.flatMap((n, i) => (n ? [{ i, h: Math.max(12, Math.sqrt(n / max) * 100) }] : []))
-    return { ...t, bars, total }
+    const placed = stackPeriods(t.periods ?? [], Math.max(THIS_YEAR, props.end)).filter((p) => p.to >= props.start && p.start <= props.end)
+    const periods = placed.map((p) => ({ ...p, left: pct(p.start), width: Math.max(0.5, pct(p.to) - pct(p.start)), top: p.row * PERIOD_ROW, title: `${p.name} · ${periodRange(p)}` }))
+    const periodsHeight = periods.length ? Math.max(...periods.map((p) => p.row + 1)) * PERIOD_ROW : 0
+    return { ...t, bars, total, periods, periodsHeight }
   }),
 )
 
@@ -139,10 +148,21 @@ function onKey(ev: KeyboardEvent) {
       @pointercancel="onPointerUp"
     >
       <div class="tl-overview__tracks" role="img" :aria-label="label">
-        <div v-for="(h, hi) in histograms" :key="hi" class="tl-overview__track" :style="{ '--track': `var(--tl-track-${h.color})` }" :title="h.label">
-          <div class="tl-overview__line"></div>
-          <div v-for="b in h.bars" :key="b.i" class="tl-overview__mark" :style="{ left: `${b.i}%`, height: `${b.h}%` }"></div>
-        </div>
+        <template v-for="(h, hi) in histograms" :key="hi">
+          <div class="tl-overview__track" :style="{ '--track': `var(--tl-track-${h.color})` }" :title="h.label">
+            <div class="tl-overview__line"></div>
+            <div v-for="b in h.bars" :key="b.i" class="tl-overview__mark" :style="{ left: `${b.i}%`, height: `${b.h}%` }"></div>
+          </div>
+          <div v-if="h.periods.length" class="tl-overview__periods" :style="{ height: `${h.periodsHeight}px` }">
+            <div
+              v-for="p in h.periods"
+              :key="p.name"
+              class="tl-overview__period"
+              :style="{ left: `${p.left}%`, width: `${p.width}%`, top: `${p.top}px`, background: `var(--tl-period-${p.color})` }"
+              :title="p.title"
+            ></div>
+          </div>
+        </template>
       </div>
       <div
         v-if="windowModel"
@@ -194,10 +214,6 @@ function onKey(ev: KeyboardEvent) {
 }
 .tl-overview__bar {
   position: relative;
-  height: 36px;
-}
-.tl-overview__bar--stacked {
-  height: auto;
 }
 .tl-overview--interactive .tl-overview__bar {
   cursor: pointer;
@@ -207,7 +223,6 @@ function onKey(ev: KeyboardEvent) {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  height: 100%;
 }
 .tl-overview__track {
   position: relative;
@@ -215,7 +230,19 @@ function onKey(ev: KeyboardEvent) {
   min-height: 14px;
 }
 .tl-overview__bar:not(.tl-overview__bar--stacked) .tl-overview__track {
+  flex: none;
+  height: 36px;
   padding: 4px 0;
+}
+.tl-overview__periods {
+  position: relative;
+  margin-top: -1px;
+}
+.tl-overview__period {
+  position: absolute;
+  height: 4px;
+  border-radius: var(--tl-radius-pill);
+  opacity: 0.85;
 }
 .tl-overview__line {
   position: absolute;

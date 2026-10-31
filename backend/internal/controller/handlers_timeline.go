@@ -19,8 +19,15 @@ type timelineFieldsJSON struct {
 	Visibility    *domain.Visibility       `json:"visibility"`
 	Contributions *domain.ContributionMode `json:"contributions"`
 	Draft         *bool                    `json:"draft"`
-	Eras          *[]eraJSON               `json:"eras"`
+	Eras          *[]eraInputJSON          `json:"eras"`
 	Tags          *[]string                `json:"tags"`
+}
+
+// eraInputJSON é um período como chega na requisição: previousName diz que ele foi
+// renomeado, para os eventos acompanharem.
+type eraInputJSON struct {
+	eraJSON
+	PreviousName *string `json:"previousName"`
 }
 
 func (b timelineFieldsJSON) fields() usecase.TimelineFields {
@@ -30,8 +37,12 @@ func (b timelineFieldsJSON) fields() usecase.TimelineFields {
 	}
 	if b.Eras != nil {
 		eras := make([]domain.Era, len(*b.Eras))
+		f.RenamedEras = map[string]string{}
 		for i, e := range *b.Eras {
-			eras[i] = domain.Era(e)
+			eras[i] = domain.Era(e.eraJSON)
+			if e.PreviousName != nil && *e.PreviousName != e.Name {
+				f.RenamedEras[strings.TrimSpace(e.Name)] = *e.PreviousName
+			}
 		}
 		f.Eras = &eras
 	}

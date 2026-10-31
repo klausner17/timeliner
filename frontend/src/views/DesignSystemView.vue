@@ -6,6 +6,7 @@ import {
   radiusScale,
   readToken,
   spaceScale,
+  periodColors,
   trackColorNames,
   trackColors,
   typeScale,
@@ -33,7 +34,9 @@ import {
   TlTimelineCard,
   TlTrackLabel,
   type CompareLane,
+  type PeriodColor,
   type TrackColor,
+  type TrackPeriod,
 } from '@/design-system'
 import { generatedEvents } from '@/data/demo'
 import { chronological, windowOf } from '@/data/windowing'
@@ -86,11 +89,26 @@ const urlPlaceholder = 'https://'
 
 const eras = ['Tudo', 'Colônia', 'Império', 'República Velha e Era Vargas', 'Ditadura militar', 'Nova República']
 
+/** Períodos sobrepostos: o Estado Novo fica dentro da Era Vargas e vai para a linha de baixo. */
+const periodosDemo: TrackPeriod[] = [
+  { name: 'Império', start: 1822, end: 1889 },
+  { name: 'República Velha', start: 1889, end: 1930 },
+  { name: 'Era Vargas', start: 1930, end: 1945 },
+  { name: 'Estado Novo', start: 1937, end: 1945, color: 'vermelho' },
+  { name: 'Ditadura militar', start: 1964, end: 1985 },
+  { name: 'Nova República', start: 1985 },
+]
+const corPeriodo = ref<PeriodColor>()
+
 const lanes: CompareLane[] = [
   {
     id: 'brasil',
     name: 'História do Brasil',
     color: 'a',
+    periods: [
+      { name: 'Ditadura militar', start: 1964, end: 1985 },
+      { name: 'Nova República', start: 1985 },
+    ],
     events: [
       { id: 'a-1985', year: 1985, title: 'Fim do regime militar' },
       { id: 'a-1988', year: 1988, title: 'Constituição Cidadã' },
@@ -379,6 +397,9 @@ const usage = {
             <TlColorPicker v-model="cor" />
             <TlTrackLabel :color="cor">{{ trackColorNames[cor] }}</TlTrackLabel>
           </DsDemo>
+          <DsDemo label="Cor do período (com opção automática)">
+            <TlColorPicker v-model="corPeriodo" :colors="periodColors" palette="period" label="Cor do período" none="Automática" />
+          </DsDemo>
         </DsSection>
 
         <!-- Selos -->
@@ -466,7 +487,7 @@ const usage = {
           title="Timeline"
           description="O evento na timeline vertical (ano, trilho e cartão), a versão de sugestão com borda tracejada e o minimapa com a janela visível."
         >
-          <TlOverviewBar :start="1500" :end="2024" :years="overviewYears" :window="[1888, 2024]" :ticks="[1500, 1600, 1700, 1800, 1900, 2024]" />
+          <TlOverviewBar :start="1500" :end="2024" :years="overviewYears" :periods="periodosDemo" :window="[1888, 2024]" :ticks="[1500, 1600, 1700, 1800, 1900, 2024]" />
           <div class="ds-events">
             <TlEventItem
               year="1888"

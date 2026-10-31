@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import {
   TlButton,
   TlCard,
+  TlCheckbox,
   TlCompareTracks,
   TlInput,
   TlOverviewBar,
@@ -16,6 +17,7 @@ import {
   type CompareLane,
   type OverviewTrack,
   type TrackColor,
+  type TrackPeriod,
 } from '@/design-system'
 import { errorMessage } from '@/data/api'
 import { currentUser, listSavedComparisons, listTimelines, loadComparison, loadSummary, saveComparison, yearRange, type Comparison } from '@/data/store'
@@ -140,6 +142,11 @@ const resetRange = () => setSlugs(slugs.value, { de: undefined, ate: undefined }
 const mode = ref('trilhas')
 const colorOf = (i: number): TrackColor => trackColors[i % trackColors.length]
 
+// Períodos de cada timeline (República Velha, Era Vargas...) em faixas acima de cada trilha.
+const showPeriods = ref(true)
+const hasPeriods = computed(() => selected.value.some((t) => t.eras.length))
+const periodsOf = (t: Timeline | undefined): TrackPeriod[] | undefined => (showPeriods.value && t?.eras.length ? t.eras : undefined)
+
 // Cada trilha vem como na API: os eventos do trecho, ou faixas quando são muitos.
 const { data: comparison } = useLatest(
   () => (selected.value.length >= 2 ? loadComparison(slugs.value, view.value[0], view.value[1], { buckets: 60 }) : undefined),
@@ -152,7 +159,15 @@ const toCompare = (e: TimelineEvent): CompareEvent => ({ id: e.id, year: e.year,
 const lanes = computed<CompareLane[]>(() =>
   selected.value.map((t, i) => {
     const w = windows.value[i]
-    return { id: t.slug, name: t.title, color: colorOf(i), extent: yearRange(t), events: w?.events.map(toCompare) ?? [], buckets: w?.buckets.map((b) => ({ ...b, sample: b.sample.map(toCompare) })) ?? [] }
+    return {
+      id: t.slug,
+      name: t.title,
+      color: colorOf(i),
+      extent: yearRange(t),
+      periods: periodsOf(t),
+      events: w?.events.map(toCompare) ?? [],
+      buckets: w?.buckets.map((b) => ({ ...b, sample: b.sample.map(toCompare) })) ?? [],
+    }
   }),
 )
 
@@ -203,6 +218,7 @@ const overviewTracks = computed<OverviewTrack[]>(() =>
   overviewData.value.map((w, i) => ({
     color: colorOf(i),
     label: selected.value[i]?.title,
+    periods: periodsOf(selected.value[i]),
     buckets: w.mode === 'faixas' ? w.buckets : w.events.map((e) => ({ from: e.year, to: e.year, count: 1 })),
   })),
 )
@@ -279,6 +295,7 @@ async function share() {
         <TlInput v-model="endInput" inputmode="numeric" aria-label="Ano final" class="range__input" @blur="applyRange" />
         <TlButton v-if="route.query.de || route.query.ate" variant="ghost" size="sm" @click="resetRange">Período sugerido</TlButton>
       </form>
+      <TlCheckbox v-if="hasPeriods" v-model="showPeriods" label="Mostrar períodos" />
       <TlSegmented
         v-model="mode"
         label="Modo de comparação"

@@ -59,6 +59,20 @@ export const trackColorNames: Record<TrackColor, string> = {
   d: 'Timeline D (roxo)',
 }
 
+/** Cores das faixas de período, na ordem em que um período sem cor escolhida recebe uma. */
+export const periodColors = ['azul', 'laranja', 'verde', 'roxo', 'amarelo', 'vermelho', 'cinza'] as const
+export type PeriodColor = (typeof periodColors)[number]
+
+export const periodColorNames: Record<PeriodColor, string> = {
+  azul: 'Azul',
+  laranja: 'Laranja',
+  verde: 'Verde',
+  roxo: 'Roxo',
+  amarelo: 'Amarelo',
+  vermelho: 'Vermelho',
+  cinza: 'Cinza',
+}
+
 export const typeScale = [
   { name: '--tl-text-6xl', sample: 'Título de página inicial', display: true },
   { name: '--tl-text-5xl', sample: 'Título de timeline', display: true },

@@ -50,6 +50,23 @@
   --tl-track-d: #7a4fd0;
   --tl-track-d-soft: #f3eefb;
 
+  /* ---------- Cores: períodos (faixas como República Velha, Era Vargas) ---------- */
+  /* A cor forte vai no texto e na borda; a suave, no fundo da faixa. */
+  --tl-period-azul: #3446c0;
+  --tl-period-azul-soft: #e3e7fc;
+  --tl-period-laranja: #b03b0b;
+  --tl-period-laranja-soft: #fbe3d6;
+  --tl-period-verde: #0d6e4c;
+  --tl-period-verde-soft: #d9f0e5;
+  --tl-period-roxo: #6b42c0;
+  --tl-period-roxo-soft: #ebe3f9;
+  --tl-period-amarelo: #7a5600;
+  --tl-period-amarelo-soft: #f9ecc2;
+  --tl-period-vermelho: #a8201a;
+  --tl-period-vermelho-soft: #fbe0de;
+  --tl-period-cinza: #475161;
+  --tl-period-cinza-soft: #e6e9ee;
+
   /* ---------- Tipografia ---------- */
   --tl-font-display: 'Space Grotesk', system-ui, sans-serif;
   --tl-font-body: 'Inter', system-ui, sans-serif;

@@ -59,9 +59,10 @@ type authJSON struct {
 }
 
 type eraJSON struct {
-	Name  string `json:"name"`
-	Start int    `json:"start"`
-	End   *int   `json:"end"`
+	Name  string              `json:"name"`
+	Start int                 `json:"start"`
+	End   *int                `json:"end"`
+	Color *domain.PeriodColor `json:"color"`
 }
 
 type timelineJSON struct {

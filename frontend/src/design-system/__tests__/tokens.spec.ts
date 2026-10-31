@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { colorGroups, radiusScale, spaceScale, trackColors, typeScale } from '../tokens'
+import { colorGroups, periodColors, radiusScale, spaceScale, trackColors, typeScale } from '../tokens'
 
 const root = resolve(process.cwd(), 'src/design-system')
 const css = readFileSync(resolve(root, 'tokens/tokens.css'), 'utf8')
@@ -12,6 +12,7 @@ describe('catálogo de tokens', () => {
     const listed = [
       ...colorGroups.flatMap((g) => g.tokens.map((t) => t.name)),
       ...trackColors.flatMap((c) => [`--tl-track-${c}`, `--tl-track-${c}-soft`]),
+      ...periodColors.flatMap((c) => [`--tl-period-${c}`, `--tl-period-${c}-soft`]),
       ...typeScale.map((t) => t.name),
       ...spaceScale,
       ...radiusScale,

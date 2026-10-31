@@ -12,10 +12,14 @@ import {
   TlRadioGroup,
   TlSelect,
   TlTextarea,
+  periodColorOf,
+  periodColors,
+  periodRange,
+  type PeriodColor,
 } from '@/design-system'
 import { errorMessage } from '@/data/api'
 import { canEdit, createEvent, deleteEvent, deleteTimeline, getTimeline, loadAllEvents, updateEvent, updateTimeline } from '@/data/store'
-import { categories, type EventInput, type Timeline, type TimelineEvent, type TimelinePatch } from '@/data/types'
+import { categories, type Era, type EraInput, type EventInput, type Timeline, type TimelineEvent, type TimelinePatch } from '@/data/types'
 import { chronological } from '@/data/windowing'
 import { momentFields, monthOptions, readMoment, yearLabel } from '@/lib/format'
 import { parseSheet } from '@/lib/importSheet'
@@ -127,7 +131,7 @@ const saveLabel = computed(() => {
 
 const urlPlaceholder = 'https://'
 const categoryOptions = categories.map((c) => c)
-const eraOptions = computed(() => [{ value: '', label: 'Sem período' }, ...(timeline.value?.eras ?? []).map((e) => ({ value: e.name, label: e.name }))])
+const eraOptions = computed(() => [{ value: '', label: 'Pelo ano' }, ...(timeline.value?.eras ?? []).map((e) => ({ value: e.name, label: e.name }))])
 
 const visibilityOptions = [
   { value: 'publica', label: 'Pública' },
@@ -148,6 +152,95 @@ const tagsText = computed({
 })
 
 const inviteMsg = ref('')
+
+// ---------- Períodos (República Velha, Era Vargas, Estado Novo...) ----------
+
+type PeriodForm = { name: string; start: string; end: string; color: PeriodColor | undefined }
+const blankPeriod = (): PeriodForm => ({ name: '', start: '', end: '', color: undefined })
+const periodForm = reactive<PeriodForm>(blankPeriod())
+const periodOpen = ref(false)
+/** Nome do período em edição; undefined é um período novo. */
+const periodEditing = ref<string>()
+const periodErrors = ref<Partial<Record<keyof PeriodForm, string>>>({})
+const periodError = ref('')
+const periodSending = ref(false)
+
+const periods = computed(() => (timeline.value?.eras ?? []).map((e, i) => ({ ...e, shown: periodColorOf(e, i) })))
+const eventsIn = (p: Era) => events.value.filter((e) => e.era === p.name).length
+
+function openPeriod(p?: Era) {
+  Object.assign(periodForm, p ? { name: p.name, start: String(p.start), end: p.end !== undefined ? String(p.end) : '', color: p.color } : blankPeriod())
+  periodEditing.value = p?.name
+  periodErrors.value = {}
+  periodError.value = ''
+  periodOpen.value = true
+}
+
+const closePeriod = () => (periodOpen.value = false)
+
+const toInput = (e: Era): EraInput => ({ name: e.name, start: e.start, end: e.end ?? null, color: e.color ?? null })
+
+/** Manda a lista inteira de períodos; a API devolve ordenada e acerta os eventos. */
+async function savePeriods(list: EraInput[], renamed?: { from: string; to: string }, removed?: string) {
+  const t = timeline.value
+  if (!t) return
+  timeline.value = await updateTimeline(t.slug, { eras: list })
+  // Os eventos acompanham na API; aqui só se repete a troca na lista já carregada.
+  if (renamed || removed) {
+    events.value = events.value.map((e) => {
+      if (renamed && e.era === renamed.from) return { ...e, era: renamed.to }
+      if (removed && e.era === removed) return { ...e, era: undefined }
+      return e
+    })
+  }
+}
+
+async function submitPeriod() {
+  const t = timeline.value
+  if (!t || periodSending.value) return
+  const name = periodForm.name.trim()
+  const start = Number(periodForm.start)
+  const end = periodForm.end.trim() ? Number(periodForm.end) : undefined
+  const e: typeof periodErrors.value = {}
+  if (!name) e.name = 'Dê um nome ao período.'
+  else if (t.eras.some((x) => x.name === name && x.name !== periodEditing.value)) e.name = 'Já existe um período com esse nome.'
+  if (!periodForm.start.trim() || !Number.isInteger(start)) e.start = 'Informe o ano de início.'
+  if (end !== undefined && (!Number.isInteger(end) || end < start)) e.end = 'O fim precisa ser depois do início.'
+  periodErrors.value = e
+  periodError.value = ''
+  if (Object.keys(e).length) return
+
+  const item: EraInput = { name, start, end: end ?? null, color: periodForm.color ?? null }
+  const editing = periodEditing.value
+  const list = editing
+    ? t.eras.map((x) => (x.name === editing ? { ...item, previousName: editing } : toInput(x)))
+    : [...t.eras.map(toInput), item]
+  periodSending.value = true
+  try {
+    await savePeriods(list, editing && editing !== name ? { from: editing, to: name } : undefined)
+    if (form.era === editing) form.era = name
+    closePeriod()
+  } catch (err) {
+    periodError.value = errorMessage(err, 'Não deu para salvar o período.')
+  } finally {
+    periodSending.value = false
+  }
+}
+
+async function removePeriod(p: Era) {
+  const t = timeline.value
+  if (!t) return
+  const n = eventsIn(p)
+  const extra = n ? ` ${n === 1 ? 'O evento marcado com ele fica' : `Os ${n} eventos marcados com ele ficam`} sem período.` : ''
+  if (!window.confirm(`Remover o período “${p.name}”?${extra}`)) return
+  try {
+    await savePeriods(t.eras.filter((x) => x.name !== p.name).map(toInput), undefined, p.name)
+    if (form.era === p.name) form.era = ''
+    if (periodEditing.value === p.name) closePeriod()
+  } catch (err) {
+    window.alert(errorMessage(err, 'Não deu para remover o período.'))
+  }
+}
 
 // ---------- Formulário de evento ----------
 
@@ -375,6 +468,54 @@ async function destroy() {
       </aside>
 
       <main class="main">
+        <section class="periods" aria-labelledby="periods-title">
+          <div class="main__head">
+            <h2 id="periods-title" class="main__title">Períodos <span class="main__count">({{ periods.length }})</span></h2>
+            <TlButton icon="plus" @click="openPeriod()">Novo período</TlButton>
+          </div>
+          <p class="main__msg">
+            Divida a história em fases, como República Velha, Era Vargas e Estado Novo. Um período pode ficar dentro de outro. Eles aparecem como faixas coloridas na
+            timeline e na comparação, e os eventos são agrupados por eles.
+          </p>
+
+          <TlCard v-if="periodOpen" as="form" highlight class="form" @submit.prevent="submitPeriod">
+            <h3 class="form__title">{{ periodEditing ? 'Editar período' : 'Novo período' }}</h3>
+            <TlField v-slot="{ id, describedby, invalid }" label="Nome" :error="periodErrors.name">
+              <TlInput :id="id" v-model="periodForm.name" placeholder="Ex.: Era Vargas" :aria-describedby="describedby" :invalid="invalid" />
+            </TlField>
+            <div class="form__grid">
+              <TlField v-slot="{ id, describedby, invalid }" label="Início" :error="periodErrors.start">
+                <TlInput :id="id" v-model="periodForm.start" inputmode="numeric" placeholder="Ano" :aria-describedby="describedby" :invalid="invalid" />
+              </TlField>
+              <TlField v-slot="{ id, describedby, invalid }" label="Fim" hint="Vazio se ainda não acabou." :error="periodErrors.end">
+                <TlInput :id="id" v-model="periodForm.end" inputmode="numeric" placeholder="Ano" :aria-describedby="describedby" :invalid="invalid" />
+              </TlField>
+            </div>
+            <div class="box__group">
+              <span class="box__label">Cor</span>
+              <TlColorPicker v-model="periodForm.color" :colors="periodColors" palette="period" label="Cor do período" none="Automática" />
+            </div>
+            <p v-if="periodError" class="form__error" role="alert">{{ periodError }}</p>
+            <div class="form__actions">
+              <TlButton variant="ghost" @click="closePeriod">Cancelar</TlButton>
+              <TlButton type="submit" variant="primary" :disabled="periodSending">{{ periodEditing ? 'Salvar período' : 'Adicionar período' }}</TlButton>
+            </div>
+          </TlCard>
+
+          <TlCard v-if="periods.length" as="ul" padding="sm" class="list" aria-label="Lista de períodos">
+            <li v-for="p in periods" :key="p.name" class="row">
+              <span class="row__band" :style="{ background: `var(--tl-period-${p.shown})` }" aria-hidden="true"></span>
+              <span class="row__range">{{ periodRange(p) }}</span>
+              <div class="row__text">
+                <span class="row__title">{{ p.name }}</span>
+                <span class="row__desc">{{ eventsIn(p) ? `${eventsIn(p)} ${eventsIn(p) === 1 ? 'evento marcado' : 'eventos marcados'}` : 'Agrupa os eventos pelo ano' }}</span>
+              </div>
+              <TlButton icon-only icon="edit" variant="ghost" shape="rounded" :label="`Editar ${p.name}`" @click="openPeriod(p)" />
+              <TlButton icon-only icon="trash" variant="ghost" shape="rounded" :label="`Remover ${p.name}`" @click="removePeriod(p)" />
+            </li>
+          </TlCard>
+        </section>
+
         <div class="main__head">
           <h2 class="main__title">Eventos <span class="main__count">({{ events.length }})</span></h2>
           <div class="main__actions">
@@ -403,8 +544,8 @@ async function destroy() {
             <TlField v-slot="{ id, describedby, invalid }" label="Hora (opcional)" :error="errors.time">
               <TlInput :id="id" v-model="form.time" type="time" :aria-describedby="describedby" :invalid="invalid" />
             </TlField>
-            <TlField v-if="timeline.eras.length" v-slot="{ id }" label="Período">
-              <TlSelect :id="id" v-model="form.era" :options="eraOptions" />
+            <TlField v-if="timeline.eras.length" v-slot="{ id, describedby }" label="Período" hint="Sem escolher, o evento entra no período do ano.">
+              <TlSelect :id="id" v-model="form.era" :options="eraOptions" :aria-describedby="describedby" />
             </TlField>
           </div>
           <TlField v-slot="{ id, describedby, invalid }" label="Título" :error="errors.title">
@@ -645,5 +786,29 @@ async function destroy() {
   flex-direction: column;
   align-items: start;
   gap: var(--tl-space-4);
+}
+.periods {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tl-space-3);
+  padding-bottom: var(--tl-space-5);
+  border-bottom: 1px solid var(--tl-color-border-subtle);
+}
+ul.list {
+  margin: 0;
+  list-style: none;
+}
+.row__band {
+  flex: none;
+  width: 6px;
+  height: 28px;
+  border-radius: var(--tl-radius-pill);
+}
+.row__range {
+  flex: none;
+  min-width: 96px;
+  font-family: var(--tl-font-display);
+  font-weight: var(--tl-weight-semibold);
+  font-variant-numeric: tabular-nums;
 }
 </style>

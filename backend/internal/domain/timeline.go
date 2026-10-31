@@ -47,10 +47,39 @@ var Categories = []string{"História", "Política", "Esporte", "Ciência e tecno
 
 func ValidCategory(c string) bool { return slices.Contains(Categories, c) }
 
+// PeriodColor é a cor da faixa de um período. Sem cor, a tela escolhe pela posição.
+type PeriodColor string
+
+// PeriodColors na ordem em que a tela distribui as cores quando o período não tem uma.
+var PeriodColors = []PeriodColor{"azul", "laranja", "verde", "roxo", "amarelo", "vermelho", "cinza"}
+
+func (c PeriodColor) Valid() bool { return slices.Contains(PeriodColors, c) }
+
+// Era é um período da timeline (ex.: República Velha, 1889–1930). Períodos podem se
+// sobrepor: a Era Vargas (1930–1945) contém o Estado Novo (1937–1945). Sem End, o
+// período continua até hoje.
 type Era struct {
 	Name  string
 	Start int
 	End   *int
+	Color *PeriodColor
+}
+
+// CompareEras ordena os períodos pelo início e, no mesmo início, o mais longo primeiro
+// (quem contém vem antes de quem está dentro). Sem fim conta como o mais longo.
+func CompareEras(a, b Era) int {
+	if a.Start != b.Start {
+		return a.Start - b.Start
+	}
+	switch {
+	case a.End == nil && b.End == nil:
+		return 0
+	case a.End == nil:
+		return -1
+	case b.End == nil:
+		return 1
+	}
+	return *b.End - *a.End
 }
 
 type Timeline struct {

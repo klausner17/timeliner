@@ -56,6 +56,20 @@ func (r events) ByID(ctx context.Context, id string) (*domain.Event, error) {
 	return scanEvent(r.q(ctx).QueryRow(ctx, `SELECT `+eventCols+` FROM events WHERE id=$1`, id))
 }
 
+func (r events) RemapEras(ctx context.Context, timelineID string, remap map[string]*string) error {
+	from := make([]string, 0, len(remap))
+	to := make([]*string, 0, len(remap))
+	for k, v := range remap {
+		from = append(from, k)
+		to = append(to, v)
+	}
+	// Um UPDATE só: cada evento lê o nome antigo uma vez, então trocas A↔B dão certo.
+	_, err := r.q(ctx).Exec(ctx, `UPDATE events e SET era = m.new_name
+		FROM unnest($2::text[], $3::text[]) AS m(old_name, new_name)
+		WHERE e.timeline_id = $1 AND e.era = m.old_name`, timelineID, from, to)
+	return translate(err)
+}
+
 func (r events) CreateMany(ctx context.Context, es []domain.Event) error {
 	rows := make([][]any, len(es))
 	for i := range es {

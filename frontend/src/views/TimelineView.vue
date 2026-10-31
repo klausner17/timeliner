@@ -12,8 +12,13 @@ import {
   TlOverviewBar,
   TlSegmented,
   axisTicks,
+  innermostPeriod,
+  parentPeriod,
+  periodColorOf,
+  periodRange,
   type CompareEvent,
   type CompareLane,
+  type PeriodColor,
 } from '@/design-system'
 import { errorMessage } from '@/data/api'
 import {
@@ -29,7 +34,7 @@ import {
   session,
   yearRange,
 } from '@/data/store'
-import type { TimelineDetail, TimelineEvent, TimelinePage } from '@/data/types'
+import type { Era, TimelineDetail, TimelineEvent, TimelinePage } from '@/data/types'
 import type { EventWindow } from '@/data/windowing'
 import { copyLink, dateLabel, detailedDateLabel, timeAgo, yearLabel } from '@/lib/format'
 import { useLatest } from '@/lib/useLatest'
@@ -78,6 +83,11 @@ watch(
 )
 
 const range = computed(() => (timeline.value ? yearRange(timeline.value) : undefined))
+const THIS_YEAR = new Date().getFullYear()
+
+/** Os períodos com a cor que cada um mostra (a escolhida ou a da posição na lista). */
+const periods = computed(() => (timeline.value?.eras ?? []).map((e, i) => ({ ...e, color: periodColorOf(e, i) as PeriodColor })))
+const showPeriods = ref(true)
 const eraRange = computed<[number, number] | undefined>(() => {
   const e = timeline.value?.eras.find((x) => x.name === era.value)
   return e && range.value ? [e.start, e.end ?? range.value[1]] : undefined
@@ -128,22 +138,36 @@ async function loadPage(reset: boolean) {
 watch([() => timeline.value?.slug, eraRange, () => timeline.value?.eventCount], () => loadPage(true), { immediate: true })
 
 
-type Group = { name: string; range?: string; events: TimelineEvent[] }
+type Group = { name: string; range?: string; color?: PeriodColor; parent?: string; events: TimelineEvent[] }
 
+/**
+ * Agrupa os eventos por período, na ordem do tempo. O evento marcado com um período vai
+ * para ele; o sem marca vai para o período mais curto que contém o ano (1940 cai no
+ * Estado Novo, não na Era Vargas). Eventos seguidos do mesmo período formam uma seção;
+ * os que não cabem em nenhum ficam em "Fora dos períodos", no lugar deles no tempo.
+ */
 const groups = computed<Group[]>(() => {
-  const t = timeline.value
-  if (!t) return []
   const events = loaded.value
-  if (!t.eras.length) return [{ name: '', events }]
-  const out: Group[] = t.eras.map((e) => ({ name: e.name, range: `${e.start}–${e.end ?? 'hoje'}`, events: [] }))
-  const loose: TimelineEvent[] = []
+  const list = periods.value
+  if (!list.length) return [{ name: '', events }]
+  const openEnd = Math.max(THIS_YEAR, range.value?.[1] ?? THIS_YEAR)
+  const byName = new Map(list.map((p) => [p.name, p]))
+  const out: Group[] = []
   for (const e of events) {
-    const g = out.find((x) => x.name === e.era)
-    if (g) g.events.push(e)
-    else loose.push(e)
+    const p = (e.era ? byName.get(e.era) : undefined) ?? innermostPeriod(list, e.year, openEnd)
+    const name = p?.name ?? 'Fora dos períodos'
+    const last = out[out.length - 1]
+    if (last?.name === name) {
+      last.events.push(e)
+      continue
+    }
+    out.push(
+      p
+        ? { name, range: periodRange(p), color: p.color, parent: parentPeriod<Era>(list, p, openEnd)?.name, events: [e] }
+        : { name, events: [e] },
+    )
   }
-  if (loose.length) out.push({ name: 'Outros eventos', events: loose })
-  return out.filter((g) => g.events.length)
+  return out
 })
 
 // ---------- Minimapa ----------
@@ -186,7 +210,17 @@ const lanes = computed<CompareLane[]>(() => {
   const t = timeline.value
   const w = windowData.value
   if (!t || !w) return []
-  return [{ id: t.slug, name: t.title, color: t.color, extent: range.value, events: w.events.map(toCompare), buckets: w.buckets.map((b) => ({ ...b, sample: b.sample.map(toCompare) })) }]
+  return [
+    {
+      id: t.slug,
+      name: t.title,
+      color: t.color,
+      extent: range.value,
+      periods: showPeriods.value ? periods.value : undefined,
+      events: w.events.map(toCompare),
+      buckets: w.buckets.map((b) => ({ ...b, sample: b.sample.map(toCompare) })),
+    },
+  ]
 })
 const windowEvents = computed(() => {
   const w = windowData.value
@@ -323,14 +357,20 @@ async function share() {
             :buckets="overviewBuckets"
             :ticks="overviewTicks"
             :color="timeline.color"
+            :periods="showPeriods ? periods : undefined"
             :interactive="mode === 'horizontal'"
           />
         </TlCard>
 
         <div class="top__controls">
-          <div v-if="timeline.eras.length" role="group" aria-label="Filtrar por período" class="top__chips">
+          <div v-if="periods.length" role="group" aria-label="Filtrar por período" class="top__chips">
             <TlChip :pressed="era === ALL" @click="era = ALL">{{ ALL }}</TlChip>
-            <TlChip v-for="e in timeline.eras" :key="e.name" :pressed="era === e.name" @click="era = e.name">{{ e.name }}</TlChip>
+            <TlChip v-for="p in periods" :key="p.name" :pressed="era === p.name" :title="periodRange(p)" @click="era = p.name">
+              <span class="top__swatch" :style="{ background: `var(--tl-period-${p.color})` }" aria-hidden="true"></span>{{ p.name }}
+            </TlChip>
+            <TlButton size="sm" variant="ghost" :aria-pressed="showPeriods" @click="showPeriods = !showPeriods">
+              {{ showPeriods ? 'Esconder faixas' : 'Mostrar faixas' }}
+            </TlButton>
           </div>
           <span v-else></span>
           <div class="top__view">
@@ -358,10 +398,12 @@ async function share() {
         </TlCard>
 
         <template v-else-if="mode === 'vertical'">
-          <section v-for="g in groups" :key="g.name" class="era">
-            <div v-if="g.name" class="era__head">
+          <section v-for="(g, gi) in groups" :key="`${gi}-${g.name}`" class="era">
+            <div v-if="g.name" class="era__head" :style="g.color ? { '--period': `var(--tl-period-${g.color})` } : undefined">
+              <span v-if="g.color" class="era__swatch" aria-hidden="true"></span>
               <h2 class="era__name">{{ g.name }}</h2>
               <span v-if="g.range" class="era__range">{{ g.range }}</span>
+              <span v-if="g.parent" class="era__parent">parte de {{ g.parent }}</span>
             </div>
             <TlEventItem
               v-for="e in g.events"
@@ -581,6 +623,7 @@ async function share() {
   flex-direction: column;
 }
 .era__head {
+  flex-wrap: wrap;
   display: flex;
   align-items: baseline;
   gap: var(--tl-space-3);
@@ -589,9 +632,29 @@ async function share() {
 .era__name {
   font-size: 22px;
 }
-.era__range {
+.era__range,
+.era__parent {
   font-size: var(--tl-text-md);
   color: var(--tl-color-text-muted);
+}
+.era__parent {
+  font-style: italic;
+}
+.era__swatch {
+  flex: none;
+  align-self: center;
+  width: 4px;
+  height: 22px;
+  border-radius: var(--tl-radius-pill);
+  background: var(--period);
+}
+.top__swatch {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-radius: var(--tl-radius-pill);
+  vertical-align: middle;
 }
 .body__event {
   /* O navegador só desenha os eventos que estão perto da tela. */
