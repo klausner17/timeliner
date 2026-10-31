@@ -172,7 +172,7 @@ export async function loadEvents(slug: string, opts: { from?: number; to?: numbe
   return { ...page, items: page.items.map(cleanEvent) }
 }
 
-/** Todos os eventos, página a página (editor e vídeo). */
+/** Todos os eventos, página a página (editor). */
 export async function loadAllEvents(slug: string): Promise<TimelineEvent[]> {
   const out: TimelineEvent[] = []
   let cursor: string | null = null

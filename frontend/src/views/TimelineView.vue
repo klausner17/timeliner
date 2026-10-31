@@ -43,7 +43,6 @@ import type { EventWindow } from '@/data/windowing'
 import { copyLink, dateLabel, detailedDateLabel, timeAgo, yearLabel } from '@/lib/format'
 import { useLatest } from '@/lib/useLatest'
 import NotFoundView from './NotFoundView.vue'
-import VideoExport from './timeline/VideoExport.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -356,7 +355,6 @@ async function share() {
             <TlButton v-if="!mine" :aria-pressed="following" :disabled="followBusy" @click="toggleFollow">
               {{ following ? 'Seguindo' : 'Seguir' }}
             </TlButton>
-            <VideoExport :timeline="timeline" />
             <TlButton icon="share" icon-only label="Compartilhar" @click="share" />
             <span class="top__toast" role="status">{{ shareMsg }}</span>
           </div>
