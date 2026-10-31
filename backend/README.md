@@ -7,6 +7,8 @@ API em Go com PostgreSQL. O contrato é [`api/openapi.yaml`](../api/openapi.yaml
 ```
 cmd/api/              main: lê a configuração, abre o banco, roda as migrations e sobe o HTTP
 cmd/seed-grande/      cria uma timeline com milhares de eventos, para testar timelines grandes
+cmd/importar-csv/     cria timelines prontas a partir de CSVs (veja dados/brasil na raiz)
+internal/seedcsv/     leitura dos CSVs e importação pelo usecase de criar timeline
 internal/domain/      entidades (Timeline, Event, Suggestion...) e erros de negócio
 internal/usecase/     regras de negócio; um tipo por caso de uso, todos UseCase[I, O]
 internal/repository/  postgres/ (pgx + goose) e memory/ (para testes)
@@ -39,6 +41,22 @@ Nenhuma rota devolve todos os eventos de uma vez:
 ```bash
 DATABASE_URL=... go run ./cmd/seed-grande -n 20000 -slug grande   # cria /t/grande
 ```
+
+## Timelines prontas em CSV
+
+`dados/brasil/` (na raiz do repositório) tem timelines da história do Brasil em CSV. O
+`importar-csv` cria essas timelines pelo mesmo usecase da API, com as mesmas validações, em nome
+de um usuário que já existe:
+
+```bash
+go run ./cmd/importar-csv -testar                       # só valida, num banco em memória
+DATABASE_URL=... go run ./cmd/importar-csv              # todas, com o dono @klausner
+go run ./cmd/importar-csv -dono outro -so biografia-de-lula,musica-brasileira
+go run ./cmd/importar-csv -substituir                   # apaga e recria as que já existem
+```
+
+Sem `-substituir`, timelines cujo slug já existe são puladas, então dá para rodar de novo sem
+duplicar. O formato dos arquivos está em [dados/brasil/README.md](../dados/brasil/README.md).
 
 ## Erros
 
