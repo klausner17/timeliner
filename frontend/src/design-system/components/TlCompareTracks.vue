@@ -50,14 +50,14 @@ const FIRST_ROW = 44
 const MIN_ROWS = 2
 const PERIOD_H = 24 // altura de uma linha de faixas de período
 const PERIOD_GAP = 4
-const NAME_H = 30 // no celular, o nome da timeline vai em cima da trilha
+const NAME_H = 30 // com mais de uma trilha, o nome da timeline vai em cima de cada uma
 const fmt = useYearFormat()
 
 // Largura real do eixo, para saber quando dois rótulos se encostam.
 const plot = ref<HTMLElement>()
 const plotWidth = ref(900)
 let observer: ResizeObserver | undefined
-// Em tela estreita, os nomes saem da coluna da esquerda e vão para cima de cada trilha.
+// Em tela estreita, a caixa encolhe e o eixo deixa de ter largura mínima.
 const compact = ref(false)
 let narrow: MediaQueryList | undefined
 const onNarrow = () => (compact.value = !!narrow?.matches)
@@ -73,6 +73,10 @@ onMounted(() => {
   observer.observe(plot.value)
 })
 onBeforeUnmount(() => observer?.disconnect())
+
+// Sem coluna de nomes à esquerda: a trilha usa a largura toda. Só quando há mais de uma
+// trilha o nome aparece, pequeno, em cima de cada uma; com uma só, o título da página basta.
+const showNames = computed(() => props.lanes.length > 1)
 
 const span = computed(() => Math.max(1 / 12, end.value - start.value))
 const pct = (y: number) => ((y - start.value) / span.value) * 100
@@ -127,7 +131,7 @@ const laneViews = computed(() =>
       i.kind === 'cluster' ? [{ key: i.key, left: clampPct(i.from), width: Math.max(0.6, clampPct(i.to + 1) - clampPct(i.from)), strength: 0.2 + 0.8 * Math.sqrt(i.count / maxCount) }] : [],
     )
     const periods = periodsOf(lane)
-    const nameH = compact.value ? NAME_H : 0
+    const nameH = showNames.value ? NAME_H : 0
     const offset = nameH + periods.height
     return { ...lane, labels, dots, bands, edges: edgesOf(lane), periods: periods.items, periodsHeight: periods.height, offset, height: `${offset + FIRST_ROW + rows * ROW_H}px` }
   }),
@@ -264,112 +268,101 @@ function onPointerUp(ev: PointerEvent) {
       </div>
     </div>
     <div class="tl-compare__inner">
-      <div class="tl-compare__row">
-        <div></div>
-        <div class="tl-compare__ticks" aria-hidden="true">
-          <span v-for="t in ticks" :key="t.pos" :class="{ 'tl-compare__tick--month': t.month }" :style="{ left: `${pct(t.pos)}%` }">{{ t.label }}</span>
-        </div>
+      <div class="tl-compare__ticks" aria-hidden="true">
+        <span v-for="t in ticks" :key="t.pos" :class="{ 'tl-compare__tick--month': t.month }" :style="{ left: `${pct(t.pos)}%` }">{{ t.label }}</span>
       </div>
-      <div class="tl-compare__row">
-        <div>
-          <div v-for="(lane, li) in laneViews" :key="lane.id" class="tl-compare__name" :class="{ 'tl-compare__name--sep': li > 0 }" :style="{ height: lane.height }">
-            <span class="tl-compare__swatch" :style="{ background: `var(--tl-track-${lane.color})` }" aria-hidden="true"></span>
-            {{ lane.name }}
-          </div>
-        </div>
+      <div
+        ref="plot"
+        class="tl-compare__plot"
+        :class="{ 'tl-compare__plot--zoomable': zoomable, 'tl-compare__plot--dragging': dragging }"
+        @wheel="onWheel"
+        @pointerdown="onPointerDown"
+        @pointermove="onPointerMove"
+        @pointerup="onPointerUp"
+        @pointercancel="onPointerUp"
+      >
+        <div v-for="t in ticks" :key="t.pos" class="tl-compare__grid" :style="{ left: `${pct(t.pos)}%` }" aria-hidden="true"></div>
+        <div v-if="highlightYear !== undefined && highlightYear >= start && highlightYear <= end" class="tl-compare__highlight" :style="{ left: `${pct(highlightYear)}%` }" aria-hidden="true"></div>
         <div
-          ref="plot"
-          class="tl-compare__plot"
-          :class="{ 'tl-compare__plot--zoomable': zoomable, 'tl-compare__plot--dragging': dragging }"
-          @wheel="onWheel"
-          @pointerdown="onPointerDown"
-          @pointermove="onPointerMove"
-          @pointerup="onPointerUp"
-          @pointercancel="onPointerUp"
+          v-for="(lane, li) in laneViews"
+          :key="lane.id"
+          class="tl-compare__lane"
+          :class="{ 'tl-compare__lane--sep': li > 0 }"
+          :style="{ height: lane.height, '--track': `var(--tl-track-${lane.color})` }"
+          role="group"
+          :aria-label="lane.name"
         >
-          <div v-for="t in ticks" :key="t.pos" class="tl-compare__grid" :style="{ left: `${pct(t.pos)}%` }" aria-hidden="true"></div>
-          <div v-if="highlightYear !== undefined && highlightYear >= start && highlightYear <= end" class="tl-compare__highlight" :style="{ left: `${pct(highlightYear)}%` }" aria-hidden="true"></div>
-          <div
-            v-for="(lane, li) in laneViews"
-            :key="lane.id"
-            class="tl-compare__lane"
-            :class="{ 'tl-compare__lane--sep': li > 0 }"
-            :style="{ height: lane.height, '--track': `var(--tl-track-${lane.color})` }"
-            role="group"
-            :aria-label="lane.name"
-          >
-            <div v-if="compact" class="tl-compare__lane-name" aria-hidden="true">
-              <span class="tl-compare__swatch" :style="{ background: `var(--tl-track-${lane.color})` }"></span>
-              <span class="tl-compare__lane-text">{{ lane.name }}</span>
-            </div>
-            <ul v-if="lane.periods.length" class="tl-compare__periods" :style="{ height: `${lane.periodsHeight}px` }" :aria-label="`Períodos de ${lane.name}`">
-              <li
-                v-for="p in lane.periods"
-                :key="p.key"
-                class="tl-compare__period"
-                :style="{ left: `${p.left}%`, width: `${p.width}%`, top: `${p.top}px`, '--period': `var(--tl-period-${p.color})`, '--period-soft': `var(--tl-period-${p.color}-soft)` }"
-                :title="`${p.name} · ${p.range}`"
+          <div v-if="showNames" class="tl-compare__lane-name" aria-hidden="true">
+            <span class="tl-compare__swatch" :style="{ background: `var(--tl-track-${lane.color})` }"></span>
+            <span class="tl-compare__lane-text">{{ lane.name }}</span>
+          </div>
+          <ul v-if="lane.periods.length" class="tl-compare__periods" :style="{ height: `${lane.periodsHeight}px` }" :aria-label="`Períodos de ${lane.name}`">
+            <li
+              v-for="p in lane.periods"
+              :key="p.key"
+              class="tl-compare__period"
+              :style="{ left: `${p.left}%`, width: `${p.width}%`, top: `${p.top}px`, '--period': `var(--tl-period-${p.color})`, '--period-soft': `var(--tl-period-${p.color}-soft)` }"
+              :title="`${p.name} · ${p.range}`"
+            >
+              <span class="tl-compare__period-name">{{ p.name }}</span>
+              <span class="tl-visually-hidden">, {{ p.range }}</span>
+            </li>
+          </ul>
+          <div class="tl-compare__track" :style="{ top: `${lane.offset}px` }">
+            <template v-if="lane.edges.before">
+              <div class="tl-compare__void" :style="{ left: 0, width: `${lane.edges.before.x}%` }" aria-hidden="true"></div>
+              <div class="tl-compare__cap" :style="{ left: `${lane.edges.before.x}%` }" aria-hidden="true"></div>
+              <span class="tl-compare__edge" :style="{ left: `${lane.edges.before.x}%` }">Início em {{ fmt.year(lane.edges.before.year) }}</span>
+            </template>
+            <template v-if="lane.edges.after">
+              <div class="tl-compare__void" :style="{ left: `${lane.edges.after.x}%`, right: 0 }" aria-hidden="true"></div>
+              <div class="tl-compare__cap" :style="{ left: `${lane.edges.after.x}%` }" aria-hidden="true"></div>
+              <span class="tl-compare__edge" :style="{ right: `${100 - lane.edges.after.x}%` }">Fim em {{ fmt.year(lane.edges.after.year) }}</span>
+            </template>
+            <div class="tl-compare__axis" :style="{ left: `${lane.edges.axis.left}%`, width: `${lane.edges.axis.width}%` }" aria-hidden="true"></div>
+            <div
+              v-for="b in lane.bands"
+              :key="b.key"
+              class="tl-compare__band"
+              :style="{ left: `${b.left}%`, width: `${b.width}%`, opacity: b.strength }"
+              aria-hidden="true"
+            ></div>
+            <div
+              v-for="d in lane.dots"
+              :key="d.key"
+              class="tl-compare__dot"
+              :class="{ 'tl-compare__dot--on': selected === d.id }"
+              :style="{ left: `${d.x}%` }"
+              aria-hidden="true"
+            ></div>
+            <template v-for="e in lane.labels" :key="e.key">
+              <div class="tl-compare__stem" :style="{ left: `${e.x}%`, height: `${e.stem}px` }" aria-hidden="true"></div>
+              <button
+                v-if="e.kind === 'event'"
+                type="button"
+                class="tl-compare__event"
+                :class="{ 'tl-compare__event--on': selected === e.event.id, 'tl-compare__event--end': e.alignEnd }"
+                :style="e.alignEnd ? { right: `${100 - e.x}%`, top: `${e.top}px` } : { left: `${e.x}%`, top: `${e.top}px` }"
+                :aria-pressed="selected === e.event.id"
+                @click="selected = e.event.id"
               >
-                <span class="tl-compare__period-name">{{ p.name }}</span>
-                <span class="tl-visually-hidden">, {{ p.range }}</span>
-              </li>
-            </ul>
-            <div class="tl-compare__track" :style="{ top: `${lane.offset}px` }">
-              <template v-if="lane.edges.before">
-                <div class="tl-compare__void" :style="{ left: 0, width: `${lane.edges.before.x}%` }" aria-hidden="true"></div>
-                <div class="tl-compare__cap" :style="{ left: `${lane.edges.before.x}%` }" aria-hidden="true"></div>
-                <span class="tl-compare__edge" :style="{ left: `${lane.edges.before.x}%` }">Início em {{ fmt.year(lane.edges.before.year) }}</span>
-              </template>
-              <template v-if="lane.edges.after">
-                <div class="tl-compare__void" :style="{ left: `${lane.edges.after.x}%`, right: 0 }" aria-hidden="true"></div>
-                <div class="tl-compare__cap" :style="{ left: `${lane.edges.after.x}%` }" aria-hidden="true"></div>
-                <span class="tl-compare__edge" :style="{ right: `${100 - lane.edges.after.x}%` }">Fim em {{ fmt.year(lane.edges.after.year) }}</span>
-              </template>
-              <div class="tl-compare__axis" :style="{ left: `${lane.edges.axis.left}%`, width: `${lane.edges.axis.width}%` }" aria-hidden="true"></div>
-              <div
-                v-for="b in lane.bands"
-                :key="b.key"
-                class="tl-compare__band"
-                :style="{ left: `${b.left}%`, width: `${b.width}%`, opacity: b.strength }"
-                aria-hidden="true"
-              ></div>
-              <div
-                v-for="d in lane.dots"
-                :key="d.key"
-                class="tl-compare__dot"
-                :class="{ 'tl-compare__dot--on': selected === d.id }"
-                :style="{ left: `${d.x}%` }"
-                aria-hidden="true"
-              ></div>
-              <template v-for="e in lane.labels" :key="e.key">
-                <div class="tl-compare__stem" :style="{ left: `${e.x}%`, height: `${e.stem}px` }" aria-hidden="true"></div>
-                <button
-                  v-if="e.kind === 'event'"
-                  type="button"
-                  class="tl-compare__event"
-                  :class="{ 'tl-compare__event--on': selected === e.event.id, 'tl-compare__event--end': e.alignEnd }"
-                  :style="e.alignEnd ? { right: `${100 - e.x}%`, top: `${e.top}px` } : { left: `${e.x}%`, top: `${e.top}px` }"
-                  :aria-pressed="selected === e.event.id"
-                  @click="selected = e.event.id"
-                >
-                  <span class="tl-compare__year">{{ eventDate(e.event) }}</span>
-                  <span class="tl-compare__title" :title="e.event.title">{{ e.event.title }}</span>
-                </button>
-                <button
-                  v-else
-                  type="button"
-                  class="tl-compare__event tl-compare__event--cluster"
-                  :class="{ 'tl-compare__event--end': e.alignEnd }"
-                  :style="e.alignEnd ? { right: `${100 - e.x}%`, top: `${e.top}px` } : { left: `${e.x}%`, top: `${e.top}px` }"
-                  :aria-label="`${e.count} eventos de ${e.from} a ${e.to}${zoomable ? '. Aproximar' : ''}`"
-                  :title="e.sample.map((s) => `${fmt.year(s.year)} · ${s.title}`).join('\n')"
-                  @click="openCluster(e)"
-                >
-                  <span class="tl-compare__year">{{ rangeText(e.from, e.to) }}</span>
-                  <span class="tl-compare__title">{{ e.count.toLocaleString('pt-BR') }} eventos</span>
-                </button>
-              </template>
-            </div>
+                <span class="tl-compare__year">{{ eventDate(e.event) }}</span>
+                <span class="tl-compare__title" :title="e.event.title">{{ e.event.title }}</span>
+              </button>
+              <button
+                v-else
+                type="button"
+                class="tl-compare__event tl-compare__event--cluster"
+                :class="{ 'tl-compare__event--end': e.alignEnd }"
+                :style="e.alignEnd ? { right: `${100 - e.x}%`, top: `${e.top}px` } : { left: `${e.x}%`, top: `${e.top}px` }"
+                :aria-label="`${e.count} eventos de ${e.from} a ${e.to}${zoomable ? '. Aproximar' : ''}`"
+                :title="e.sample.map((s) => `${fmt.year(s.year)} · ${s.title}`).join('\n')"
+                @click="openCluster(e)"
+              >
+                <span class="tl-compare__year">{{ rangeText(e.from, e.to) }}</span>
+                <span class="tl-compare__title">{{ e.count.toLocaleString('pt-BR') }} eventos</span>
+              </button>
+            </template>
           </div>
         </div>
       </div>
@@ -411,11 +404,6 @@ function onPointerUp(ev: PointerEvent) {
   flex-direction: column;
   gap: var(--tl-space-1);
 }
-.tl-compare__row {
-  display: grid;
-  grid-template-columns: 150px minmax(0, 1fr);
-  gap: var(--tl-space-4);
-}
 .tl-compare__ticks {
   position: relative;
   height: 24px;
@@ -429,20 +417,8 @@ function onPointerUp(ev: PointerEvent) {
 .tl-compare__ticks .tl-compare__tick--month {
   color: var(--tl-color-text-subtle);
 }
-.tl-compare__name {
-  display: flex;
-  align-items: start;
-  gap: var(--tl-space-2);
-  padding-top: 14px;
-  font-weight: var(--tl-weight-semibold);
-  font-size: var(--tl-text-md);
-}
-.tl-compare__name--sep {
-  border-top: 1px solid var(--tl-color-border-subtle);
-}
 .tl-compare__swatch {
   flex: none;
-  margin-top: 5px;
   width: 10px;
   height: 10px;
   border-radius: var(--tl-radius-pill);
@@ -624,9 +600,6 @@ function onPointerUp(ev: PointerEvent) {
   font-size: var(--tl-text-md);
   pointer-events: none;
 }
-.tl-compare__lane-name .tl-compare__swatch {
-  margin-top: 0;
-}
 .tl-compare__lane-text {
   overflow: hidden;
   white-space: nowrap;
@@ -641,12 +614,5 @@ function onPointerUp(ev: PointerEvent) {
 .tl-compare--compact .tl-compare__inner {
   min-width: 0;
   padding: var(--tl-space-4) var(--tl-space-4) var(--tl-space-3);
-}
-.tl-compare--compact .tl-compare__row {
-  grid-template-columns: minmax(0, 1fr);
-  gap: 0;
-}
-.tl-compare--compact .tl-compare__row > :first-child {
-  display: none;
 }
 </style>
