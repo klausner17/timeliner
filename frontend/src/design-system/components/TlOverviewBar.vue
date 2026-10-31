@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { TrackColor } from '../tokens'
 import { periodRange, stackPeriods, type TrackPeriod } from './periodLayout'
 import { useYearFormat } from './yearFormat'
@@ -37,7 +37,42 @@ const BINS = 100
 const span = computed(() => Math.max(1, props.end - props.start))
 const clamp = (y: number) => Math.min(Math.max(y, props.start), props.end)
 const pct = (y: number) => ((clamp(y) - props.start) / span.value) * 100
-const tickList = computed(() => props.ticks ?? [props.start, props.end])
+const allTicks = computed(() => props.ticks ?? [props.start, props.end])
+
+// Largura do minimapa, para tirar as marcações que se encostariam (no celular, por exemplo).
+const root = ref<HTMLElement>()
+const width = ref(0)
+let observer: ResizeObserver | undefined
+onMounted(() => {
+  if (!root.value || typeof ResizeObserver === 'undefined') return
+  observer = new ResizeObserver(([entry]) => (width.value = entry.contentRect.width))
+  observer.observe(root.value)
+})
+onBeforeUnmount(() => observer?.disconnect())
+
+/**
+ * Fica com a primeira e a última marcação e, no meio, só as que têm espaço para o rótulo.
+ * A primeira é alinhada à esquerda, a última à direita e as outras pelo centro.
+ */
+const tickList = computed(() => {
+  const ticks = allTicks.value
+  if (!width.value || ticks.length <= 2) return ticks
+  const px = (t: number) => (pct(t) / 100) * width.value
+  const room = (t: number) => fmt.value.year(t).length * 7 + 8
+  const first = ticks[0]
+  const last = ticks[ticks.length - 1]
+  const lastLeft = px(last) - room(last)
+  const kept = [first]
+  let right = px(first) + room(first)
+  for (const t of ticks.slice(1, -1)) {
+    const half = room(t) / 2
+    if (px(t) - half >= right && px(t) + half <= lastLeft) {
+      kept.push(t)
+      right = px(t) + half
+    }
+  }
+  return [...kept, last]
+})
 
 const trackList = computed<OverviewTrack[]>(() => props.tracks ?? [{ color: props.color, years: props.years, buckets: props.buckets, periods: props.periods }])
 
@@ -135,7 +170,7 @@ function onKey(ev: KeyboardEvent) {
 </script>
 
 <template>
-  <div class="tl-overview" :class="{ 'tl-overview--interactive': interactive }" :style="{ '--track': `var(--tl-track-${color})` }">
+  <div ref="root" class="tl-overview" :class="{ 'tl-overview--interactive': interactive }" :style="{ '--track': `var(--tl-track-${color})` }">
     <div class="tl-overview__ticks" aria-hidden="true">
       <span v-for="t in tickList" :key="t" :style="{ left: `${pct(t)}%` }">{{ fmt.year(t) }}</span>
     </div>
@@ -205,6 +240,7 @@ function onKey(ev: KeyboardEvent) {
 }
 .tl-overview__ticks span {
   position: absolute;
+  white-space: nowrap;
   transform: translateX(-50%);
 }
 .tl-overview__ticks span:first-child {

@@ -81,4 +81,10 @@ async function submit() {
   font-size: var(--tl-text-sm);
   color: var(--tl-color-text-muted);
 }
+@media (max-width: 480px) {
+  .login {
+    padding-top: var(--tl-space-6);
+    padding-bottom: var(--tl-space-8);
+  }
+}
 </style>

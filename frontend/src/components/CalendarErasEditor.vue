@@ -97,6 +97,25 @@ function move(i: number, by: number) {
   gap: 2px;
   min-width: 36px;
 }
+/* No celular, o nome ocupa a linha de cima e a sigla e a duração dividem a de baixo. */
+@media (max-width: 560px) {
+  .eras__head {
+    display: none;
+  }
+  .eras__row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+    padding-bottom: var(--tl-space-2);
+    border-bottom: 1px solid var(--tl-color-border-subtle);
+  }
+  .eras__row > :first-child {
+    grid-column: 1 / 3;
+  }
+  .eras__actions {
+    grid-column: 3;
+    grid-row: 1 / 3;
+    flex-direction: column;
+  }
+}
 .eras__hint {
   font-size: var(--tl-text-sm);
   color: var(--tl-color-text-muted);

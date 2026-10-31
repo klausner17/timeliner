@@ -154,4 +154,10 @@ const durationOf = (years?: number) => (years ? `${years.toLocaleString('pt-BR')
   gap: var(--tl-space-2);
   padding-left: var(--tl-space-5);
 }
+@media (max-width: 480px) {
+  .page {
+    padding-top: var(--tl-space-6);
+    padding-bottom: var(--tl-space-8);
+  }
+}
 </style>

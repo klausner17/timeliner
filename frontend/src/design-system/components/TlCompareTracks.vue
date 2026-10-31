@@ -50,12 +50,23 @@ const FIRST_ROW = 44
 const MIN_ROWS = 2
 const PERIOD_H = 24 // altura de uma linha de faixas de período
 const PERIOD_GAP = 4
+const NAME_H = 30 // no celular, o nome da timeline vai em cima da trilha
 const fmt = useYearFormat()
 
 // Largura real do eixo, para saber quando dois rótulos se encostam.
 const plot = ref<HTMLElement>()
 const plotWidth = ref(900)
 let observer: ResizeObserver | undefined
+// Em tela estreita, os nomes saem da coluna da esquerda e vão para cima de cada trilha.
+const compact = ref(false)
+let narrow: MediaQueryList | undefined
+const onNarrow = () => (compact.value = !!narrow?.matches)
+onMounted(() => {
+  narrow = typeof window.matchMedia === 'function' ? window.matchMedia('(max-width: 860px)') : undefined
+  onNarrow()
+  narrow?.addEventListener?.('change', onNarrow)
+})
+onBeforeUnmount(() => narrow?.removeEventListener?.('change', onNarrow))
 onMounted(() => {
   if (!plot.value || typeof ResizeObserver === 'undefined') return
   observer = new ResizeObserver(([entry]) => (plotWidth.value = entry.contentRect.width || plotWidth.value))
@@ -69,10 +80,20 @@ const clampPct = (y: number) => Math.min(100, Math.max(0, pct(y)))
 const toPx = (y: number) => (clampPct(y) / 100) * plotWidth.value
 
 const ticks = computed(() => {
-  const step = props.tickStep ?? niceStep(span.value)
+  // Cerca de uma marcação a cada 90px: 8 no computador, 3 ou 4 no celular.
+  const step = props.tickStep ?? niceStep(span.value, Math.min(8, Math.max(3, Math.floor(plotWidth.value / 90))))
   const f = fmt.value
-  if (f.ticks) return f.ticks(start.value, end.value, Math.max(1, step)).map((pos) => ({ pos, label: f.year(pos), month: false }))
-  return windowTicks(start.value, end.value, step).map((pos) => ({ pos, label: tickLabel(pos), month: Math.round(pos * 12) % 12 !== 0 }))
+  const all = f.ticks
+    ? f.ticks(start.value, end.value, Math.max(1, step)).map((pos) => ({ pos, label: f.year(pos), month: false }))
+    : windowTicks(start.value, end.value, step).map((pos) => ({ pos, label: tickLabel(pos), month: Math.round(pos * 12) % 12 !== 0 }))
+  // Calendários com eras põem marcações no começo de cada era; as que encostam na anterior saem.
+  const room = (label: string) => label.length * 7 + 12
+  const kept: typeof all = []
+  for (const t of all) {
+    const prev = kept[kept.length - 1]
+    if (!prev || toPx(t.pos) - toPx(prev.pos) >= (room(t.label) + room(prev.label)) / 2) kept.push(t)
+  }
+  return kept
 })
 
 function itemsOf(lane: CompareLane): TrackItem[] {
@@ -106,7 +127,9 @@ const laneViews = computed(() =>
       i.kind === 'cluster' ? [{ key: i.key, left: clampPct(i.from), width: Math.max(0.6, clampPct(i.to + 1) - clampPct(i.from)), strength: 0.2 + 0.8 * Math.sqrt(i.count / maxCount) }] : [],
     )
     const periods = periodsOf(lane)
-    return { ...lane, labels, dots, bands, edges: edgesOf(lane), periods: periods.items, offset: periods.height, height: `${periods.height + FIRST_ROW + rows * ROW_H}px` }
+    const nameH = compact.value ? NAME_H : 0
+    const offset = nameH + periods.height
+    return { ...lane, labels, dots, bands, edges: edgesOf(lane), periods: periods.items, periodsHeight: periods.height, offset, height: `${offset + FIRST_ROW + rows * ROW_H}px` }
   }),
 )
 
@@ -231,7 +254,7 @@ function onPointerUp(ev: PointerEvent) {
 </script>
 
 <template>
-  <section class="tl-compare" :aria-label="label">
+  <section class="tl-compare" :class="{ 'tl-compare--compact': compact }" :aria-label="label">
     <div v-if="zoomable" class="tl-compare__toolbar">
       <span class="tl-compare__window" aria-live="polite">{{ rangeText(start, end) }}</span>
       <div class="tl-compare__zoom">
@@ -275,7 +298,11 @@ function onPointerUp(ev: PointerEvent) {
             role="group"
             :aria-label="lane.name"
           >
-            <ul v-if="lane.periods.length" class="tl-compare__periods" :style="{ height: `${lane.offset}px` }" :aria-label="`Períodos de ${lane.name}`">
+            <div v-if="compact" class="tl-compare__lane-name" aria-hidden="true">
+              <span class="tl-compare__swatch" :style="{ background: `var(--tl-track-${lane.color})` }"></span>
+              <span class="tl-compare__lane-text">{{ lane.name }}</span>
+            </div>
+            <ul v-if="lane.periods.length" class="tl-compare__periods" :style="{ height: `${lane.periodsHeight}px` }" :aria-label="`Períodos de ${lane.name}`">
               <li
                 v-for="p in lane.periods"
                 :key="p.key"
@@ -367,6 +394,7 @@ function onPointerUp(ev: PointerEvent) {
   padding: var(--tl-space-4) var(--tl-space-7) 0;
 }
 .tl-compare__window {
+  white-space: nowrap;
   font-size: var(--tl-text-sm);
   font-weight: var(--tl-weight-semibold);
   color: var(--tl-color-text-muted);
@@ -584,5 +612,41 @@ function onPointerUp(ev: PointerEvent) {
   font-size: var(--tl-text-sm);
   font-weight: var(--tl-weight-semibold);
   line-height: var(--tl-leading-snug);
+}
+.tl-compare__lane-name {
+  position: relative;
+  z-index: 2;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  gap: var(--tl-space-2);
+  font-weight: var(--tl-weight-semibold);
+  font-size: var(--tl-text-md);
+  pointer-events: none;
+}
+.tl-compare__lane-name .tl-compare__swatch {
+  margin-top: 0;
+}
+.tl-compare__lane-text {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  padding-right: var(--tl-space-1);
+  background: var(--tl-color-surface);
+}
+.tl-compare--compact .tl-compare__toolbar {
+  flex-wrap: wrap;
+  padding: var(--tl-space-3) var(--tl-space-4) 0;
+}
+.tl-compare--compact .tl-compare__inner {
+  min-width: 0;
+  padding: var(--tl-space-4) var(--tl-space-4) var(--tl-space-3);
+}
+.tl-compare--compact .tl-compare__row {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+}
+.tl-compare--compact .tl-compare__row > :first-child {
+  display: none;
 }
 </style>

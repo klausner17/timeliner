@@ -915,4 +915,42 @@ ul.list {
   font-weight: var(--tl-weight-semibold);
   font-variant-numeric: tabular-nums;
 }
+/* No celular, a data vai em cima do título e o texto fica com a largura que sobra. */
+@media (max-width: 560px) {
+  .page {
+    padding-top: var(--tl-space-5);
+    gap: var(--tl-space-5);
+  }
+  .bar__h1 {
+    font-size: var(--tl-text-3xl);
+  }
+  .main__title {
+    font-size: var(--tl-text-2xl);
+  }
+  .row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    column-gap: 10px;
+    row-gap: 2px;
+    padding-left: var(--tl-space-3);
+  }
+  .row__dot,
+  .row__band,
+  .row > .tl-button {
+    grid-row: 1 / span 2;
+  }
+  .row__year,
+  .row__range {
+    grid-column: 2;
+    grid-row: 1;
+    width: auto;
+    min-width: 0;
+    font-size: var(--tl-text-sm);
+    color: var(--tl-color-text-muted);
+  }
+  .row__text {
+    grid-column: 2;
+    grid-row: 2;
+  }
+}
 </style>
