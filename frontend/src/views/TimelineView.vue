@@ -11,7 +11,6 @@ import {
   TlEventItem,
   TlOverviewBar,
   TlSegmented,
-  axisTicks,
   clampWindow,
   datePos,
   innermostPeriod,
@@ -20,6 +19,7 @@ import {
   periodFrom,
   periodRange,
   periodTo,
+  provideYearFormat,
   type CompareEvent,
   type CompareLane,
   type PeriodColor,
@@ -42,8 +42,8 @@ import type { Era, TimelineDetail, TimelineEvent, TimelinePage } from '@/data/ty
 import type { EventWindow } from '@/data/windowing'
 import { copyLink, dateLabel, detailedDateLabel, timeAgo, yearLabel } from '@/lib/format'
 import { useLatest } from '@/lib/useLatest'
+import { overviewTicksFor, yearFormatOf } from '@/lib/calendar'
 import NotFoundView from './NotFoundView.vue'
-import VideoExport from './timeline/VideoExport.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -87,7 +87,10 @@ watch(
 )
 
 const range = computed(() => (timeline.value ? yearRange(timeline.value) : undefined))
-const THIS_YEAR = new Date().getFullYear()
+/** Como os anos são escritos: gregoriano, ou "T.A. 3019" numa timeline ficcional. */
+const cal = computed(() => timeline.value?.calendar)
+const years = computed(() => yearFormatOf(cal.value))
+provideYearFormat(years)
 
 /** Os períodos com a cor que cada um mostra (a escolhida ou a da posição na lista). */
 const periods = computed(() => (timeline.value?.eras ?? []).map((e, i) => ({ ...e, color: periodColorOf(e, i) as PeriodColor })))
@@ -154,7 +157,7 @@ const groups = computed<Group[]>(() => {
   const events = loaded.value
   const list = periods.value
   if (!list.length) return [{ name: '', events }]
-  const openEnd = Math.max(THIS_YEAR, range.value?.[1] ?? THIS_YEAR)
+  const openEnd = years.value.openEnd(range.value?.[1] ?? new Date().getFullYear())
   const byName = new Map(list.map((p) => [p.name, p]))
   const out: Group[] = []
   for (const e of events) {
@@ -167,7 +170,7 @@ const groups = computed<Group[]>(() => {
     }
     out.push(
       p
-        ? { name, range: periodRange(p), color: p.color, parent: parentPeriod<Era>(list, p, openEnd)?.name, events: [e] }
+        ? { name, range: periodRange(p, years.value), color: p.color, parent: parentPeriod<Era>(list, p, openEnd)?.name, events: [e] }
         : { name, events: [e] },
     )
   }
@@ -176,7 +179,8 @@ const groups = computed<Group[]>(() => {
 
 // ---------- Minimapa ----------
 
-const overviewTicks = computed(() => (range.value ? axisTicks(range.value[0], range.value[1]) : []))
+const overviewTicks = computed(() => (range.value ? overviewTicksFor(range.value[0], range.value[1], cal.value) : []))
+
 // Histograma do eixo completo: 100 faixas, sem trazer os eventos.
 const { data: overview } = useLatest(
   () => (timeline.value && range.value ? loadSummary(timeline.value.slug, { from: range.value[0], to: range.value[1], buckets: 100, maxEvents: 1 }) : undefined),
@@ -202,7 +206,7 @@ const eraWindow = computed<[number, number] | undefined>(() => {
   const p = periods.value.find((x) => x.name === era.value)
   if (!p || !range.value) return undefined
   const from = periodFrom(p)
-  const to = periodTo(p, Math.max(THIS_YEAR, range.value[1]))
+  const to = periodTo(p, years.value.openEnd(range.value[1]))
   const pad = Math.max(1 / 12, (to - from) * 0.05)
   return clampWindow(from - pad, to + pad, { min: bounds.value[0], max: bounds.value[1] })
 })
@@ -339,6 +343,7 @@ async function share() {
                 {{ handleLabel(timeline.owner.handle) }}
               </span>
               <span>{{ rangeLabel(timeline) }}</span>
+              <RouterLink v-if="cal" :to="`/calendarios/${cal.id}`" class="top__calendar">Calendário {{ cal.name }}</RouterLink>
               <span>{{ timeline.eventCount.toLocaleString('pt-BR') }} eventos</span>
               <span>{{ timeline.contributorCount }} {{ timeline.contributorCount === 1 ? 'contribuidor' : 'contribuidores' }}</span>
               <span>Atualizada {{ timeAgo(timeline.updatedAt) }}</span>
@@ -356,7 +361,6 @@ async function share() {
             <TlButton v-if="!mine" :aria-pressed="following" :disabled="followBusy" @click="toggleFollow">
               {{ following ? 'Seguindo' : 'Seguir' }}
             </TlButton>
-            <VideoExport :timeline="timeline" />
             <TlButton icon="share" icon-only label="Compartilhar" @click="share" />
             <span class="top__toast" role="status">{{ shareMsg }}</span>
           </div>
@@ -378,7 +382,7 @@ async function share() {
         <div class="top__controls">
           <div v-if="periods.length" role="group" aria-label="Filtrar por período" class="top__chips">
             <TlChip :pressed="era === ALL" @click="era = ALL">{{ ALL }}</TlChip>
-            <TlChip v-for="p in periods" :key="p.name" :pressed="era === p.name" :title="periodRange(p)" @click="era = p.name">
+            <TlChip v-for="p in periods" :key="p.name" :pressed="era === p.name" :title="periodRange(p, years)" @click="era = p.name">
               <span class="top__swatch" :style="{ background: `var(--tl-period-${p.color})` }" aria-hidden="true"></span>{{ p.name }}
             </TlChip>
             <TlButton size="sm" variant="ghost" :aria-pressed="showPeriods" @click="showPeriods = !showPeriods">
@@ -421,8 +425,8 @@ async function share() {
             <TlEventItem
               v-for="e in g.events"
               :key="e.id"
-              :year="yearLabel(e)"
-              :date="detailedDateLabel(e)"
+              :year="yearLabel(e, cal)"
+              :date="detailedDateLabel(e, cal)"
               :title="e.title"
               :description="e.description"
               :source-url="e.sourceUrl"
@@ -444,7 +448,7 @@ async function share() {
             {{ grouped.total.toLocaleString('pt-BR') }} eventos neste trecho, agrupados por período. Clique num grupo ou aproxime para ver cada evento.
           </p>
           <TlCard v-if="selectedEvent" padding="lg" class="detail">
-            <span class="detail__date">{{ dateLabel(selectedEvent) }}</span>
+            <span class="detail__date">{{ dateLabel(selectedEvent, cal) }}</span>
             <h2 class="detail__title">{{ selectedEvent.title }}</h2>
             <p>{{ selectedEvent.description }}</p>
             <span class="detail__by">
@@ -492,6 +496,11 @@ async function share() {
 </template>
 
 <style scoped>
+.top__calendar {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
 .top {
   background: var(--tl-color-surface);
   border-bottom: 1px solid var(--tl-color-border);

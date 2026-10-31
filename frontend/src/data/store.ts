@@ -5,6 +5,8 @@
 import { computed, reactive } from 'vue'
 import { ApiError, del, get, getToken, handleUnauthorized, patch, post, setToken } from './api'
 import type {
+  Calendar,
+  CalendarInput,
   EventInput,
   EventPatch,
   Profile,
@@ -21,6 +23,7 @@ import type {
   UserSummary,
 } from './types'
 import type { EventPage, EventWindow, Overlap, WindowOptions } from './windowing'
+import { formatEraRange } from '@/lib/calendar'
 
 // ---------- Nulos da API viram undefined ----------
 
@@ -32,9 +35,11 @@ function clean<T extends object>(o: Nullable<T>): T {
 }
 
 const cleanEvent = (e: Nullable<TimelineEvent>) => clean<TimelineEvent>(e)
+const cleanCalendar = <C extends Pick<Calendar, 'eras'>>(c: C): C => ({ ...c, eras: c.eras.map((e) => clean(e)) })
 const cleanTimeline = <T extends Timeline>(t: Nullable<T>): T => {
   const out = clean<T>(t)
   out.eras = out.eras.map((e) => clean(e))
+  if (out.calendar) out.calendar = cleanCalendar(out.calendar)
   return out
 }
 const cleanWindow = (w: EventWindow): EventWindow => ({
@@ -97,10 +102,15 @@ export function yearRange(t: Pick<Timeline, 'startYear' | 'endYear'>): [number, 
   return t.startYear !== undefined && t.endYear !== undefined ? [t.startYear, t.endYear] : undefined
 }
 
-export function rangeLabel(t: Pick<Timeline, 'startYear' | 'endYear'>): string {
+export function rangeLabel(t: Pick<Timeline, 'startYear' | 'endYear' | 'calendar'>): string {
   const r = yearRange(t)
-  return r ? (r[0] === r[1] ? `${r[0]}` : `${r[0]}–${r[1]}`) : 'Sem datas'
+  if (!r) return 'Sem datas'
+  if (t.calendar) return formatEraRange(r[0], r[1], t.calendar)
+  return r[0] === r[1] ? `${r[0]}` : `${r[0]}–${r[1]}`
 }
+
+/** Duas timelines podem ser comparadas: as duas no gregoriano ou no mesmo calendário. */
+export const sameCalendar = (a: Pick<Timeline, 'calendar'>, b: Pick<Timeline, 'calendar'>) => a.calendar?.id === b.calendar?.id
 
 export function canEdit(t: Pick<Timeline, 'owner'>) {
   return !!session.user && session.user.handle === t.owner.handle
@@ -111,7 +121,7 @@ export function relatedTo(t: Timeline, others: Timeline[], limit = 3): Timeline[
   const r = yearRange(t)
   if (!r) return []
   return others
-    .filter((o) => o.slug !== t.slug)
+    .filter((o) => o.slug !== t.slug && sameCalendar(o, t))
     .map((o) => {
       const or = yearRange(o)
       return { o, overlap: or ? Math.min(r[1], or[1]) - Math.max(r[0], or[0]) : -1 }
@@ -172,7 +182,7 @@ export async function loadEvents(slug: string, opts: { from?: number; to?: numbe
   return { ...page, items: page.items.map(cleanEvent) }
 }
 
-/** Todos os eventos, página a página (editor e vídeo). */
+/** Todos os eventos, página a página (editor). */
 export async function loadAllEvents(slug: string): Promise<TimelineEvent[]> {
   const out: TimelineEvent[] = []
   let cursor: string | null = null
@@ -211,6 +221,18 @@ export async function listSavedComparisons(): Promise<SavedComparison[]> {
 
 export const saveComparison = (timelines: string[], start: number, end: number) => post<SavedComparison>('/me/comparisons', { timelines, start, end })
 export const deleteSavedComparison = (id: string) => del(`/me/comparisons/${id}`)
+
+// ---------- Calendários ----------
+
+/** Os calendários do usuário e os compartilhados, por nome. */
+export async function listCalendars(q?: string): Promise<Calendar[]> {
+  return (await get<Calendar[]>('/calendars', { q })).map(cleanCalendar)
+}
+
+export const getCalendar = async (id: string) => cleanCalendar(await get<Calendar>(`/calendars/${encodeURIComponent(id)}`))
+export const createCalendar = async (input: CalendarInput) => cleanCalendar(await post<Calendar>('/calendars', input))
+export const updateCalendar = async (id: string, input: CalendarInput) => cleanCalendar(await patch<Calendar>(`/calendars/${encodeURIComponent(id)}`, input))
+export const deleteCalendar = (id: string) => del(`/calendars/${encodeURIComponent(id)}`)
 
 // ---------- Sugestões ----------
 

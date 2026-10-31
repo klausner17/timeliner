@@ -32,6 +32,12 @@ type UseCases struct {
 	FollowTimeline usecase.UseCase[usecase.FollowTimelineInput, usecase.Empty]
 	ListTags       usecase.UseCase[usecase.Empty, []domain.TagCount]
 
+	ListCalendars  usecase.UseCase[usecase.ListCalendarsInput, []usecase.CalendarView]
+	CreateCalendar usecase.UseCase[usecase.CreateCalendarInput, usecase.CalendarView]
+	GetCalendar    usecase.UseCase[usecase.CalendarRefInput, usecase.CalendarView]
+	UpdateCalendar usecase.UseCase[usecase.UpdateCalendarInput, usecase.CalendarView]
+	DeleteCalendar usecase.UseCase[usecase.CalendarRefInput, usecase.Empty]
+
 	ListEvents      usecase.UseCase[usecase.ListEventsInput, usecase.EventPage]
 	SummarizeEvents usecase.UseCase[usecase.SummarizeEventsInput, usecase.EventWindow]
 	CreateEvent     usecase.UseCase[usecase.CreateEventInput, usecase.EventView]
@@ -59,6 +65,8 @@ func UseCasesFrom(d *usecase.Deps) UseCases {
 		ListTimelines: usecase.NewListTimelines(d), CreateTimeline: usecase.NewCreateTimeline(d), GetTimeline: usecase.NewGetTimeline(d),
 		UpdateTimeline: usecase.NewUpdateTimeline(d), DeleteTimeline: usecase.NewDeleteTimeline(d),
 		FollowTimeline: usecase.NewFollowTimeline(d), ListTags: usecase.NewListTags(d),
+		ListCalendars: usecase.NewListCalendars(d), CreateCalendar: usecase.NewCreateCalendar(d), GetCalendar: usecase.NewGetCalendar(d),
+		UpdateCalendar: usecase.NewUpdateCalendar(d), DeleteCalendar: usecase.NewDeleteCalendar(d),
 		ListEvents: usecase.NewListEvents(d), SummarizeEvents: usecase.NewSummarizeEvents(d), CreateEvent: usecase.NewCreateEvent(d), UpdateEvent: usecase.NewUpdateEvent(d),
 		DeleteEvent:     usecase.NewDeleteEvent(d),
 		ListSuggestions: usecase.NewListSuggestions(d), CreateSuggestion: usecase.NewCreateSuggestion(d),
@@ -124,6 +132,12 @@ func (c *Controller) routes(r chi.Router) {
 	r.Patch("/suggestions/{id}", c.resubmitSuggestion)
 	r.Post("/suggestions/{id}/review", c.reviewSuggestion)
 	r.Post("/suggestions/{id}/reopen", c.reopenSuggestion)
+
+	r.Get("/calendars", c.listCalendars)
+	r.Post("/calendars", c.createCalendar)
+	r.Get("/calendars/{id}", c.getCalendar)
+	r.Patch("/calendars/{id}", c.updateCalendar)
+	r.Delete("/calendars/{id}", c.deleteCalendar)
 
 	r.Get("/compare", c.compare)
 	r.Get("/tags", c.listTags)

@@ -87,3 +87,33 @@ func (r suggestions) ListByAuthor(ctx context.Context, authorID string) ([]domai
 	}
 	return collect(rows, scanSuggestion)
 }
+
+func (r suggestions) ShiftYears(ctx context.Context, timelineIDs []string, shifts []domain.YearShift) error {
+	rows, err := r.q(ctx).Query(ctx, `SELECT `+suggestionCols+` FROM suggestions WHERE timeline_id = ANY($1)`, timelineIDs)
+	if err != nil {
+		return err
+	}
+	ss, err := collect(rows, scanSuggestion)
+	if err != nil {
+		return err
+	}
+	for _, s := range ss {
+		s.Proposed = shiftData(s.Proposed, shifts)
+		if s.Previous != nil {
+			s.Previous.EventData = shiftData(s.Previous.EventData, shifts)
+		}
+		if err := r.Update(ctx, &s); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func shiftData(e domain.EventData, shifts []domain.YearShift) domain.EventData {
+	e.Year = domain.ShiftYear(e.Year, shifts)
+	if e.EndYear != nil {
+		end := domain.ShiftYear(*e.EndYear, shifts)
+		e.EndYear = &end
+	}
+	return e
+}

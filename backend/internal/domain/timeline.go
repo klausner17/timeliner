@@ -43,7 +43,7 @@ func (m ContributionMode) Valid() bool {
 	return m == ContributionsSuggestions || m == ContributionsInvited || m == ContributionsClosed
 }
 
-var Categories = []string{"História", "Política", "Esporte", "Ciência e tecnologia", "Cultura", "Pessoal"}
+var Categories = []string{"História", "Política", "Esporte", "Ciência e tecnologia", "Cultura", "Ficção", "Pessoal"}
 
 func ValidCategory(c string) bool { return slices.Contains(Categories, c) }
 
@@ -123,8 +123,11 @@ type Timeline struct {
 	Draft         bool
 	Eras          []Era
 	Tags          []string
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	// CalendarID é o calendário ficcional da timeline; nil é o calendário gregoriano.
+	// Só é escolhido na criação.
+	CalendarID *string
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
 }
 
 // VisibleTo diz se o usuário pode abrir a timeline. Rascunhos e privadas só o dono vê;

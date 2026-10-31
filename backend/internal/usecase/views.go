@@ -17,6 +17,8 @@ type UserView struct {
 
 type TimelineView struct {
 	Timeline domain.Timeline
+	// Calendar é o calendário ficcional da timeline; nil no gregoriano.
+	Calendar *domain.Calendar
 	Owner    domain.User
 	Stats    domain.TimelineStats
 	// Points são as posições (0 a 100) dos eventos no eixo, para o mini trilho.
@@ -62,8 +64,19 @@ func points(positions []int) []float64 {
 func timelineViews(ctx context.Context, d *Deps, ts []domain.Timeline, viewerID string) ([]TimelineView, error) {
 	ids := make([]string, len(ts))
 	ownerIDs := make([]string, len(ts))
+	calendarIDs := []string{}
 	for i, t := range ts {
 		ids[i], ownerIDs[i] = t.ID, t.OwnerID
+		if t.CalendarID != nil {
+			calendarIDs = append(calendarIDs, *t.CalendarID)
+		}
+	}
+	calendars := map[string]domain.Calendar{}
+	if len(calendarIDs) > 0 {
+		var err error
+		if calendars, err = d.Calendars.ByIDs(ctx, calendarIDs); err != nil {
+			return nil, err
+		}
 	}
 	stats, err := d.Timelines.Stats(ctx, ids, viewerID)
 	if err != nil {
@@ -77,6 +90,11 @@ func timelineViews(ctx context.Context, d *Deps, ts []domain.Timeline, viewerID 
 	for i, t := range ts {
 		s := stats[t.ID]
 		out[i] = TimelineView{Timeline: t, Owner: owners[t.OwnerID], Stats: s, Points: points(s.Positions)}
+		if t.CalendarID != nil {
+			if c, ok := calendars[*t.CalendarID]; ok {
+				out[i].Calendar = &c
+			}
+		}
 	}
 	return out, nil
 }

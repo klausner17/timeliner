@@ -104,8 +104,9 @@ type TimelineFields struct {
 // MaxEras é quantos períodos uma timeline pode ter.
 const MaxEras = 60
 
-// apply copia os campos preenchidos para t e valida o resultado.
-func (in TimelineFields) apply(t *domain.Timeline) error {
+// apply copia os campos preenchidos para t e valida o resultado com os limites de ano
+// do calendário da timeline.
+func (in TimelineFields) apply(t *domain.Timeline, r yearRules) error {
 	f := fieldErrors{}
 	if in.Title != nil {
 		t.Title = strings.TrimSpace(*in.Title)
@@ -154,8 +155,11 @@ func (in TimelineFields) apply(t *domain.Timeline) error {
 		p := fmt.Sprintf("eras[%d].", i)
 		f.check(length(era.Name, 1, 80), p+"name", "O nome do período precisa ter de 1 a 80 caracteres.")
 		f.check(!names[era.Name], p+"name", "Já existe um período com esse nome.")
-		f.check(era.Start >= minYear && era.Start <= maxYear, p+"start", "Ano fora do intervalo.")
-		f.check(era.End == nil || *era.End <= maxYear, p+"end", "Ano fora do intervalo.")
+		f.check(era.Start >= r.Lo && era.Start <= r.Hi, p+"start", "Ano fora do intervalo.")
+		f.check(era.End == nil || *era.End <= r.Hi, p+"end", "Ano fora do intervalo.")
+		if r.YearOnly {
+			f.check(era.StartMonth == nil && era.EndMonth == nil, p+"startMonth", "Timelines com calendário próprio usam só o ano.")
+		}
 		validateEraDay(f, p+"start", era.Start, era.StartMonth, era.StartDay)
 		if era.End != nil {
 			validateEraDay(f, p+"end", *era.End, era.EndMonth, era.EndDay)
@@ -228,7 +232,9 @@ func normalizeTags(tags []string) []string {
 type CreateTimelineInput struct {
 	ActorID string
 	TimelineFields
-	Events []domain.EventData
+	// CalendarID escolhe um calendário ficcional (do usuário ou compartilhado); vazio é o gregoriano.
+	CalendarID string
+	Events     []domain.EventData
 }
 
 type CreateTimeline struct{ d *Deps }
@@ -245,7 +251,19 @@ func (uc *CreateTimeline) Execute(ctx context.Context, in CreateTimelineInput) (
 		Visibility: domain.VisibilityPublic, Contributions: domain.ContributionsSuggestions,
 		Eras: []domain.Era{}, Tags: []string{}, CreatedAt: now, UpdatedAt: now,
 	}
-	err := in.TimelineFields.apply(&t)
+	var cal *domain.Calendar
+	if id := strings.TrimSpace(in.CalendarID); id != "" {
+		c, err := usableCalendar(ctx, uc.d, id, in.ActorID)
+		if err != nil {
+			if domain.KindOf(err) == domain.KindNotFound {
+				return TimelineDetailView{}, domain.Invalid(map[string]string{"calendarId": "Calendário não encontrado."})
+			}
+			return TimelineDetailView{}, err
+		}
+		cal, t.CalendarID = c, &c.ID
+	}
+	rules := rulesFor(cal)
+	err := in.TimelineFields.apply(&t, rules)
 	f := fieldErrors{}
 	if e, ok := err.(*domain.Error); ok {
 		f = e.Fields
@@ -256,7 +274,7 @@ func (uc *CreateTimeline) Execute(ctx context.Context, in CreateTimelineInput) (
 	events := make([]domain.Event, len(in.Events))
 	for i, data := range in.Events {
 		data = normalizeEvent(data)
-		validateEvent(f, fmt.Sprintf("events[%d].", i), data, t.Eras)
+		validateEvent(f, fmt.Sprintf("events[%d].", i), data, t.Eras, rules)
 		events[i] = domain.Event{EventData: data, ID: uc.d.IDs.NewID("ev"), TimelineID: t.ID, AuthorID: in.ActorID, CreatedAt: now}
 	}
 	if err := f.err(); err != nil {
@@ -323,7 +341,11 @@ func (uc *UpdateTimeline) Execute(ctx context.Context, in UpdateTimelineInput) (
 		return TimelineDetailView{}, err
 	}
 	before := t.Eras
-	if err := in.TimelineFields.apply(t); err != nil {
+	rules, err := rulesOf(ctx, uc.d, t)
+	if err != nil {
+		return TimelineDetailView{}, err
+	}
+	if err := in.TimelineFields.apply(t, rules); err != nil {
 		return TimelineDetailView{}, err
 	}
 	t.UpdatedAt = uc.d.Clock.Now()

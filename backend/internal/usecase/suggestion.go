@@ -57,10 +57,14 @@ func (uc *CreateSuggestion) Execute(ctx context.Context, in CreateSuggestionInpu
 	if t.Contributions != domain.ContributionsSuggestions {
 		return SuggestionView{}, domain.Forbidden("Esta timeline não está aceitando sugestões.")
 	}
+	rules, err := rulesOf(ctx, uc.d, t)
+	if err != nil {
+		return SuggestionView{}, err
+	}
 	f := fieldErrors{}
 	f.check(in.Kind.Valid(), "kind", "Tipo de sugestão inválido.")
 	data := normalizeEvent(in.Event)
-	validateEvent(f, "event.", data, t.Eras)
+	validateEvent(f, "event.", data, t.Eras, rules)
 	note := emptyToNil(in.Note)
 	if note != nil {
 		f.check(length(*note, 0, 1000), "note", "O recado pode ter até 1000 caracteres.")
@@ -119,8 +123,12 @@ func (uc *ResubmitSuggestion) Execute(ctx context.Context, in ResubmitSuggestion
 	}
 	f := fieldErrors{}
 	if in.Event != nil {
+		rules, err := rulesOf(ctx, uc.d, t)
+		if err != nil {
+			return SuggestionView{}, err
+		}
 		s.Proposed = normalizeEvent(*in.Event)
-		validateEvent(f, "event.", s.Proposed, t.Eras)
+		validateEvent(f, "event.", s.Proposed, t.Eras, rules)
 	}
 	if in.Note != nil {
 		s.Note = emptyToNil(in.Note)
@@ -206,8 +214,12 @@ func (uc *ReviewSuggestion) Execute(ctx context.Context, in ReviewSuggestionInpu
 
 // apply leva a sugestão aprovada para a timeline.
 func apply(ctx context.Context, d *Deps, s *domain.Suggestion, t *domain.Timeline) error {
+	rules, err := rulesOf(ctx, d, t)
+	if err != nil {
+		return err
+	}
 	f := fieldErrors{}
-	validateEvent(f, "event.", s.Proposed, t.Eras)
+	validateEvent(f, "event.", s.Proposed, t.Eras, rules)
 	if len(f) > 0 {
 		// As eras da timeline podem ter mudado desde que a sugestão foi enviada.
 		return domain.Conflict("A sugestão não combina mais com a timeline (o período pode ter sido removido). Peça um ajuste.")

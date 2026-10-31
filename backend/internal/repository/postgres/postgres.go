@@ -42,7 +42,7 @@ func migrate(ctx context.Context, db *sql.DB) error {
 func New(pool *pgxpool.Pool) *usecase.Deps {
 	db := &db{pool}
 	return &usecase.Deps{
-		Users: users{db}, Sessions: sessions{db}, Timelines: timelines{db}, Events: events{db},
+		Users: users{db}, Sessions: sessions{db}, Timelines: timelines{db}, Calendars: calendars{db}, Events: events{db},
 		Suggestions: suggestions{db}, Follows: follows{db}, Comparisons: comparisons{db}, Tx: txManager{pool},
 	}
 }

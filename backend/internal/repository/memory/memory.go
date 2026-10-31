@@ -27,6 +27,7 @@ type db struct {
 	timelineFollows map[string]int
 	userFollows     map[string]int
 	comparisons     map[string]domain.SavedComparison
+	calendars       map[string]domain.Calendar
 	seq             int
 }
 
@@ -37,9 +38,10 @@ func New() *usecase.Deps {
 		timelines: map[string]domain.Timeline{}, events: map[string]domain.Event{},
 		suggestions: map[string]domain.Suggestion{}, timelineFollows: map[string]int{},
 		userFollows: map[string]int{}, comparisons: map[string]domain.SavedComparison{},
+		calendars: map[string]domain.Calendar{},
 	}
 	return &usecase.Deps{
-		Users: users{d}, Sessions: sessions{d}, Timelines: timelines{d}, Events: events{d},
+		Users: users{d}, Sessions: sessions{d}, Timelines: timelines{d}, Calendars: calendars{d}, Events: events{d},
 		Suggestions: suggestions{d}, Follows: follows{d}, Comparisons: comparisons{d}, Tx: tx{},
 	}
 }
@@ -414,6 +416,35 @@ func (r events) CreateMany(ctx context.Context, es []domain.Event) error {
 	return nil
 }
 
+func (r events) LatestYearIn(_ context.Context, timelineIDs []string, from, to int) (*int, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var latest *int
+	for _, e := range r.events {
+		if !slices.Contains(timelineIDs, e.TimelineID) {
+			continue
+		}
+		for _, y := range []int{e.Year, e.End()} {
+			if y >= from && y <= to && (latest == nil || y > *latest) {
+				latest = &y
+			}
+		}
+	}
+	return latest, nil
+}
+
+func (r events) ShiftYears(_ context.Context, timelineIDs []string, shifts []domain.YearShift) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for id, e := range r.events {
+		if slices.Contains(timelineIDs, e.TimelineID) {
+			e.EventData = shiftData(e.EventData, shifts)
+			r.events[id] = e
+		}
+	}
+	return nil
+}
+
 // touching devolve, em ordem cronológica, os eventos da timeline que tocam [from, to].
 func (r events) touching(timelineID string, from, to *int) []domain.Event {
 	out := []domain.Event{}
@@ -489,9 +520,131 @@ func compareCursor(a, b domain.EventCursor) int {
 		cmp.Compare(a.EndYear, b.EndYear), a.CreatedAt.Compare(b.CreatedAt), cmp.Compare(a.ID, b.ID))
 }
 
+func (r timelines) ByCalendar(_ context.Context, calendarID string) ([]domain.Timeline, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := []domain.Timeline{}
+	for _, t := range r.timelines {
+		if t.CalendarID != nil && *t.CalendarID == calendarID {
+			out = append(out, clone(t))
+		}
+	}
+	slices.SortFunc(out, func(a, b domain.Timeline) int { return cmp.Compare(a.ID, b.ID) })
+	return out, nil
+}
+
+// Calendars
+
+type calendars struct{ *db }
+
+func cloneCalendar(c domain.Calendar) domain.Calendar {
+	c.Eras = slices.Clone(c.Eras)
+	return c
+}
+
+func (r calendars) Create(_ context.Context, c *domain.Calendar) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.calendars[c.ID] = cloneCalendar(*c)
+	return nil
+}
+
+func (r calendars) Update(_ context.Context, c *domain.Calendar) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.calendars[c.ID]; !ok {
+		return domain.ErrNotFound
+	}
+	r.calendars[c.ID] = cloneCalendar(*c)
+	return nil
+}
+
+func (r calendars) Delete(_ context.Context, id string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.calendars[id]; !ok {
+		return domain.ErrNotFound
+	}
+	delete(r.calendars, id)
+	return nil
+}
+
+func (r calendars) ByID(_ context.Context, id string) (*domain.Calendar, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	c, ok := r.calendars[id]
+	return found(cloneCalendar(c), ok)
+}
+
+func (r calendars) ByIDs(_ context.Context, ids []string) (map[string]domain.Calendar, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := map[string]domain.Calendar{}
+	for _, id := range ids {
+		if c, ok := r.calendars[id]; ok {
+			out[id] = cloneCalendar(c)
+		}
+	}
+	return out, nil
+}
+
+func (r calendars) Usable(_ context.Context, userID, query string) ([]domain.Calendar, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	q := strings.ToLower(query)
+	out := []domain.Calendar{}
+	for _, c := range r.calendars {
+		if (c.Shared || (userID != "" && c.OwnerID == userID)) && strings.Contains(strings.ToLower(c.Name), q) {
+			out = append(out, cloneCalendar(c))
+		}
+	}
+	slices.SortFunc(out, func(a, b domain.Calendar) int {
+		return cmp.Or(cmp.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name)), cmp.Compare(a.ID, b.ID))
+	})
+	return out, nil
+}
+
+func (r calendars) InUse(_ context.Context, id string) (bool, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, t := range r.timelines {
+		if t.CalendarID != nil && *t.CalendarID == id {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // Suggestions
 
 type suggestions struct{ *db }
+
+func (r suggestions) ShiftYears(_ context.Context, timelineIDs []string, shifts []domain.YearShift) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for id, s := range r.suggestions {
+		if !slices.Contains(timelineIDs, s.TimelineID) {
+			continue
+		}
+		s.Proposed = shiftData(s.Proposed, shifts)
+		if s.Previous != nil {
+			p := *s.Previous
+			p.EventData = shiftData(p.EventData, shifts)
+			s.Previous = &p
+		}
+		r.suggestions[id] = s
+	}
+	return nil
+}
+
+func shiftData(e domain.EventData, shifts []domain.YearShift) domain.EventData {
+	e.Year = domain.ShiftYear(e.Year, shifts)
+	if e.EndYear != nil {
+		end := domain.ShiftYear(*e.EndYear, shifts)
+		e.EndYear = &end
+	}
+	return e
+}
 
 func (r suggestions) Create(_ context.Context, s *domain.Suggestion) error {
 	r.mu.Lock()

@@ -11,7 +11,6 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "mediabunny": "1.61.3",
     "vue": "^3.5.44",
     "vue-router": "^5.4.0"
   },

@@ -60,9 +60,13 @@ func (uc *CreateEvent) Execute(ctx context.Context, in CreateEventInput) (EventV
 	if err != nil {
 		return EventView{}, err
 	}
+	rules, err := rulesOf(ctx, uc.d, t)
+	if err != nil {
+		return EventView{}, err
+	}
 	data := normalizeEvent(in.Event)
 	f := fieldErrors{}
-	validateEvent(f, "", data, t.Eras)
+	validateEvent(f, "", data, t.Eras, rules)
 	if err := f.err(); err != nil {
 		return EventView{}, err
 	}
@@ -142,8 +146,12 @@ func (uc *UpdateEvent) Execute(ctx context.Context, in UpdateEventInput) (EventV
 		e.Era = *p.Era
 	}
 	e.EventData = normalizeEvent(e.EventData)
+	rules, err := rulesOf(ctx, uc.d, t)
+	if err != nil {
+		return EventView{}, err
+	}
 	f := fieldErrors{}
-	validateEvent(f, "", e.EventData, t.Eras)
+	validateEvent(f, "", e.EventData, t.Eras, rules)
 	if err := f.err(); err != nil {
 		return EventView{}, err
 	}

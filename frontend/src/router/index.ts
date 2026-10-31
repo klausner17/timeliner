@@ -20,6 +20,7 @@ export const router = createRouter({
     { path: '/t/:slug/contribuir', name: 'contribute', component: () => import('@/views/ContributeView.vue'), meta: { nav: 'explorar' } },
     { path: '/t/:slug/editar', name: 'editor', component: () => import('@/views/EditorView.vue'), meta: { nav: 'minhas', auth: true } },
     { path: '/nova', name: 'new', component: () => import('@/views/NewTimelineView.vue'), meta: { nav: 'minhas', auth: true } },
+    { path: '/calendarios/:id', name: 'calendar', component: () => import('@/views/CalendarView.vue'), meta: { nav: 'minhas' } },
     { path: '/comparar', name: 'compare', component: () => import('@/views/CompareView.vue'), meta: { nav: 'comparar' } },
     { path: '/perfil', name: 'profile', component: () => import('@/views/ProfileView.vue'), meta: { nav: 'minhas', auth: true } },
     { path: '/entrar', name: 'login', component: () => import('@/views/LoginView.vue') },

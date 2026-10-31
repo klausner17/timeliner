@@ -15,6 +15,7 @@ tags:
   - name: events
   - name: suggestions
   - name: compare
+  - name: calendars
   - name: users
 
 security:
@@ -435,11 +436,93 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
 
+  /calendars:
+    get:
+      tags: [calendars]
+      security: []
+      summary: Calendários que o usuário pode usar (os dele e os compartilhados), por nome
+      parameters:
+        - { name: q, in: query, schema: { type: string }, description: Filtra pelo nome }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Calendar' }
+    post:
+      tags: [calendars]
+      summary: Cria um calendário ficcional
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CalendarInput' }
+      responses:
+        '201':
+          description: Criado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Calendar' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /calendars/{calendarId}:
+    parameters:
+      - { name: calendarId, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [calendars]
+      security: []
+      summary: Um calendário (do usuário ou compartilhado)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Calendar' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [calendars]
+      summary: Edita o calendário (só o dono)
+      description: >-
+        Todos os campos são opcionais; `eras` substitui a lista inteira. Mande o `id` das eras
+        que já existiam e deixe sem `id` as novas. Quando uma era muda de duração ou entra uma
+        era nova antes dela, as eras seguintes andam no eixo, e os anos dos eventos, períodos e
+        sugestões de todas as timelines do calendário andam junto (T.A. 3019 continua T.A. 3019).
+        Responde 400 se uma era com conteúdo for apagada, ficar curta demais para o que já tem,
+        ou se as eras que já existiam trocarem de ordem.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CalendarInput' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Calendar' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [calendars]
+      summary: Apaga o calendário (só o dono, e só se nenhuma timeline usa)
+      responses:
+        '204': { description: Apagado }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
   /compare:
     get:
       tags: [compare]
       security: []
       summary: Duas a quatro timelines no mesmo eixo de anos
+      description: Todas precisam usar o mesmo calendário (gregoriano ou o mesmo ficcional); senão, 400.
       parameters:
         - name: slugs
           in: query
@@ -686,7 +769,7 @@ components:
 
     Category:
       type: string
-      enum: [História, Política, Esporte, Ciência e tecnologia, Cultura, Pessoal]
+      enum: [História, Política, Esporte, Ciência e tecnologia, Cultura, Ficção, Pessoal]
 
     UserSummary:
       type: object
@@ -810,7 +893,7 @@ components:
       description: Resumo usado em listas e cartões (sem eventos)
       required:
         [slug, title, description, category, color, owner, visibility, contributions, draft, eras, tags,
-         startYear, endYear, eventCount, contributorCount, pendingSuggestions, followers, following,
+         calendar, startYear, endYear, eventCount, contributorCount, pendingSuggestions, followers, following,
          points, createdAt, updatedAt]
       properties:
         slug: { type: string, example: historia-do-brasil }
@@ -822,6 +905,11 @@ components:
         visibility: { $ref: '#/components/schemas/Visibility' }
         contributions: { $ref: '#/components/schemas/ContributionMode' }
         draft: { type: boolean }
+        calendar:
+          description: Calendário ficcional; null no gregoriano. Em calendário ficcional, eventos e períodos têm só o ano.
+          oneOf:
+            - $ref: '#/components/schemas/TimelineCalendar'
+            - type: 'null'
         eras:
           type: array
           items: { $ref: '#/components/schemas/Era' }
@@ -906,6 +994,66 @@ components:
         pageSize: { type: integer }
         total: { type: integer }
 
+    CalendarEra:
+      type: object
+      description: Era de contagem; os anos começam do 1 em cada era. Só a última pode ficar sem duração.
+      required: [id, name, abbr, years]
+      properties:
+        id: { type: string }
+        name: { type: string, minLength: 1, maxLength: 60, example: Terceira Era }
+        abbr: { type: string, minLength: 1, maxLength: 12, example: T.A. }
+        years: { type: [integer, 'null'], minimum: 1, maximum: 100000, example: 3021, description: 'Sem duração, a era continua indefinidamente' }
+
+    Calendar:
+      type: object
+      description: >-
+        Calendário de um mundo ficcional. Por baixo, os anos dos eventos são contínuos: o ano 1
+        da primeira era é o ano 1, e cada era começa logo depois da anterior. Com 590 anos na
+        Primeira Era e 3441 na Segunda, T.A. 3019 é o ano 590 + 3441 + 3019 = 7050.
+      required: [id, name, description, owner, shared, eras, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        name: { type: string, example: Terra-média }
+        description: { type: string }
+        owner: { type: string, description: Handle do dono }
+        shared: { type: boolean, description: Qualquer pessoa pode usar nas próprias timelines }
+        eras:
+          type: array
+          items: { $ref: '#/components/schemas/CalendarEra' }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    CalendarInput:
+      type: object
+      description: Na criação, name e eras são obrigatórios.
+      properties:
+        name: { type: string, minLength: 1, maxLength: 80 }
+        description: { type: string, maxLength: 2000 }
+        shared: { type: boolean, default: false }
+        eras:
+          type: array
+          minItems: 1
+          maxItems: 30
+          items:
+            type: object
+            required: [name, abbr]
+            properties:
+              id: { type: string, description: 'Era que já existia; sem id, é uma era nova' }
+              name: { type: string, minLength: 1, maxLength: 60 }
+              abbr: { type: string, minLength: 1, maxLength: 12 }
+              years: { type: [integer, 'null'], minimum: 1, maximum: 100000 }
+
+    TimelineCalendar:
+      type: object
+      description: O calendário dentro da timeline, para a tela escrever os anos.
+      required: [id, name, eras]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        eras:
+          type: array
+          items: { $ref: '#/components/schemas/CalendarEra' }
+
     TimelineInput:
       type: object
       required: [title, category]
@@ -917,6 +1065,11 @@ components:
         visibility: { $ref: '#/components/schemas/Visibility' }
         contributions: { $ref: '#/components/schemas/ContributionMode' }
         draft: { type: boolean, default: false }
+        calendarId:
+          type: [string, 'null']
+          description: >-
+            Calendário ficcional (do usuário ou compartilhado). Sem ele, a timeline usa o
+            gregoriano. Só se escolhe na criação.
         eras:
           type: array
           maxItems: 60

@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import type { TrackColor } from '../tokens'
 import { periodRange, stackPeriods, type TrackPeriod } from './periodLayout'
+import { useYearFormat } from './yearFormat'
 
 export type OverviewBucket = { from: number; to: number; count: number }
 /** Uma timeline no minimapa: anos soltos ou faixas já contadas (timelines grandes), e os períodos dela. */
@@ -41,7 +42,7 @@ const tickList = computed(() => props.ticks ?? [props.start, props.end])
 const trackList = computed<OverviewTrack[]>(() => props.tracks ?? [{ color: props.color, years: props.years, buckets: props.buckets, periods: props.periods }])
 
 const PERIOD_ROW = 6
-const THIS_YEAR = new Date().getFullYear()
+const fmt = useYearFormat()
 
 const histograms = computed(() =>
   trackList.value.map((t) => {
@@ -56,15 +57,15 @@ const histograms = computed(() =>
     const total = bins.reduce((a, b) => a + b, 0)
     // Raiz quadrada: uma década cheia não esconde as faixas com poucos eventos.
     const bars = bins.flatMap((n, i) => (n ? [{ i, h: Math.max(12, Math.sqrt(n / max) * 100) }] : []))
-    const placed = stackPeriods(t.periods ?? [], Math.max(THIS_YEAR, props.end)).filter((p) => p.to >= props.start && p.from <= props.end)
-    const periods = placed.map((p) => ({ ...p, left: pct(p.from), width: Math.max(0.5, pct(p.to) - pct(p.from)), top: p.row * PERIOD_ROW, title: `${p.name} · ${periodRange(p)}` }))
+    const placed = stackPeriods(t.periods ?? [], fmt.value.openEnd(props.end)).filter((p) => p.to >= props.start && p.from <= props.end)
+    const periods = placed.map((p) => ({ ...p, left: pct(p.from), width: Math.max(0.5, pct(p.to) - pct(p.from)), top: p.row * PERIOD_ROW, title: `${p.name} · ${periodRange(p, fmt.value)}` }))
     const periodsHeight = periods.length ? Math.max(...periods.map((p) => p.row + 1)) * PERIOD_ROW : 0
     return { ...t, bars, total, periods, periodsHeight }
   }),
 )
 
 const total = computed(() => histograms.value.reduce((n, h) => n + h.total, 0))
-const label = computed(() => `Visão geral: ${total.value.toLocaleString('pt-BR')} eventos de ${props.start} a ${props.end}`)
+const label = computed(() => `Visão geral: ${total.value.toLocaleString('pt-BR')} eventos de ${fmt.value.year(props.start)} a ${fmt.value.year(props.end)}`)
 
 // ---------- Janela ----------
 
@@ -136,7 +137,7 @@ function onKey(ev: KeyboardEvent) {
 <template>
   <div class="tl-overview" :class="{ 'tl-overview--interactive': interactive }" :style="{ '--track': `var(--tl-track-${color})` }">
     <div class="tl-overview__ticks" aria-hidden="true">
-      <span v-for="t in tickList" :key="t" :style="{ left: `${pct(t)}%` }">{{ t }}</span>
+      <span v-for="t in tickList" :key="t" :style="{ left: `${pct(t)}%` }">{{ fmt.year(t) }}</span>
     </div>
     <div
       ref="bar"
@@ -174,7 +175,7 @@ function onKey(ev: KeyboardEvent) {
         :aria-valuemin="interactive ? start : undefined"
         :aria-valuemax="interactive ? end : undefined"
         :aria-valuenow="interactive ? windowModel[0] : undefined"
-        :aria-valuetext="interactive ? `${windowModel[0]} a ${windowModel[1]}` : undefined"
+        :aria-valuetext="interactive ? `${fmt.year(windowModel[0])} a ${fmt.year(windowModel[1])}` : undefined"
         @keydown="onKey"
       >
         <template v-if="interactive">

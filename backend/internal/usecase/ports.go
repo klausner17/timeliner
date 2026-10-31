@@ -61,6 +61,21 @@ type TimelineRepository interface {
 	Stats(ctx context.Context, ids []string, viewerID string) (map[string]domain.TimelineStats, error)
 	// Tags devolve as tags mais usadas nas timelines listadas.
 	Tags(ctx context.Context, limit int) ([]domain.TagCount, error)
+	// ByCalendar devolve todas as timelines que usam o calendário, de qualquer dono.
+	ByCalendar(ctx context.Context, calendarID string) ([]domain.Timeline, error)
+}
+
+type CalendarRepository interface {
+	Create(ctx context.Context, c *domain.Calendar) error
+	Update(ctx context.Context, c *domain.Calendar) error
+	Delete(ctx context.Context, id string) error
+	ByID(ctx context.Context, id string) (*domain.Calendar, error)
+	// ByIDs devolve os calendários encontrados, indexados por ID.
+	ByIDs(ctx context.Context, ids []string) (map[string]domain.Calendar, error)
+	// Usable devolve os calendários do usuário e os compartilhados, por nome; query filtra pelo nome.
+	Usable(ctx context.Context, userID, query string) ([]domain.Calendar, error)
+	// InUse diz se alguma timeline usa o calendário.
+	InUse(ctx context.Context, id string) (bool, error)
 }
 
 // EventQuery pede uma página de eventos de uma timeline, em ordem cronológica.
@@ -102,6 +117,11 @@ type EventRepository interface {
 	// Overlaps devolve até limit anos de [from, to] em que duas ou mais das timelines têm
 	// evento começando, em ordem, e o total desses anos.
 	Overlaps(ctx context.Context, timelineIDs []string, from, to, limit int) ([]domain.YearOverlap, int, error)
+	// LatestYearIn devolve o maior ano de início ou de fim de evento das timelines que cai
+	// em [from, to], ou nil se nenhum cai.
+	LatestYearIn(ctx context.Context, timelineIDs []string, from, to int) (*int, error)
+	// ShiftYears desloca o início e o fim dos eventos das timelines (domain.ShiftYear).
+	ShiftYears(ctx context.Context, timelineIDs []string, shifts []domain.YearShift) error
 }
 
 type SuggestionRepository interface {
@@ -111,6 +131,8 @@ type SuggestionRepository interface {
 	// ListByTimeline devolve as mais recentes primeiro; status vazio traz todas.
 	ListByTimeline(ctx context.Context, timelineID string, status domain.SuggestionStatus) ([]domain.Suggestion, error)
 	ListByAuthor(ctx context.Context, authorID string) ([]domain.Suggestion, error)
+	// ShiftYears desloca os anos dos eventos propostos e anteriores (domain.ShiftYear).
+	ShiftYears(ctx context.Context, timelineIDs []string, shifts []domain.YearShift) error
 }
 
 type FollowRepository interface {
@@ -158,6 +180,7 @@ type Deps struct {
 	Users       UserRepository
 	Sessions    SessionRepository
 	Timelines   TimelineRepository
+	Calendars   CalendarRepository
 	Events      EventRepository
 	Suggestions SuggestionRepository
 	Follows     FollowRepository

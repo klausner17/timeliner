@@ -1,7 +1,9 @@
-import type { TimelineEvent } from '@/data/types'
+import type { TimelineCalendar, TimelineEvent } from '@/data/types'
+import { formatEraRange } from './calendar'
 
-/** Ano curto para a coluna da timeline: "1992" ou "1983–84". */
-export function yearLabel(e: Pick<TimelineEvent, 'year' | 'endYear'>): string {
+/** Ano curto para a coluna da timeline: "1992", "1983–84" ou, com calendário, "T.A. 3019". */
+export function yearLabel(e: Pick<TimelineEvent, 'year' | 'endYear'>, cal?: TimelineCalendar): string {
+  if (cal) return formatEraRange(e.year, e.endYear ?? e.year, cal)
   if (!e.endYear || e.endYear === e.year) return `${e.year}`
   const end = `${e.endYear}`
   return `${e.year}–${end.slice(0, 2) === `${e.year}`.slice(0, 2) ? end.slice(2) : end}`
@@ -11,12 +13,14 @@ export type Moment = Pick<TimelineEvent, 'year' | 'month' | 'day' | 'time'>
 type Dated = Moment & Pick<TimelineEvent, 'endYear'>
 
 /** Data montada com mês, dia e hora, ou o período em anos. */
-export function dateLabel(e: Dated): string {
+export function dateLabel(e: Dated, cal?: TimelineCalendar): string {
+  if (cal) return formatEraRange(e.year, e.endYear ?? e.year, cal)
   return momentLabel(e) ?? (e.endYear && e.endYear !== e.year ? `${e.year}–${e.endYear}` : `${e.year}`)
 }
 
 /** A data ao lado do ano na timeline, só quando ela diz mais que o ano. */
-export function detailedDateLabel(e: Dated): string | undefined {
+export function detailedDateLabel(e: Dated, cal?: TimelineCalendar): string | undefined {
+  if (cal) return undefined
   return e.month || (e.endYear && e.endYear !== e.year) ? dateLabel(e) : undefined
 }
 

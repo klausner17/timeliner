@@ -84,10 +84,42 @@ export type EraInput = {
   previousName?: string
 }
 
+/** Era de contagem de um calendário ficcional; os anos começam do 1 em cada era. */
+export type CalendarEra = {
+  id: string
+  name: string
+  /** Sigla que vai antes do ano: "T.A." em "T.A. 3019". */
+  abbr: string
+  /** Duração em anos; sem ela (só a última era), continua indefinidamente. */
+  years?: number
+}
+
+/** Calendário de um mundo ficcional (Terra-média...), que várias timelines podem usar. */
+export type Calendar = {
+  id: string
+  name: string
+  description: string
+  /** Handle do dono. */
+  owner: string
+  /** Qualquer pessoa pode usar nas próprias timelines. */
+  shared: boolean
+  eras: CalendarEra[]
+  createdAt: string
+  updatedAt: string
+}
+
+/** O calendário que vem dentro da timeline. */
+export type TimelineCalendar = Pick<Calendar, 'id' | 'name' | 'eras'>
+
+/** Era como se manda para a API: sem id é uma era nova. */
+export type CalendarEraInput = { id?: string; name: string; abbr: string; years: number | null }
+
+export type CalendarInput = { name?: string; description?: string; shared?: boolean; eras?: CalendarEraInput[] }
+
 export type Visibility = 'publica' | 'link' | 'privada'
 export type ContributionMode = 'sugestoes' | 'convidados' | 'fechada'
 
-export const categories = ['História', 'Política', 'Esporte', 'Ciência e tecnologia', 'Cultura', 'Pessoal'] as const
+export const categories = ['História', 'Política', 'Esporte', 'Ciência e tecnologia', 'Cultura', 'Ficção', 'Pessoal'] as const
 export type Category = (typeof categories)[number]
 
 /** Resumo usado em listas e cartões (sem os eventos). */
@@ -103,6 +135,8 @@ export type Timeline = {
   draft: boolean
   eras: Era[]
   tags: string[]
+  /** Calendário ficcional; sem ele, a timeline usa o gregoriano. */
+  calendar?: TimelineCalendar
   startYear?: number
   endYear?: number
   eventCount: number
@@ -129,9 +163,11 @@ export type TimelineInput = {
   draft?: boolean
   eras?: EraInput[]
   tags?: string[]
+  /** Só na criação: o calendário ficcional da timeline. */
+  calendarId?: string
 }
 
-export type TimelinePatch = Partial<TimelineInput>
+export type TimelinePatch = Partial<Omit<TimelineInput, 'calendarId'>>
 
 export type TimelinePage = { items: Timeline[]; page: number; pageSize: number; total: number }
 
