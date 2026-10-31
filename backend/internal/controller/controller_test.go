@@ -296,12 +296,12 @@ func TestPeriodsRenameKeepsEvents(t *testing.T) {
 	tl := a.want(a.do("PATCH", "/api/timelines/brasil", ana, map[string]any{
 		"eras": []map[string]any{
 			{"name": "Estado Novo", "start": 1937, "end": 1945, "color": "vermelho"},
-			{"name": "Primeira República", "start": 1889, "end": 1930, "previousName": "República Velha"},
+			{"name": "Primeira República", "start": 1889, "startMonth": 11, "startDay": 15, "end": 1930, "endMonth": 10, "endDay": 24, "previousName": "República Velha"},
 		},
 	}), 200)
 	eras := tl.Body["eras"].([]any)
 	first, second := eras[0].(map[string]any), eras[1].(map[string]any)
-	if first["name"] != "Primeira República" || first["color"] != nil || second["color"] != "vermelho" || second["previousName"] != nil {
+	if first["name"] != "Primeira República" || first["startDay"] != 15.0 || first["endMonth"] != 10.0 || second["startMonth"] != nil || first["color"] != nil || second["color"] != "vermelho" || second["previousName"] != nil {
 		t.Fatalf("eras = %s", tl.Raw)
 	}
 	if ev := tl.Body["events"].([]any)[0].(map[string]any); ev["era"] != "Primeira República" {

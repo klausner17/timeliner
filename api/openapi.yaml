@@ -764,9 +764,10 @@ components:
       description: >-
         Período da timeline (ex. República Velha, 1889–1930), mostrado como faixa no eixo e
         usado para agrupar eventos. Períodos podem se sobrepor (Era Vargas 1930–1945 contém o
-        Estado Novo 1937–1945). A API devolve a lista ordenada pelo início e, no mesmo início,
+        Estado Novo 1937–1945). Mês e dia de início e fim são opcionais; um fim só com o ano
+        cobre o ano inteiro. A API devolve a lista ordenada pelo início e, no mesmo início,
         o mais longo primeiro.
-      required: [name, start, end, color]
+      required: [name, start, end, color, startMonth, startDay, endMonth, endDay]
       properties:
         name: { type: string, minLength: 1, maxLength: 80, example: Ditadura militar }
         start: { type: integer, example: 1964 }
@@ -775,6 +776,10 @@ components:
           oneOf:
             - $ref: '#/components/schemas/PeriodColor'
             - type: 'null'
+        startMonth: { type: [integer, 'null'], minimum: 1, maximum: 12, description: Mês do início (opcional), example: 11 }
+        startDay: { type: [integer, 'null'], minimum: 1, maximum: 31, description: 'Dia do início; só com startMonth', example: 15 }
+        endMonth: { type: [integer, 'null'], minimum: 1, maximum: 12, description: 'Mês do fim; só com end', example: 10 }
+        endDay: { type: [integer, 'null'], minimum: 1, maximum: 31, description: 'Dia do fim; só com endMonth', example: 24 }
 
     EraInput:
       type: object
@@ -790,6 +795,10 @@ components:
           oneOf:
             - $ref: '#/components/schemas/PeriodColor'
             - type: 'null'
+        startMonth: { type: [integer, 'null'], minimum: 1, maximum: 12, description: Mês do início (opcional), example: 11 }
+        startDay: { type: [integer, 'null'], minimum: 1, maximum: 31, description: 'Dia do início; só com startMonth', example: 15 }
+        endMonth: { type: [integer, 'null'], minimum: 1, maximum: 12, description: 'Mês do fim; só com end', example: 10 }
+        endDay: { type: [integer, 'null'], minimum: 1, maximum: 31, description: 'Dia do fim; só com endMonth', example: 24 }
         previousName:
           type: [string, 'null']
           description: >-

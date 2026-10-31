@@ -56,8 +56,8 @@ const histograms = computed(() =>
     const total = bins.reduce((a, b) => a + b, 0)
     // Raiz quadrada: uma década cheia não esconde as faixas com poucos eventos.
     const bars = bins.flatMap((n, i) => (n ? [{ i, h: Math.max(12, Math.sqrt(n / max) * 100) }] : []))
-    const placed = stackPeriods(t.periods ?? [], Math.max(THIS_YEAR, props.end)).filter((p) => p.to >= props.start && p.start <= props.end)
-    const periods = placed.map((p) => ({ ...p, left: pct(p.start), width: Math.max(0.5, pct(p.to) - pct(p.start)), top: p.row * PERIOD_ROW, title: `${p.name} · ${periodRange(p)}` }))
+    const placed = stackPeriods(t.periods ?? [], Math.max(THIS_YEAR, props.end)).filter((p) => p.to >= props.start && p.from <= props.end)
+    const periods = placed.map((p) => ({ ...p, left: pct(p.from), width: Math.max(0.5, pct(p.to) - pct(p.from)), top: p.row * PERIOD_ROW, title: `${p.name} · ${periodRange(p)}` }))
     const periodsHeight = periods.length ? Math.max(...periods.map((p) => p.row + 1)) * PERIOD_ROW : 0
     return { ...t, bars, total, periods, periodsHeight }
   }),

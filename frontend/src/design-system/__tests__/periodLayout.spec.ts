@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { innermostPeriod, parentPeriod, periodColorOf, periodRange, stackPeriods } from '../components/periodLayout'
+import { datePos, innermostPeriod, parentPeriod, periodColorOf, periodRange, stackPeriods } from '../components/periodLayout'
 
 const brasil = [
   { name: 'República Velha', start: 1889, end: 1930 },
@@ -40,5 +40,33 @@ describe('períodos dentro de períodos', () => {
     expect(periodRange({ start: 1930, end: 1945 })).toBe('1930–1945')
     expect(periodRange({ start: 1985 })).toBe('1985–hoje')
     expect(periodRange({ start: -27, end: 476 })).toBe('-27 a 476')
+    expect(periodRange({ start: 1889, startMonth: 11, startDay: 15, end: 1930, endMonth: 10 })).toBe('15/11/1889 a out. 1930')
+  })
+})
+
+describe('períodos com dia e mês', () => {
+  const datas = [
+    { name: 'Primeira República', start: 1889, startMonth: 11, startDay: 15, end: 1930, endMonth: 10, endDay: 24 },
+    { name: 'Revolução', start: 1930, startMonth: 10, startDay: 3, end: 1930, endMonth: 11, endDay: 3 },
+    { name: 'Era Vargas', start: 1930, startMonth: 11, startDay: 3, end: 1945, endMonth: 10, endDay: 29 },
+  ]
+
+  it('posiciona pela fração do ano', () => {
+    expect(datePos(1930)).toBe(1930)
+    expect(datePos(1930, 7, 2)).toBeCloseTo(1930 + 182 / 365)
+    expect(datePos(2000, 3, 1)).toBeCloseTo(2000 + 60 / 366)
+  })
+
+  it('no mesmo ano, quem não se cruza divide a linha', () => {
+    const rows = Object.fromEntries(stackPeriods(datas, 2026).map((p) => [p.name, p.row]))
+    expect(rows).toEqual({ 'Primeira República': 0, Revolução: 1, 'Era Vargas': 0 })
+  })
+
+  it('a data do evento decide o período', () => {
+    expect(innermostPeriod(datas, datePos(1930, 3), 2026)?.name).toBe('Primeira República')
+    expect(innermostPeriod(datas, datePos(1930, 10, 20), 2026)?.name).toBe('Revolução')
+    expect(innermostPeriod(datas, datePos(1930, 12), 2026)?.name).toBe('Era Vargas')
+    // Fim só com o mês cobre o mês inteiro.
+    expect(innermostPeriod([{ name: 'X', start: 1930, end: 1930, endMonth: 10 }], datePos(1930, 10, 31), 2026)?.name).toBe('X')
   })
 })

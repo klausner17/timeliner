@@ -155,8 +155,18 @@ const inviteMsg = ref('')
 
 // ---------- Períodos (República Velha, Era Vargas, Estado Novo...) ----------
 
-type PeriodForm = { name: string; start: string; end: string; color: PeriodColor | undefined }
-const blankPeriod = (): PeriodForm => ({ name: '', start: '', end: '', color: undefined })
+type PeriodForm = {
+  name: string
+  start: string
+  startMonth: string
+  startDay: string
+  end: string
+  endMonth: string
+  endDay: string
+  color: PeriodColor | undefined
+}
+const blankPeriod = (): PeriodForm => ({ name: '', start: '', startMonth: '', startDay: '', end: '', endMonth: '', endDay: '', color: undefined })
+const str = (n?: number) => (n === undefined ? '' : String(n))
 const periodForm = reactive<PeriodForm>(blankPeriod())
 const periodOpen = ref(false)
 /** Nome do período em edição; undefined é um período novo. */
@@ -169,7 +179,21 @@ const periods = computed(() => (timeline.value?.eras ?? []).map((e, i) => ({ ...
 const eventsIn = (p: Era) => events.value.filter((e) => e.era === p.name).length
 
 function openPeriod(p?: Era) {
-  Object.assign(periodForm, p ? { name: p.name, start: String(p.start), end: p.end !== undefined ? String(p.end) : '', color: p.color } : blankPeriod())
+  Object.assign(
+    periodForm,
+    p
+      ? {
+          name: p.name,
+          start: String(p.start),
+          startMonth: str(p.startMonth),
+          startDay: str(p.startDay),
+          end: str(p.end),
+          endMonth: str(p.endMonth),
+          endDay: str(p.endDay),
+          color: p.color,
+        }
+      : blankPeriod(),
+  )
   periodEditing.value = p?.name
   periodErrors.value = {}
   periodError.value = ''
@@ -178,7 +202,16 @@ function openPeriod(p?: Era) {
 
 const closePeriod = () => (periodOpen.value = false)
 
-const toInput = (e: Era): EraInput => ({ name: e.name, start: e.start, end: e.end ?? null, color: e.color ?? null })
+const toInput = (e: Era): EraInput => ({
+  name: e.name,
+  start: e.start,
+  startMonth: e.startMonth ?? null,
+  startDay: e.startDay ?? null,
+  end: e.end ?? null,
+  endMonth: e.endMonth ?? null,
+  endDay: e.endDay ?? null,
+  color: e.color ?? null,
+})
 
 /** Manda a lista inteira de períodos; a API devolve ordenada e acerta os eventos. */
 async function savePeriods(list: EraInput[], renamed?: { from: string; to: string }, removed?: string) {
@@ -205,12 +238,32 @@ async function submitPeriod() {
   if (!name) e.name = 'Dê um nome ao período.'
   else if (t.eras.some((x) => x.name === name && x.name !== periodEditing.value)) e.name = 'Já existe um período com esse nome.'
   if (!periodForm.start.trim() || !Number.isInteger(start)) e.start = 'Informe o ano de início.'
-  if (end !== undefined && (!Number.isInteger(end) || end < start)) e.end = 'O fim precisa ser depois do início.'
+  const from = readMoment(start, { month: periodForm.startMonth, day: periodForm.startDay, time: '' })
+  if (from.errors.day) e.startDay = from.errors.day
+  if (end === undefined) {
+    if (periodForm.endMonth || periodForm.endDay.trim()) e.end = 'Informe o ano do fim antes do mês e do dia.'
+  } else if (!Number.isInteger(end)) e.end = 'Informe o ano do fim.'
+  const to = end === undefined ? undefined : readMoment(end, { month: periodForm.endMonth, day: periodForm.endDay, time: '' })
+  if (to?.errors.day) e.endDay = to.errors.day
+  const item: EraInput = {
+    name,
+    start,
+    startMonth: from.value.month ?? null,
+    startDay: from.value.day ?? null,
+    end: end ?? null,
+    endMonth: to?.value.month ?? null,
+    endDay: to?.value.day ?? null,
+    color: periodForm.color ?? null,
+  }
+  // O fim só com o ano cobre o ano inteiro; com mês, o mês inteiro.
+  const key = (y: number, m: number | null | undefined, d: number | null | undefined, last: boolean) => [y, m ?? (last ? 13 : 0), d ?? (last ? 32 : 0)]
+  const a = key(start, item.startMonth, item.startDay, false)
+  const b = end === undefined ? undefined : key(end, item.endMonth, item.endDay, true)
+  if (!e.end && b && (b[0] - a[0] || b[1] - a[1] || b[2] - a[2]) < 0) e.end = 'O fim precisa ser depois do início.'
   periodErrors.value = e
   periodError.value = ''
   if (Object.keys(e).length) return
 
-  const item: EraInput = { name, start, end: end ?? null, color: periodForm.color ?? null }
   const editing = periodEditing.value
   const list = editing
     ? t.eras.map((x) => (x.name === editing ? { ...item, previousName: editing } : toInput(x)))
@@ -484,11 +537,25 @@ async function destroy() {
               <TlInput :id="id" v-model="periodForm.name" placeholder="Ex.: Era Vargas" :aria-describedby="describedby" :invalid="invalid" />
             </TlField>
             <div class="form__grid">
-              <TlField v-slot="{ id, describedby, invalid }" label="Início" :error="periodErrors.start">
+              <TlField v-slot="{ id, describedby, invalid }" label="Ano de início" :error="periodErrors.start">
                 <TlInput :id="id" v-model="periodForm.start" inputmode="numeric" placeholder="Ano" :aria-describedby="describedby" :invalid="invalid" />
               </TlField>
-              <TlField v-slot="{ id, describedby, invalid }" label="Fim" hint="Vazio se ainda não acabou." :error="periodErrors.end">
+              <TlField v-slot="{ id }" label="Mês (opcional)">
+                <TlSelect :id="id" v-model="periodForm.startMonth" :options="monthOptions" />
+              </TlField>
+              <TlField v-slot="{ id, describedby, invalid }" label="Dia (opcional)" :error="periodErrors.startDay">
+                <TlInput :id="id" v-model="periodForm.startDay" inputmode="numeric" maxlength="2" :aria-describedby="describedby" :invalid="invalid" />
+              </TlField>
+            </div>
+            <div class="form__grid">
+              <TlField v-slot="{ id, describedby, invalid }" label="Ano de fim" hint="Vazio se ainda não acabou." :error="periodErrors.end">
                 <TlInput :id="id" v-model="periodForm.end" inputmode="numeric" placeholder="Ano" :aria-describedby="describedby" :invalid="invalid" />
+              </TlField>
+              <TlField v-slot="{ id }" label="Mês (opcional)">
+                <TlSelect :id="id" v-model="periodForm.endMonth" :options="monthOptions" />
+              </TlField>
+              <TlField v-slot="{ id, describedby, invalid }" label="Dia (opcional)" :error="periodErrors.endDay">
+                <TlInput :id="id" v-model="periodForm.endDay" inputmode="numeric" maxlength="2" :aria-describedby="describedby" :invalid="invalid" />
               </TlField>
             </div>
             <div class="box__group">
@@ -508,7 +575,7 @@ async function destroy() {
               <span class="row__range">{{ periodRange(p) }}</span>
               <div class="row__text">
                 <span class="row__title">{{ p.name }}</span>
-                <span class="row__desc">{{ eventsIn(p) ? `${eventsIn(p)} ${eventsIn(p) === 1 ? 'evento marcado' : 'eventos marcados'}` : 'Agrupa os eventos pelo ano' }}</span>
+                <span class="row__desc">{{ eventsIn(p) ? `${eventsIn(p)} ${eventsIn(p) === 1 ? 'evento marcado' : 'eventos marcados'}` : 'Agrupa os eventos pela data' }}</span>
               </div>
               <TlButton icon-only icon="edit" variant="ghost" shape="rounded" :label="`Editar ${p.name}`" @click="openPeriod(p)" />
               <TlButton icon-only icon="trash" variant="ghost" shape="rounded" :label="`Remover ${p.name}`" @click="removePeriod(p)" />
@@ -806,7 +873,7 @@ ul.list {
 }
 .row__range {
   flex: none;
-  min-width: 96px;
+  min-width: 190px;
   font-family: var(--tl-font-display);
   font-weight: var(--tl-weight-semibold);
   font-variant-numeric: tabular-nums;

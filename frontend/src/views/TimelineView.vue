@@ -12,6 +12,7 @@ import {
   TlOverviewBar,
   TlSegmented,
   axisTicks,
+  datePos,
   innermostPeriod,
   parentPeriod,
   periodColorOf,
@@ -154,7 +155,7 @@ const groups = computed<Group[]>(() => {
   const byName = new Map(list.map((p) => [p.name, p]))
   const out: Group[] = []
   for (const e of events) {
-    const p = (e.era ? byName.get(e.era) : undefined) ?? innermostPeriod(list, e.year, openEnd)
+    const p = (e.era ? byName.get(e.era) : undefined) ?? innermostPeriod(list, datePos(e.year, e.month, e.day), openEnd)
     const name = p?.name ?? 'Fora dos períodos'
     const last = out[out.length - 1]
     if (last?.name === name) {

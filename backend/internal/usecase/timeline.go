@@ -155,7 +155,14 @@ func (in TimelineFields) apply(t *domain.Timeline) error {
 		f.check(length(era.Name, 1, 80), p+"name", "O nome do período precisa ter de 1 a 80 caracteres.")
 		f.check(!names[era.Name], p+"name", "Já existe um período com esse nome.")
 		f.check(era.Start >= minYear && era.Start <= maxYear, p+"start", "Ano fora do intervalo.")
-		f.check(era.End == nil || (*era.End >= era.Start && *era.End <= maxYear), p+"end", "O fim precisa ser depois do início.")
+		f.check(era.End == nil || *era.End <= maxYear, p+"end", "Ano fora do intervalo.")
+		validateEraDay(f, p+"start", era.Start, era.StartMonth, era.StartDay)
+		if era.End != nil {
+			validateEraDay(f, p+"end", *era.End, era.EndMonth, era.EndDay)
+			f.check(!era.EndsBeforeStart(), p+"end", "O fim precisa ser depois do início.")
+		} else {
+			f.check(era.EndMonth == nil && era.EndDay == nil, p+"endMonth", "Informe o ano do fim antes do mês e do dia.")
+		}
 		f.check(era.Color == nil || era.Color.Valid(), p+"color", "Cor inválida.")
 		names[era.Name] = true
 	}
@@ -165,6 +172,18 @@ func (in TimelineFields) apply(t *domain.Timeline) error {
 	// Guardados em ordem: a tela mostra as faixas e os grupos nessa ordem.
 	slices.SortStableFunc(t.Eras, domain.CompareEras)
 	return nil
+}
+
+// validateEraDay confere mês e dia de uma ponta do período (field é "eras[i].start" ou
+// "eras[i].end"; os erros vão em startMonth/startDay ou endMonth/endDay).
+func validateEraDay(f fieldErrors, field string, year int, month, day *int) {
+	if month != nil {
+		f.check(*month >= 1 && *month <= 12, field+"Month", "Mês inválido.")
+	}
+	if day != nil {
+		f.check(month != nil, field+"Day", "Informe o mês antes do dia.")
+		f.check(month == nil || validDay(year, *month, *day), field+"Day", "Este dia não existe no mês.")
+	}
 }
 
 // eraRemap diz o que fazer com o período dos eventos quando a lista muda: nome antigo

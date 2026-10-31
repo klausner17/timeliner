@@ -80,7 +80,35 @@ func TestPeriods(t *testing.T) {
 		t.Fatalf("troca: era = %v", e)
 	}
 
+	// Com dia e mês: no mesmo ano, quem começa antes vem antes.
+	tl = must[usecase.TimelineDetailView](t)(setEras([]domain.Era{
+		{Name: "Era Vargas", Start: 1930, StartMonth: ptr(11), StartDay: ptr(3), End: ptr(1945), EndMonth: ptr(10), EndDay: ptr(29)},
+		{Name: "Primeira República", Start: 1889, StartMonth: ptr(11), StartDay: ptr(15), End: ptr(1930), EndMonth: ptr(10), EndDay: ptr(24)},
+		{Name: "Revolução", Start: 1930, StartMonth: ptr(10), End: ptr(1930), EndMonth: ptr(11)},
+	}, nil))
+	if e := tl.Timeline.Eras; e[1].Name != "Revolução" || *e[2].StartDay != 3 || *e[0].EndMonth != 10 {
+		t.Fatalf("eras com data = %+v", e)
+	}
+
 	_, err := setEras([]domain.Era{
+		{Name: "D1", Start: 1930, StartMonth: ptr(2), StartDay: ptr(30)},
+		{Name: "D2", Start: 1930, StartDay: ptr(3)},
+		{Name: "D3", Start: 1930, StartMonth: ptr(5), End: ptr(1930), EndMonth: ptr(4)},
+		{Name: "D4", Start: 1930, EndMonth: ptr(4)},
+		{Name: "D5", Start: 1930, StartMonth: ptr(5), End: ptr(1930)},
+	}, nil)
+	wantKind(t, err, domain.KindValidation)
+	fields := err.(*domain.Error).Fields
+	for _, f := range []string{"eras[0].startDay", "eras[1].startDay", "eras[2].end", "eras[3].endMonth"} {
+		if _, ok := fields[f]; !ok {
+			t.Errorf("faltou erro em %s: %v", f, fields)
+		}
+	}
+	if len(fields) != 4 {
+		t.Errorf("fim só com o ano cobre o ano inteiro; erros = %v", fields)
+	}
+
+	_, err = setEras([]domain.Era{
 		{Name: "A", Start: 1900, End: ptr(1800)},
 		{Name: "A", Start: 1900},
 		{Name: "B", Start: 1900, Color: ptr(domain.PeriodColor("rosa-choque"))},

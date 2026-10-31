@@ -118,9 +118,9 @@ function periodsOf(lane: CompareLane) {
   const placed = stackPeriods(lane.periods, Math.max(THIS_YEAR, end.value))
   const rows = Math.max(...placed.map((p) => p.row + 1))
   const items = placed
-    .filter((p) => p.to >= start.value && p.start <= end.value)
+    .filter((p) => p.to >= start.value && p.from <= end.value)
     .map((p) => {
-      const left = clampPct(p.start)
+      const left = clampPct(p.from)
       return { ...p, key: `${p.name}`, left, width: Math.max(0.4, clampPct(p.to) - left), top: PERIOD_GAP + p.row * PERIOD_H, range: periodRange(p) }
     })
   return { items, height: PERIOD_GAP * 2 + rows * PERIOD_H }

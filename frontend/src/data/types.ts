@@ -59,10 +59,30 @@ export type EventPatch = { [K in keyof EventInput]?: EventInput[K] | null }
  * Período da timeline (República Velha, Era Vargas, Estado Novo...). Podem se sobrepor.
  * Sem `end`, vai até hoje; sem `color`, a tela escolhe pela posição na lista.
  */
-export type Era = { name: string; start: number; end?: number; color?: PeriodColor }
+export type Era = {
+  name: string
+  start: number
+  end?: number
+  color?: PeriodColor
+  /** Mês e dia do início e do fim, opcionais como nos eventos. */
+  startMonth?: number
+  startDay?: number
+  endMonth?: number
+  endDay?: number
+}
 
 /** Período como se manda para a API: `previousName` avisa que ele foi renomeado. */
-export type EraInput = { name: string; start: number; end?: number | null; color?: PeriodColor | null; previousName?: string }
+export type EraInput = {
+  name: string
+  start: number
+  end?: number | null
+  color?: PeriodColor | null
+  startMonth?: number | null
+  startDay?: number | null
+  endMonth?: number | null
+  endDay?: number | null
+  previousName?: string
+}
 
 export type Visibility = 'publica' | 'link' | 'privada'
 export type ContributionMode = 'sugestoes' | 'convidados' | 'fechada'
