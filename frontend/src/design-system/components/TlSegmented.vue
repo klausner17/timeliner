@@ -45,6 +45,12 @@ const model = defineModel<string>()
   min-height: var(--tl-control-sm);
   padding: 0 14px;
 }
+@media (max-width: 400px) {
+  .tl-segmented__item,
+  .tl-segmented--sm .tl-segmented__item {
+    padding: 0 12px;
+  }
+}
 .tl-segmented__item:hover {
   color: var(--tl-color-text);
 }

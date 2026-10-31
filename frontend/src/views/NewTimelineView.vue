@@ -140,12 +140,24 @@ async function submit() {
 }
 .page__actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: end;
   gap: var(--tl-space-2);
 }
 .page__error {
   font-size: var(--tl-text-md);
   color: var(--tl-color-warning-strong);
+}
+@media (max-width: 480px) {
+  .page {
+    padding-top: var(--tl-space-6);
+    padding-bottom: var(--tl-space-8);
+  }
+  /* Botão principal em cima, ocupando a largura; Cancelar embaixo. */
+  .page__actions {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
 }
 .page__note {
   font-size: var(--tl-text-sm);

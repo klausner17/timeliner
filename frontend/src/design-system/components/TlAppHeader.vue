@@ -35,7 +35,9 @@ withDefaults(
           >{{ item.label }}</RouterLink
         >
       </nav>
-      <TlButton v-if="createTo" :to="createTo" variant="dark" icon="plus">Criar timeline</TlButton>
+      <TlButton v-if="createTo" :to="createTo" variant="dark" icon="plus" class="tl-header__create" aria-label="Criar timeline"
+        >Criar<span class="tl-header__create-more"> timeline</span></TlButton
+      >
       <RouterLink v-if="profileTo && userName" :to="profileTo" class="tl-header__profile" aria-label="Seu perfil">
         <TlAvatar :name="userName" tint="a" decorative />
       </RouterLink>
@@ -90,5 +92,43 @@ withDefaults(
   text-decoration: none;
   border-radius: var(--tl-radius-pill);
   box-shadow: 0 0 0 1px var(--tl-color-border);
+}
+
+/* Em telas estreitas: logo, criar e perfil na primeira linha; o menu embaixo, rolando de lado se faltar espaço. */
+@media (max-width: 860px) {
+  .tl-header__inner {
+    padding-bottom: 0;
+    gap: 0 var(--tl-space-3);
+  }
+  .tl-header__brand {
+    flex: 1 1 auto;
+  }
+  .tl-header__nav {
+    order: 1;
+    flex: 1 1 100%;
+    flex-wrap: nowrap;
+    gap: 0;
+    margin: 0 calc(var(--tl-gutter) * -1);
+    padding: 0 calc(var(--tl-gutter) - var(--tl-space-3));
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .tl-header__link {
+    flex: none;
+    white-space: nowrap;
+  }
+}
+@media (max-width: 400px) {
+  .tl-header__create-more {
+    display: none;
+  }
+}
+/* Em telas bem estreitas o botão fica só com o "+". */
+@media (max-width: 359px) {
+  .tl-header__create {
+    font-size: 0;
+    gap: 0;
+    padding: 0 12px;
+  }
 }
 </style>

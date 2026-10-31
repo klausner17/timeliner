@@ -781,8 +781,35 @@ async function share() {
 }
 
 @media (max-width: 640px) {
+  .top__inner {
+    padding-top: var(--tl-space-5);
+    gap: var(--tl-space-4);
+  }
   .top__title {
     font-size: var(--tl-text-4xl);
+  }
+  /* Os períodos ficam numa linha só, rolando de lado, em vez de ocupar a tela inteira. */
+  .top__controls {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: stretch;
+  }
+  .top__chips {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    margin: 0 calc(var(--tl-gutter) * -1);
+    padding: 2px var(--tl-gutter);
+    scrollbar-width: none;
+  }
+  .top__chips > * {
+    flex: none;
+  }
+  .body {
+    padding-top: var(--tl-space-5);
+    gap: var(--tl-space-5);
+  }
+  .view--full .body {
+    padding-top: var(--tl-space-3);
   }
 }
 </style>

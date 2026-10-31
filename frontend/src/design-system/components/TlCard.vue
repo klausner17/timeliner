@@ -56,6 +56,11 @@ const interactive = computed(() => !!(props.to || props.href))
   padding: var(--tl-space-7);
   border-radius: 18px;
 }
+@media (max-width: 480px) {
+  .tl-card--lg {
+    padding: var(--tl-space-5);
+  }
+}
 .tl-card--muted {
   background: var(--tl-color-surface-muted);
 }
