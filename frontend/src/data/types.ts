@@ -3,7 +3,7 @@
  * chegam aqui como undefined (ver store.ts), para os componentes que esperam
  * opcionais.
  */
-import type { TrackColor } from '@/design-system'
+import type { PeriodColor, TrackColor } from '@/design-system'
 
 export type Tint = TrackColor | 'neutral'
 
@@ -55,7 +55,34 @@ export type EventInput = Omit<TimelineEvent, 'id' | 'by' | 'createdAt'>
 /** Correção de evento: só os campos mandados mudam; null apaga um opcional. */
 export type EventPatch = { [K in keyof EventInput]?: EventInput[K] | null }
 
-export type Era = { name: string; start: number; end?: number }
+/**
+ * Período da timeline (República Velha, Era Vargas, Estado Novo...). Podem se sobrepor.
+ * Sem `end`, vai até hoje; sem `color`, a tela escolhe pela posição na lista.
+ */
+export type Era = {
+  name: string
+  start: number
+  end?: number
+  color?: PeriodColor
+  /** Mês e dia do início e do fim, opcionais como nos eventos. */
+  startMonth?: number
+  startDay?: number
+  endMonth?: number
+  endDay?: number
+}
+
+/** Período como se manda para a API: `previousName` avisa que ele foi renomeado. */
+export type EraInput = {
+  name: string
+  start: number
+  end?: number | null
+  color?: PeriodColor | null
+  startMonth?: number | null
+  startDay?: number | null
+  endMonth?: number | null
+  endDay?: number | null
+  previousName?: string
+}
 
 export type Visibility = 'publica' | 'link' | 'privada'
 export type ContributionMode = 'sugestoes' | 'convidados' | 'fechada'
@@ -100,7 +127,7 @@ export type TimelineInput = {
   visibility?: Visibility
   contributions?: ContributionMode
   draft?: boolean
-  eras?: Era[]
+  eras?: EraInput[]
   tags?: string[]
 }
 

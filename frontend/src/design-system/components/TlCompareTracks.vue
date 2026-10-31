@@ -2,9 +2,10 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { TrackColor } from '../tokens'
 import TlButton from './TlButton.vue'
-import { clampWindow, layout, niceStep, zoomWindow, type CompareBucket, type CompareEvent, type TrackItem } from './trackLayout'
+import { periodDate, periodRange, stackPeriods, type TrackPeriod } from './periodLayout'
+import { MIN_SPAN, clampWindow, eventPos, layout, niceStep, posLabel, tickLabel, windowTicks, zoomWindow, type CompareBucket, type CompareEvent, type TrackItem } from './trackLayout'
 
-export type { CompareBucket, CompareEvent }
+export type { CompareBucket, CompareEvent, TrackPeriod }
 /** Uma trilha traz eventos soltos, faixas com contagem (timelines grandes) ou os dois. */
 export type CompareLane = {
   id: string
@@ -14,6 +15,8 @@ export type CompareLane = {
   buckets?: CompareBucket[]
   /** Primeiro e último ano da timeline. Fora dele, o eixo some e a área fica apagada. */
   extent?: [number, number]
+  /** Períodos da timeline (República Velha, Era Vargas...), em faixas acima do eixo. */
+  periods?: TrackPeriod[]
 }
 
 /**
@@ -44,6 +47,9 @@ const emit = defineEmits<{ zoom: [range: [number, number]] }>()
 const ROW_H = 70 // cabe um rótulo de até duas linhas
 const FIRST_ROW = 44
 const MIN_ROWS = 2
+const PERIOD_H = 24 // altura de uma linha de faixas de período
+const PERIOD_GAP = 4
+const THIS_YEAR = new Date().getFullYear()
 
 // Largura real do eixo, para saber quando dois rótulos se encostam.
 const plot = ref<HTMLElement>()
@@ -56,28 +62,23 @@ onMounted(() => {
 })
 onBeforeUnmount(() => observer?.disconnect())
 
-const span = computed(() => Math.max(1, end.value - start.value))
+const span = computed(() => Math.max(1 / 12, end.value - start.value))
 const pct = (y: number) => ((y - start.value) / span.value) * 100
 const clampPct = (y: number) => Math.min(100, Math.max(0, pct(y)))
 const toPx = (y: number) => (clampPct(y) / 100) * plotWidth.value
 
-const ticks = computed(() => {
-  const step = props.tickStep ?? niceStep(span.value)
-  const out: number[] = []
-  const first = Math.ceil(start.value / step) * step
-  for (let y = first; y <= end.value; y += step) out.push(y)
-  return out
-})
+const ticks = computed(() => windowTicks(start.value, end.value, props.tickStep ?? niceStep(span.value)).map((pos) => ({ pos, label: tickLabel(pos), month: Math.round(pos * 12) % 12 !== 0 })))
 
 function itemsOf(lane: CompareLane): TrackItem[] {
   const items: TrackItem[] = []
   for (const e of lane.events ?? []) {
-    if (e.year >= start.value && e.year <= end.value) items.push({ kind: 'event', key: e.id, event: e, year: e.year, px: toPx(e.year) })
+    const pos = eventPos(e)
+    if (pos >= start.value && pos <= end.value) items.push({ kind: 'event', key: e.id, event: e, year: e.year, px: toPx(pos) })
   }
   for (const b of lane.buckets ?? []) {
     if (b.to < start.value || b.from > end.value) continue
     const only = b.count === 1 ? b.sample?.[0] : undefined
-    if (only) items.push({ kind: 'event', key: only.id, event: only, year: only.year, px: toPx(only.year) })
+    if (only) items.push({ kind: 'event', key: only.id, event: only, year: only.year, px: toPx(eventPos(only)) })
     else items.push({ kind: 'cluster', key: `c${b.from}-${b.to}`, from: b.from, to: b.to, count: b.count, sample: b.sample ?? [], px: toPx((b.from + b.to + 1) / 2) })
   }
   return items.sort((a, b) => a.px - b.px)
@@ -98,9 +99,27 @@ const laneViews = computed(() =>
     const bands = items.flatMap((i) =>
       i.kind === 'cluster' ? [{ key: i.key, left: clampPct(i.from), width: Math.max(0.6, clampPct(i.to + 1) - clampPct(i.from)), strength: 0.2 + 0.8 * Math.sqrt(i.count / maxCount) }] : [],
     )
-    return { ...lane, labels, dots, bands, edges: edgesOf(lane), height: `${FIRST_ROW + rows * ROW_H}px` }
+    const periods = periodsOf(lane)
+    return { ...lane, labels, dots, bands, edges: edgesOf(lane), periods: periods.items, offset: periods.height, height: `${periods.height + FIRST_ROW + rows * ROW_H}px` }
   }),
 )
+
+/**
+ * As faixas de período da trilha. A altura conta todas as linhas, não só as visíveis,
+ * para a trilha não pular de tamanho ao arrastar o eixo.
+ */
+function periodsOf(lane: CompareLane) {
+  if (!lane.periods?.length) return { items: [], height: 0 }
+  const placed = stackPeriods(lane.periods, Math.max(THIS_YEAR, end.value))
+  const rows = Math.max(...placed.map((p) => p.row + 1))
+  const items = placed
+    .filter((p) => p.to >= start.value && p.from <= end.value)
+    .map((p) => {
+      const left = clampPct(p.from)
+      return { ...p, key: `${p.name}`, left, width: Math.max(0.4, clampPct(p.to) - left), top: PERIOD_GAP + p.row * PERIOD_H, range: periodRange(p) }
+    })
+  return { items, height: PERIOD_GAP * 2 + rows * PERIOD_H }
+}
 
 function edgesOf(lane: CompareLane) {
   const [first, last] = lane.extent ?? [start.value, end.value]
@@ -115,7 +134,13 @@ function edgesOf(lane: CompareLane) {
 
 const label = computed(() => `Comparação de ${start.value} a ${end.value}`)
 /** "1930–1945", ou "-1813 a -876" quando o traço confundiria com o sinal de menos. */
-const rangeText = (from: number, to: number) => (from === to ? `${from}` : from < 0 || to < 0 ? `${from} a ${to}` : `${from}–${to}`)
+const rangeText = (from: number, to: number) => {
+  if (from === to) return posLabel(from)
+  const [a, b] = [posLabel(from), posLabel(to)]
+  return from < 0 || to < 0 || a.includes(' ') || b.includes(' ') ? `${a} a ${b}` : `${a}–${b}`
+}
+/** Data do evento no rótulo: "1930", "out. 1930" ou "03/10/1930". */
+const eventDate = (e: CompareEvent) => periodDate(e.year, e.month, e.day)
 
 // ---------- Zoom ----------
 
@@ -204,7 +229,7 @@ function onPointerUp(ev: PointerEvent) {
       <span class="tl-compare__window" aria-live="polite">{{ rangeText(start, end) }}</span>
       <div class="tl-compare__zoom">
         <TlButton icon="minus" icon-only size="sm" label="Afastar" :disabled="!canZoomOut" @click="zoomBy(2)" />
-        <TlButton icon="plus" icon-only size="sm" label="Aproximar" :disabled="end - start <= 2" @click="zoomBy(0.5)" />
+        <TlButton icon="plus" icon-only size="sm" label="Aproximar" :disabled="end - start <= MIN_SPAN + 1e-9" @click="zoomBy(0.5)" />
         <TlButton v-if="min !== undefined && max !== undefined" icon="expand" size="sm" :disabled="!canZoomOut" @click="showAll">Ver tudo</TlButton>
       </div>
     </div>
@@ -212,7 +237,7 @@ function onPointerUp(ev: PointerEvent) {
       <div class="tl-compare__row">
         <div></div>
         <div class="tl-compare__ticks" aria-hidden="true">
-          <span v-for="t in ticks" :key="t" :style="{ left: `${pct(t)}%` }">{{ t }}</span>
+          <span v-for="t in ticks" :key="t.pos" :class="{ 'tl-compare__tick--month': t.month }" :style="{ left: `${pct(t.pos)}%` }">{{ t.label }}</span>
         </div>
       </div>
       <div class="tl-compare__row">
@@ -232,7 +257,7 @@ function onPointerUp(ev: PointerEvent) {
           @pointerup="onPointerUp"
           @pointercancel="onPointerUp"
         >
-          <div v-for="t in ticks" :key="t" class="tl-compare__grid" :style="{ left: `${pct(t)}%` }" aria-hidden="true"></div>
+          <div v-for="t in ticks" :key="t.pos" class="tl-compare__grid" :style="{ left: `${pct(t.pos)}%` }" aria-hidden="true"></div>
           <div v-if="highlightYear !== undefined && highlightYear >= start && highlightYear <= end" class="tl-compare__highlight" :style="{ left: `${pct(highlightYear)}%` }" aria-hidden="true"></div>
           <div
             v-for="(lane, li) in laneViews"
@@ -243,60 +268,74 @@ function onPointerUp(ev: PointerEvent) {
             role="group"
             :aria-label="lane.name"
           >
-            <template v-if="lane.edges.before">
-              <div class="tl-compare__void" :style="{ left: 0, width: `${lane.edges.before.x}%` }" aria-hidden="true"></div>
-              <div class="tl-compare__cap" :style="{ left: `${lane.edges.before.x}%` }" aria-hidden="true"></div>
-              <span class="tl-compare__edge" :style="{ left: `${lane.edges.before.x}%` }">Início em {{ lane.edges.before.year }}</span>
-            </template>
-            <template v-if="lane.edges.after">
-              <div class="tl-compare__void" :style="{ left: `${lane.edges.after.x}%`, right: 0 }" aria-hidden="true"></div>
-              <div class="tl-compare__cap" :style="{ left: `${lane.edges.after.x}%` }" aria-hidden="true"></div>
-              <span class="tl-compare__edge" :style="{ right: `${100 - lane.edges.after.x}%` }">Fim em {{ lane.edges.after.year }}</span>
-            </template>
-            <div class="tl-compare__axis" :style="{ left: `${lane.edges.axis.left}%`, width: `${lane.edges.axis.width}%` }" aria-hidden="true"></div>
-            <div
-              v-for="b in lane.bands"
-              :key="b.key"
-              class="tl-compare__band"
-              :style="{ left: `${b.left}%`, width: `${b.width}%`, opacity: b.strength }"
-              aria-hidden="true"
-            ></div>
-            <div
-              v-for="d in lane.dots"
-              :key="d.key"
-              class="tl-compare__dot"
-              :class="{ 'tl-compare__dot--on': selected === d.id }"
-              :style="{ left: `${d.x}%` }"
-              aria-hidden="true"
-            ></div>
-            <template v-for="e in lane.labels" :key="e.key">
-              <div class="tl-compare__stem" :style="{ left: `${e.x}%`, height: `${e.stem}px` }" aria-hidden="true"></div>
-              <button
-                v-if="e.kind === 'event'"
-                type="button"
-                class="tl-compare__event"
-                :class="{ 'tl-compare__event--on': selected === e.event.id, 'tl-compare__event--end': e.alignEnd }"
-                :style="e.alignEnd ? { right: `${100 - e.x}%`, top: `${e.top}px` } : { left: `${e.x}%`, top: `${e.top}px` }"
-                :aria-pressed="selected === e.event.id"
-                @click="selected = e.event.id"
+            <ul v-if="lane.periods.length" class="tl-compare__periods" :style="{ height: `${lane.offset}px` }" :aria-label="`Períodos de ${lane.name}`">
+              <li
+                v-for="p in lane.periods"
+                :key="p.key"
+                class="tl-compare__period"
+                :style="{ left: `${p.left}%`, width: `${p.width}%`, top: `${p.top}px`, '--period': `var(--tl-period-${p.color})`, '--period-soft': `var(--tl-period-${p.color}-soft)` }"
+                :title="`${p.name} · ${p.range}`"
               >
-                <span class="tl-compare__year">{{ e.event.year }}</span>
-                <span class="tl-compare__title" :title="e.event.title">{{ e.event.title }}</span>
-              </button>
-              <button
-                v-else
-                type="button"
-                class="tl-compare__event tl-compare__event--cluster"
-                :class="{ 'tl-compare__event--end': e.alignEnd }"
-                :style="e.alignEnd ? { right: `${100 - e.x}%`, top: `${e.top}px` } : { left: `${e.x}%`, top: `${e.top}px` }"
-                :aria-label="`${e.count} eventos de ${e.from} a ${e.to}${zoomable ? '. Aproximar' : ''}`"
-                :title="e.sample.map((s) => `${s.year} · ${s.title}`).join('\n')"
-                @click="openCluster(e)"
-              >
-                <span class="tl-compare__year">{{ rangeText(e.from, e.to) }}</span>
-                <span class="tl-compare__title">{{ e.count.toLocaleString('pt-BR') }} eventos</span>
-              </button>
-            </template>
+                <span class="tl-compare__period-name">{{ p.name }}</span>
+                <span class="tl-visually-hidden">, {{ p.range }}</span>
+              </li>
+            </ul>
+            <div class="tl-compare__track" :style="{ top: `${lane.offset}px` }">
+              <template v-if="lane.edges.before">
+                <div class="tl-compare__void" :style="{ left: 0, width: `${lane.edges.before.x}%` }" aria-hidden="true"></div>
+                <div class="tl-compare__cap" :style="{ left: `${lane.edges.before.x}%` }" aria-hidden="true"></div>
+                <span class="tl-compare__edge" :style="{ left: `${lane.edges.before.x}%` }">Início em {{ lane.edges.before.year }}</span>
+              </template>
+              <template v-if="lane.edges.after">
+                <div class="tl-compare__void" :style="{ left: `${lane.edges.after.x}%`, right: 0 }" aria-hidden="true"></div>
+                <div class="tl-compare__cap" :style="{ left: `${lane.edges.after.x}%` }" aria-hidden="true"></div>
+                <span class="tl-compare__edge" :style="{ right: `${100 - lane.edges.after.x}%` }">Fim em {{ lane.edges.after.year }}</span>
+              </template>
+              <div class="tl-compare__axis" :style="{ left: `${lane.edges.axis.left}%`, width: `${lane.edges.axis.width}%` }" aria-hidden="true"></div>
+              <div
+                v-for="b in lane.bands"
+                :key="b.key"
+                class="tl-compare__band"
+                :style="{ left: `${b.left}%`, width: `${b.width}%`, opacity: b.strength }"
+                aria-hidden="true"
+              ></div>
+              <div
+                v-for="d in lane.dots"
+                :key="d.key"
+                class="tl-compare__dot"
+                :class="{ 'tl-compare__dot--on': selected === d.id }"
+                :style="{ left: `${d.x}%` }"
+                aria-hidden="true"
+              ></div>
+              <template v-for="e in lane.labels" :key="e.key">
+                <div class="tl-compare__stem" :style="{ left: `${e.x}%`, height: `${e.stem}px` }" aria-hidden="true"></div>
+                <button
+                  v-if="e.kind === 'event'"
+                  type="button"
+                  class="tl-compare__event"
+                  :class="{ 'tl-compare__event--on': selected === e.event.id, 'tl-compare__event--end': e.alignEnd }"
+                  :style="e.alignEnd ? { right: `${100 - e.x}%`, top: `${e.top}px` } : { left: `${e.x}%`, top: `${e.top}px` }"
+                  :aria-pressed="selected === e.event.id"
+                  @click="selected = e.event.id"
+                >
+                  <span class="tl-compare__year">{{ eventDate(e.event) }}</span>
+                  <span class="tl-compare__title" :title="e.event.title">{{ e.event.title }}</span>
+                </button>
+                <button
+                  v-else
+                  type="button"
+                  class="tl-compare__event tl-compare__event--cluster"
+                  :class="{ 'tl-compare__event--end': e.alignEnd }"
+                  :style="e.alignEnd ? { right: `${100 - e.x}%`, top: `${e.top}px` } : { left: `${e.x}%`, top: `${e.top}px` }"
+                  :aria-label="`${e.count} eventos de ${e.from} a ${e.to}${zoomable ? '. Aproximar' : ''}`"
+                  :title="e.sample.map((s) => `${s.year} · ${s.title}`).join('\n')"
+                  @click="openCluster(e)"
+                >
+                  <span class="tl-compare__year">{{ rangeText(e.from, e.to) }}</span>
+                  <span class="tl-compare__title">{{ e.count.toLocaleString('pt-BR') }} eventos</span>
+                </button>
+              </template>
+            </div>
           </div>
         </div>
       </div>
@@ -352,6 +391,9 @@ function onPointerUp(ev: PointerEvent) {
   position: absolute;
   transform: translateX(-50%);
 }
+.tl-compare__ticks .tl-compare__tick--month {
+  color: var(--tl-color-text-subtle);
+}
 .tl-compare__name {
   display: flex;
   align-items: start;
@@ -403,6 +445,37 @@ function onPointerUp(ev: PointerEvent) {
 }
 .tl-compare__lane--sep {
   border-top: 1px solid var(--tl-color-border-subtle);
+}
+.tl-compare__track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+.tl-compare__periods {
+  position: relative;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.tl-compare__period {
+  position: absolute;
+  height: 20px;
+  padding: 0 8px;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  border-radius: var(--tl-radius-sm);
+  border-left: 3px solid var(--period);
+  background: var(--period-soft);
+  color: var(--period);
+}
+.tl-compare__period-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: var(--tl-text-xs);
+  font-weight: var(--tl-weight-semibold);
 }
 .tl-compare__axis {
   position: absolute;

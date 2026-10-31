@@ -284,3 +284,31 @@ type brokenTags struct{}
 func (brokenTags) Execute(context.Context, usecase.Empty) ([]domain.TagCount, error) {
 	return nil, fmt.Errorf("conectar: %w", errors.New("senha do banco errada"))
 }
+
+func TestPeriodsRenameKeepsEvents(t *testing.T) {
+	a := newAPI(t)
+	ana := a.register("ana")
+	a.want(a.do("POST", "/api/timelines", ana, map[string]any{
+		"title": "Brasil", "category": "História",
+		"eras":   []map[string]any{{"name": "República Velha", "start": 1889, "end": 1930}},
+		"events": []map[string]any{{"year": 1889, "title": "Proclamação", "era": "República Velha"}},
+	}), 201)
+	tl := a.want(a.do("PATCH", "/api/timelines/brasil", ana, map[string]any{
+		"eras": []map[string]any{
+			{"name": "Estado Novo", "start": 1937, "end": 1945, "color": "vermelho"},
+			{"name": "Primeira República", "start": 1889, "startMonth": 11, "startDay": 15, "end": 1930, "endMonth": 10, "endDay": 24, "previousName": "República Velha"},
+		},
+	}), 200)
+	eras := tl.Body["eras"].([]any)
+	first, second := eras[0].(map[string]any), eras[1].(map[string]any)
+	if first["name"] != "Primeira República" || first["startDay"] != 15.0 || first["endMonth"] != 10.0 || second["startMonth"] != nil || first["color"] != nil || second["color"] != "vermelho" || second["previousName"] != nil {
+		t.Fatalf("eras = %s", tl.Raw)
+	}
+	if ev := tl.Body["events"].([]any)[0].(map[string]any); ev["era"] != "Primeira República" {
+		t.Fatalf("o evento devia seguir o nome novo: %s", tl.Raw)
+	}
+	bad := a.want(a.do("PATCH", "/api/timelines/brasil", ana, map[string]any{"eras": []map[string]any{{"name": "X", "start": 1900, "color": "rosa"}}}), 400)
+	if errOf(bad)["fields"].(map[string]any)["eras[0].color"] == nil {
+		t.Fatalf("erro = %s", bad.Raw)
+	}
+}

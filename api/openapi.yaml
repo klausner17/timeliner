@@ -754,13 +754,56 @@ components:
         bio: { type: string, maxLength: 500 }
         tint: { $ref: '#/components/schemas/Tint' }
 
+    PeriodColor:
+      type: string
+      description: Cor da faixa de um período. Sem cor, a tela distribui as cores na ordem da lista.
+      enum: [azul, laranja, verde, roxo, amarelo, vermelho, cinza]
+
     Era:
       type: object
+      description: >-
+        Período da timeline (ex. República Velha, 1889–1930), mostrado como faixa no eixo e
+        usado para agrupar eventos. Períodos podem se sobrepor (Era Vargas 1930–1945 contém o
+        Estado Novo 1937–1945). Mês e dia de início e fim são opcionais; um fim só com o ano
+        cobre o ano inteiro. A API devolve a lista ordenada pelo início e, no mesmo início,
+        o mais longo primeiro.
+      required: [name, start, end, color, startMonth, startDay, endMonth, endDay]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 80, example: Ditadura militar }
+        start: { type: integer, example: 1964 }
+        end: { type: [integer, 'null'], description: 'Sem fim, o período vai até hoje', example: 1985 }
+        color:
+          oneOf:
+            - $ref: '#/components/schemas/PeriodColor'
+            - type: 'null'
+        startMonth: { type: [integer, 'null'], minimum: 1, maximum: 12, description: Mês do início (opcional), example: 11 }
+        startDay: { type: [integer, 'null'], minimum: 1, maximum: 31, description: 'Dia do início; só com startMonth', example: 15 }
+        endMonth: { type: [integer, 'null'], minimum: 1, maximum: 12, description: 'Mês do fim; só com end', example: 10 }
+        endDay: { type: [integer, 'null'], minimum: 1, maximum: 31, description: 'Dia do fim; só com endMonth', example: 24 }
+
+    EraInput:
+      type: object
+      description: >-
+        Período como se manda ao criar ou editar a timeline. A lista substitui a anterior
+        inteira: eventos de um período que saiu da lista ficam sem período.
       required: [name, start]
       properties:
-        name: { type: string, example: Ditadura militar }
-        start: { type: integer, example: 1964 }
-        end: { type: [integer, 'null'], example: 1985 }
+        name: { type: string, minLength: 1, maxLength: 80 }
+        start: { type: integer }
+        end: { type: [integer, 'null'] }
+        color:
+          oneOf:
+            - $ref: '#/components/schemas/PeriodColor'
+            - type: 'null'
+        startMonth: { type: [integer, 'null'], minimum: 1, maximum: 12, description: Mês do início (opcional), example: 11 }
+        startDay: { type: [integer, 'null'], minimum: 1, maximum: 31, description: 'Dia do início; só com startMonth', example: 15 }
+        endMonth: { type: [integer, 'null'], minimum: 1, maximum: 12, description: 'Mês do fim; só com end', example: 10 }
+        endDay: { type: [integer, 'null'], minimum: 1, maximum: 31, description: 'Dia do fim; só com endMonth', example: 24 }
+        previousName:
+          type: [string, 'null']
+          description: >-
+            Nome que o período tinha antes, quando foi renomeado. Os eventos do nome antigo
+            passam para o novo (dá para trocar dois nomes de uma vez).
 
     Timeline:
       type: object
@@ -876,7 +919,8 @@ components:
         draft: { type: boolean, default: false }
         eras:
           type: array
-          items: { $ref: '#/components/schemas/Era' }
+          maxItems: 60
+          items: { $ref: '#/components/schemas/EraInput' }
         tags:
           type: array
           maxItems: 10
@@ -900,7 +944,8 @@ components:
         draft: { type: boolean }
         eras:
           type: array
-          items: { $ref: '#/components/schemas/Era' }
+          maxItems: 60
+          items: { $ref: '#/components/schemas/EraInput' }
         tags:
           type: array
           maxItems: 10
@@ -920,7 +965,7 @@ components:
         description: { type: string }
         sourceUrl: { type: [string, 'null'], format: uri }
         by: { type: string, description: Handle de quem adicionou }
-        era: { type: [string, 'null'], description: Nome de uma das eras da timeline }
+        era: { type: [string, 'null'], description: Nome de um dos períodos (eras) da timeline }
         createdAt: { type: string, format: date-time }
 
     EventInput:
@@ -1040,7 +1085,7 @@ components:
               laneIds:
                 type: array
                 items: { type: string }
-        overlapsTotal: { type: integer, description: Quantos anos com coincidência existem, inclusive os que não vieram }
+        overlapsTotal: { type: integer, description: 'Quantos anos com coincidência existem, inclusive os que não vieram' }
 
     SavedComparisonInput:
       type: object

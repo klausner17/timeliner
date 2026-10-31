@@ -86,6 +86,34 @@ describe('TlCompareTracks', () => {
     expect(w.findAll('button')[0].attributes('style')).toContain('left: 25%')
   })
 
+  it('com mês e dia, o evento fica na posição dentro do ano e o rótulo mostra a data', () => {
+    const lane: CompareLane[] = [{ id: 'm', name: 'M', color: 'a', events: [{ id: 'm1', year: 1930, month: 7, day: 2, title: 'Meio do ano' }] }]
+    const w = mount(TlCompareTracks, { props: { lanes: lane, start: 1930, end: 1931 } })
+    const button = w.find('.tl-compare__event')
+    expect(button.text()).toContain('02/07/1930')
+    const left = Number(button.attributes('style')!.match(/left: ([\d.]+)%/)![1])
+    expect(left).toBeCloseTo((182 / 365) * 100, 1)
+  })
+
+  it('desenha os períodos da janela em faixas, os sobrepostos na linha de baixo', () => {
+    const withPeriods: CompareLane[] = [
+      {
+        ...lanes[0],
+        periods: [
+          { name: 'Era Vargas', start: 1930, end: 1945 },
+          { name: 'Estado Novo', start: 1937, end: 1945, color: 'vermelho' },
+          { name: 'Ditadura', start: 1964, end: 1985 },
+        ],
+      },
+    ]
+    const w = mount(TlCompareTracks, { props: { lanes: withPeriods, start: 1920, end: 1960 } })
+    const bands = w.findAll('.tl-compare__period')
+    expect(bands.map((b) => b.find('.tl-compare__period-name').text())).toEqual(['Era Vargas', 'Estado Novo'])
+    expect(bands[0].attributes('style')).toContain('left: 25%')
+    expect(bands[1].attributes('style')).toContain('var(--tl-period-vermelho)')
+    expect(bands[1].attributes('style')).not.toContain(bands[0].attributes('style')!.match(/top: \d+px/)![0])
+  })
+
   it('marca o início e o fim da timeline quando cabem na janela', () => {
     const w = mount(TlCompareTracks, { props: { lanes: [{ ...lanes[0], extent: [1990, 2000] }], start: 1980, end: 2020 } })
     expect(w.findAll('.tl-compare__edge').map((e) => e.text())).toEqual(['Início em 1990', 'Fim em 2000'])

@@ -390,6 +390,21 @@ func (r events) ByID(_ context.Context, id string) (*domain.Event, error) {
 	return found(e, ok)
 }
 
+func (r events) RemapEras(_ context.Context, timelineID string, remap map[string]*string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for id, e := range r.events {
+		if e.TimelineID != timelineID || e.Era == nil {
+			continue
+		}
+		if to, ok := remap[*e.Era]; ok {
+			e.Era = to
+			r.events[id] = e
+		}
+	}
+	return nil
+}
+
 func (r events) CreateMany(ctx context.Context, es []domain.Event) error {
 	for i := range es {
 		if err := r.Create(ctx, &es[i]); err != nil {

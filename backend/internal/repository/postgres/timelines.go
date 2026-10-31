@@ -15,9 +15,14 @@ import (
 type timelines struct{ *db }
 
 type eraJSON struct {
-	Name  string `json:"name"`
-	Start int    `json:"start"`
-	End   *int   `json:"end,omitempty"`
+	Name       string              `json:"name"`
+	Start      int                 `json:"start"`
+	End        *int                `json:"end,omitempty"`
+	Color      *domain.PeriodColor `json:"color,omitempty"`
+	StartMonth *int                `json:"startMonth,omitempty"`
+	StartDay   *int                `json:"startDay,omitempty"`
+	EndMonth   *int                `json:"endMonth,omitempty"`
+	EndDay     *int                `json:"endDay,omitempty"`
 }
 
 func erasToJSON(eras []domain.Era) []byte {

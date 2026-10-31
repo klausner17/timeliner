@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/klausner17/timeliner/backend/internal/domain"
@@ -94,8 +95,14 @@ type TimelineFields struct {
 	Contributions *domain.ContributionMode
 	Draft         *bool
 	Eras          *[]domain.Era
-	Tags          *[]string
+	// RenamedEras liga o nome novo de um período ao nome que ele tinha antes, para os
+	// eventos acompanharem a troca de nome. Só vale junto com Eras.
+	RenamedEras map[string]string
+	Tags        *[]string
 }
+
+// MaxEras é quantos períodos uma timeline pode ter.
+const MaxEras = 60
 
 // apply copia os campos preenchidos para t e valida o resultado.
 func (in TimelineFields) apply(t *domain.Timeline) error {
@@ -122,7 +129,11 @@ func (in TimelineFields) apply(t *domain.Timeline) error {
 		t.Draft = *in.Draft
 	}
 	if in.Eras != nil {
-		t.Eras = *in.Eras
+		t.Eras = make([]domain.Era, len(*in.Eras))
+		for i, era := range *in.Eras {
+			era.Name = strings.TrimSpace(era.Name)
+			t.Eras[i] = era
+		}
 	}
 	if in.Tags != nil {
 		t.Tags = normalizeTags(*in.Tags)
@@ -137,15 +148,68 @@ func (in TimelineFields) apply(t *domain.Timeline) error {
 	for _, tag := range t.Tags {
 		f.check(length(tag, 1, 30), "tags", "Cada tag pode ter até 30 caracteres.")
 	}
+	f.check(len(t.Eras) <= MaxEras, "eras", fmt.Sprintf("No máximo %d períodos.", MaxEras))
 	names := map[string]bool{}
 	for i, era := range t.Eras {
 		p := fmt.Sprintf("eras[%d].", i)
-		f.check(length(era.Name, 1, 80), p+"name", "o nome do período precisa ter de 1 a 80 caracteres")
-		f.check(!names[era.Name], p+"name", "período repetido")
-		f.check(era.End == nil || *era.End >= era.Start, p+"end", "o fim precisa ser depois do início")
+		f.check(length(era.Name, 1, 80), p+"name", "O nome do período precisa ter de 1 a 80 caracteres.")
+		f.check(!names[era.Name], p+"name", "Já existe um período com esse nome.")
+		f.check(era.Start >= minYear && era.Start <= maxYear, p+"start", "Ano fora do intervalo.")
+		f.check(era.End == nil || *era.End <= maxYear, p+"end", "Ano fora do intervalo.")
+		validateEraDay(f, p+"start", era.Start, era.StartMonth, era.StartDay)
+		if era.End != nil {
+			validateEraDay(f, p+"end", *era.End, era.EndMonth, era.EndDay)
+			f.check(!era.EndsBeforeStart(), p+"end", "O fim precisa ser depois do início.")
+		} else {
+			f.check(era.EndMonth == nil && era.EndDay == nil, p+"endMonth", "Informe o ano do fim antes do mês e do dia.")
+		}
+		f.check(era.Color == nil || era.Color.Valid(), p+"color", "Cor inválida.")
 		names[era.Name] = true
 	}
-	return f.err()
+	if err := f.err(); err != nil {
+		return err
+	}
+	// Guardados em ordem: a tela mostra as faixas e os grupos nessa ordem.
+	slices.SortStableFunc(t.Eras, domain.CompareEras)
+	return nil
+}
+
+// validateEraDay confere mês e dia de uma ponta do período (field é "eras[i].start" ou
+// "eras[i].end"; os erros vão em startMonth/startDay ou endMonth/endDay).
+func validateEraDay(f fieldErrors, field string, year int, month, day *int) {
+	if month != nil {
+		f.check(*month >= 1 && *month <= 12, field+"Month", "Mês inválido.")
+	}
+	if day != nil {
+		f.check(month != nil, field+"Day", "Informe o mês antes do dia.")
+		f.check(month == nil || validDay(year, *month, *day), field+"Day", "Este dia não existe no mês.")
+	}
+}
+
+// eraRemap diz o que fazer com o período dos eventos quando a lista muda: nome antigo
+// para o novo (renomeado) ou nil (removido). Nomes que continuam iguais não entram.
+// renamed liga nome novo a nome antigo; dá para trocar dois nomes de uma vez.
+func eraRemap(before, after []domain.Era, renamed map[string]string) map[string]*string {
+	kept := map[string]bool{}
+	for _, e := range after {
+		kept[e.Name] = true
+	}
+	renamedTo := map[string]string{}
+	for to, from := range renamed {
+		if kept[to] && to != from {
+			renamedTo[from] = to
+		}
+	}
+	out := map[string]*string{}
+	for _, e := range before {
+		if to, ok := renamedTo[e.Name]; ok {
+			out[e.Name] = &to
+		} else if _, other := renamed[e.Name]; !kept[e.Name] || other {
+			// Sumiu, ou o nome agora é de outro período que foi renomeado para ele.
+			out[e.Name] = nil
+		}
+	}
+	return out
 }
 
 func normalizeTags(tags []string) []string {
@@ -258,11 +322,26 @@ func (uc *UpdateTimeline) Execute(ctx context.Context, in UpdateTimelineInput) (
 	if err != nil {
 		return TimelineDetailView{}, err
 	}
+	before := t.Eras
 	if err := in.TimelineFields.apply(t); err != nil {
 		return TimelineDetailView{}, err
 	}
 	t.UpdatedAt = uc.d.Clock.Now()
-	if err := uc.d.Timelines.Update(ctx, t); err != nil {
+	remap := map[string]*string{}
+	if in.Eras != nil {
+		remap = eraRemap(before, t.Eras, in.RenamedEras)
+	}
+	err = uc.d.Tx.WithinTx(ctx, func(ctx context.Context) error {
+		if err := uc.d.Timelines.Update(ctx, t); err != nil {
+			return err
+		}
+		if len(remap) == 0 {
+			return nil
+		}
+		// Eventos de um período removido ficam sem período; de um renomeado, seguem o nome novo.
+		return uc.d.Events.RemapEras(ctx, t.ID, remap)
+	})
+	if err != nil {
 		return TimelineDetailView{}, err
 	}
 	return timelineDetail(ctx, uc.d, t, in.ActorID)
