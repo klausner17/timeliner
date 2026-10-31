@@ -9,6 +9,8 @@ const defs = {
   swap: { viewBox: '0 0 20 20', paths: ['M4 7h12l-3-3', 'M16 13H4l3 3'] },
   share: { viewBox: '0 0 18 18', paths: ['M9 2v10', 'M5 6l4-4 4 4', 'M3 11v4h12v-4'] },
   back: { viewBox: '0 0 14 14', paths: ['M9 2L4 7l5 5'] },
+  up: { viewBox: '0 0 16 16', paths: ['M4 10l4-4 4 4'] },
+  down: { viewBox: '0 0 16 16', paths: ['M4 6l4 4 4-4'] },
   search: { viewBox: '0 0 18 18', paths: ['M8 14A6 6 0 1 0 8 2a6 6 0 0 0 0 12z', 'M16 16l-3.5-3.5'] },
   check: { viewBox: '0 0 16 16', paths: ['M3 8.5l3.5 3.5L13 4.5'] },
   close: { viewBox: '0 0 16 16', paths: ['M4 4l8 8', 'M12 4l-8 8'] },

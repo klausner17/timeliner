@@ -1,4 +1,5 @@
-import type { TimelineEvent } from '@/data/types'
+import type { TimelineCalendar, TimelineEvent } from '@/data/types'
+import { parseEraYear } from './calendar'
 import { daysInMonth, timePattern } from './format'
 
 export type ImportedEvent = Pick<TimelineEvent, 'year' | 'month' | 'day' | 'time' | 'title' | 'description' | 'sourceUrl'>
@@ -33,17 +34,23 @@ function separatorOf(line: string): string {
   return line.includes('\t') ? '\t' : ','
 }
 
-export function parseLine(line: string): ImportedEvent | undefined {
+/** Com calendário ficcional, a primeira coluna é sigla e ano ("T.A. 3019"). */
+function parseEraWhen(cell: string, cal: TimelineCalendar): When | undefined {
+  const year = parseEraYear(cell, cal)
+  return year === undefined ? undefined : { year }
+}
+
+export function parseLine(line: string, cal?: TimelineCalendar): ImportedEvent | undefined {
   const [when, title, description = '', source = ''] = line.split(separatorOf(line)).map((c) => c.trim().replace(/^"|"$/g, ''))
-  const parsed = parseWhen(when)
+  const parsed = cal ? parseEraWhen(when, cal) : parseWhen(when)
   if (!parsed || !title) return undefined
   return { ...parsed, title, description, sourceUrl: source || undefined }
 }
 
-export function parseSheet(text: string): ImportedEvent[] {
+export function parseSheet(text: string, cal?: TimelineCalendar): ImportedEvent[] {
   return text
     .split(/\r?\n/)
     .filter((l) => l.trim())
-    .map(parseLine)
+    .map((l) => parseLine(l, cal))
     .filter((e): e is ImportedEvent => e !== undefined)
 }

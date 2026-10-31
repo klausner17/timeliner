@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { TrackColor } from '../tokens'
 import TlButton from './TlButton.vue'
 import { periodDate, periodRange, stackPeriods, type TrackPeriod } from './periodLayout'
+import { useYearFormat } from './yearFormat'
 import { MIN_SPAN, clampWindow, eventPos, layout, niceStep, posLabel, tickLabel, windowTicks, zoomWindow, type CompareBucket, type CompareEvent, type TrackItem } from './trackLayout'
 
 export type { CompareBucket, CompareEvent, TrackPeriod }
@@ -49,7 +50,7 @@ const FIRST_ROW = 44
 const MIN_ROWS = 2
 const PERIOD_H = 24 // altura de uma linha de faixas de período
 const PERIOD_GAP = 4
-const THIS_YEAR = new Date().getFullYear()
+const fmt = useYearFormat()
 
 // Largura real do eixo, para saber quando dois rótulos se encostam.
 const plot = ref<HTMLElement>()
@@ -67,7 +68,12 @@ const pct = (y: number) => ((y - start.value) / span.value) * 100
 const clampPct = (y: number) => Math.min(100, Math.max(0, pct(y)))
 const toPx = (y: number) => (clampPct(y) / 100) * plotWidth.value
 
-const ticks = computed(() => windowTicks(start.value, end.value, props.tickStep ?? niceStep(span.value)).map((pos) => ({ pos, label: tickLabel(pos), month: Math.round(pos * 12) % 12 !== 0 })))
+const ticks = computed(() => {
+  const step = props.tickStep ?? niceStep(span.value)
+  const f = fmt.value
+  if (f.ticks) return f.ticks(start.value, end.value, Math.max(1, step)).map((pos) => ({ pos, label: f.year(pos), month: false }))
+  return windowTicks(start.value, end.value, step).map((pos) => ({ pos, label: tickLabel(pos), month: Math.round(pos * 12) % 12 !== 0 }))
+})
 
 function itemsOf(lane: CompareLane): TrackItem[] {
   const items: TrackItem[] = []
@@ -110,13 +116,13 @@ const laneViews = computed(() =>
  */
 function periodsOf(lane: CompareLane) {
   if (!lane.periods?.length) return { items: [], height: 0 }
-  const placed = stackPeriods(lane.periods, Math.max(THIS_YEAR, end.value))
+  const placed = stackPeriods(lane.periods, fmt.value.openEnd(end.value))
   const rows = Math.max(...placed.map((p) => p.row + 1))
   const items = placed
     .filter((p) => p.to >= start.value && p.from <= end.value)
     .map((p) => {
       const left = clampPct(p.from)
-      return { ...p, key: `${p.name}`, left, width: Math.max(0.4, clampPct(p.to) - left), top: PERIOD_GAP + p.row * PERIOD_H, range: periodRange(p) }
+      return { ...p, key: `${p.name}`, left, width: Math.max(0.4, clampPct(p.to) - left), top: PERIOD_GAP + p.row * PERIOD_H, range: periodRange(p, fmt.value) }
     })
   return { items, height: PERIOD_GAP * 2 + rows * PERIOD_H }
 }
@@ -132,15 +138,16 @@ function edgesOf(lane: CompareLane) {
   }
 }
 
-const label = computed(() => `Comparação de ${start.value} a ${end.value}`)
+const label = computed(() => `Comparação de ${fmt.value.year(Math.floor(start.value))} a ${fmt.value.year(Math.floor(end.value))}`)
 /** "1930–1945", ou "-1813 a -876" quando o traço confundiria com o sinal de menos. */
 const rangeText = (from: number, to: number) => {
+  if (fmt.value.yearOnly) return from === to ? fmt.value.year(from) : `${fmt.value.year(from)} a ${fmt.value.year(to)}`
   if (from === to) return posLabel(from)
   const [a, b] = [posLabel(from), posLabel(to)]
   return from < 0 || to < 0 || a.includes(' ') || b.includes(' ') ? `${a} a ${b}` : `${a}–${b}`
 }
 /** Data do evento no rótulo: "1930", "out. 1930" ou "03/10/1930". */
-const eventDate = (e: CompareEvent) => periodDate(e.year, e.month, e.day)
+const eventDate = (e: CompareEvent) => periodDate(e.year, e.month, e.day, fmt.value)
 
 // ---------- Zoom ----------
 
@@ -284,12 +291,12 @@ function onPointerUp(ev: PointerEvent) {
               <template v-if="lane.edges.before">
                 <div class="tl-compare__void" :style="{ left: 0, width: `${lane.edges.before.x}%` }" aria-hidden="true"></div>
                 <div class="tl-compare__cap" :style="{ left: `${lane.edges.before.x}%` }" aria-hidden="true"></div>
-                <span class="tl-compare__edge" :style="{ left: `${lane.edges.before.x}%` }">Início em {{ lane.edges.before.year }}</span>
+                <span class="tl-compare__edge" :style="{ left: `${lane.edges.before.x}%` }">Início em {{ fmt.year(lane.edges.before.year) }}</span>
               </template>
               <template v-if="lane.edges.after">
                 <div class="tl-compare__void" :style="{ left: `${lane.edges.after.x}%`, right: 0 }" aria-hidden="true"></div>
                 <div class="tl-compare__cap" :style="{ left: `${lane.edges.after.x}%` }" aria-hidden="true"></div>
-                <span class="tl-compare__edge" :style="{ right: `${100 - lane.edges.after.x}%` }">Fim em {{ lane.edges.after.year }}</span>
+                <span class="tl-compare__edge" :style="{ right: `${100 - lane.edges.after.x}%` }">Fim em {{ fmt.year(lane.edges.after.year) }}</span>
               </template>
               <div class="tl-compare__axis" :style="{ left: `${lane.edges.axis.left}%`, width: `${lane.edges.axis.width}%` }" aria-hidden="true"></div>
               <div
@@ -328,7 +335,7 @@ function onPointerUp(ev: PointerEvent) {
                   :class="{ 'tl-compare__event--end': e.alignEnd }"
                   :style="e.alignEnd ? { right: `${100 - e.x}%`, top: `${e.top}px` } : { left: `${e.x}%`, top: `${e.top}px` }"
                   :aria-label="`${e.count} eventos de ${e.from} a ${e.to}${zoomable ? '. Aproximar' : ''}`"
-                  :title="e.sample.map((s) => `${s.year} · ${s.title}`).join('\n')"
+                  :title="e.sample.map((s) => `${fmt.year(s.year)} · ${s.title}`).join('\n')"
                   @click="openCluster(e)"
                 >
                   <span class="tl-compare__year">{{ rangeText(e.from, e.to) }}</span>

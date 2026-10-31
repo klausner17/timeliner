@@ -4,6 +4,7 @@
  * podem ter mês e dia; no eixo eles viram anos com fração (15/11/1889 ≈ 1889,87).
  */
 import { periodColors, type PeriodColor } from '../tokens'
+import { gregorianYears, type YearFormat } from './yearFormat'
 
 /** Um período como vem da timeline. Sem `end`, vai até hoje. Mês e dia são opcionais. */
 export type TrackPeriod = {
@@ -73,17 +74,19 @@ export function stackPeriods(periods: TrackPeriod[], openEnd: number): PlacedPer
 export const MONTHS = ['jan.', 'fev.', 'mar.', 'abr.', 'maio', 'jun.', 'jul.', 'ago.', 'set.', 'out.', 'nov.', 'dez.']
 const pad = (n: number) => String(n).padStart(2, '0')
 
-/** "15/11/1889", "nov. 1889" ou "1889". */
-export function periodDate(year: number, month?: number, day?: number): string {
-  if (month && day) return `${pad(day)}/${pad(month)}/${year}`
-  if (month) return `${MONTHS[month - 1]} ${year}`
-  return `${year}`
+/** "15/11/1889", "nov. 1889" ou "1889" (ou "T.A. 3019" com outro formato de ano). */
+export function periodDate(year: number, month?: number, day?: number, fmt: YearFormat = gregorianYears): string {
+  const y = fmt.year(year)
+  if (month && day) return `${pad(day)}/${pad(month)}/${y}`
+  if (month) return `${MONTHS[month - 1]} ${y}`
+  return y
 }
 
 /** "1930–1945", "15/11/1889 a 24/10/1930", "1985–hoje", ou "-500 a -27" quando o traço confundiria. */
-export function periodRange(p: Omit<TrackPeriod, 'name' | 'color'>): string {
-  const from = periodDate(p.start, p.startMonth, p.startDay)
-  const to = p.end === undefined ? 'hoje' : periodDate(p.end, p.endMonth, p.endDay)
+export function periodRange(p: Omit<TrackPeriod, 'name' | 'color'>, fmt: YearFormat = gregorianYears): string {
+  const from = periodDate(p.start, p.startMonth, p.startDay, fmt)
+  const to = p.end === undefined ? fmt.openLabel : periodDate(p.end, p.endMonth, p.endDay, fmt)
+  if (fmt !== gregorianYears) return `${from} a ${to}`
   const plain = !p.startMonth && !p.endMonth && p.start >= 0 && (p.end ?? 0) >= 0
   return plain ? `${from}–${to}` : `${from} a ${to}`
 }

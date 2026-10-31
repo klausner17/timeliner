@@ -23,6 +23,8 @@ import { categories, type Era, type EraInput, type EventInput, type Timeline, ty
 import { chronological } from '@/data/windowing'
 import { momentFields, monthOptions, readMoment, yearLabel } from '@/lib/format'
 import { parseSheet } from '@/lib/importSheet'
+import { yearFormatOf } from '@/lib/calendar'
+import CalendarYearInput from '@/components/CalendarYearInput.vue'
 import NotFoundView from './NotFoundView.vue'
 
 const route = useRoute()
@@ -130,6 +132,9 @@ const saveLabel = computed(() => {
 })
 
 const urlPlaceholder = 'https://'
+/** Calendário ficcional da timeline: anos por era e sem mês, dia ou hora. */
+const cal = computed(() => timeline.value?.calendar)
+const years = computed(() => yearFormatOf(cal.value))
 const categoryOptions = categories.map((c) => c)
 const eraOptions = computed(() => [{ value: '', label: 'Pelo ano' }, ...(timeline.value?.eras ?? []).map((e) => ({ value: e.name, label: e.name }))])
 
@@ -403,9 +408,11 @@ async function importFile(ev: Event) {
   const file = input.files?.[0]
   input.value = ''
   if (!t || !file) return
-  const rows = parseSheet(await file.text())
+  const rows = parseSheet(await file.text(), t.calendar)
   if (!rows.length) {
-    importMsg.value = 'Nenhuma linha válida. Use: ano ou data; título; descrição; fonte.'
+    importMsg.value = t.calendar
+      ? `Nenhuma linha válida. Use: era e ano (ex.: ${t.calendar.eras[0]?.abbr ?? ''} 10); título; descrição; fonte.`
+      : 'Nenhuma linha válida. Use: ano ou data; título; descrição; fonte.'
     return
   }
   importing.value = true
@@ -502,6 +509,14 @@ async function destroy() {
           </div>
         </TlCard>
 
+        <TlCard v-if="cal" as="section" class="box">
+          <h2 class="box__title">Calendário</h2>
+          <p class="box__hint">
+            Esta timeline conta os anos pelo calendário <strong>{{ cal.name }}</strong>: {{ cal.eras.map((e) => e.name).join(', ') }}.
+          </p>
+          <TlButton :to="`/calendarios/${cal.id}`" shape="rounded" block>Ver calendário</TlButton>
+        </TlCard>
+
         <TlCard as="section" class="box">
           <h2 class="box__title">Quem vê e quem contribui</h2>
           <TlRadioGroup v-model="meta.visibility" legend="Visibilidade" :options="visibilityOptions" />
@@ -536,7 +551,15 @@ async function destroy() {
             <TlField v-slot="{ id, describedby, invalid }" label="Nome" :error="periodErrors.name">
               <TlInput :id="id" v-model="periodForm.name" placeholder="Ex.: Era Vargas" :aria-describedby="describedby" :invalid="invalid" />
             </TlField>
-            <div class="form__grid">
+            <div v-if="cal" class="form__grid form__grid--two">
+              <TlField v-slot="{ id, describedby, invalid }" label="Início" :error="periodErrors.start">
+                <CalendarYearInput :id="id" v-model="periodForm.start" :calendar="cal" :describedby="describedby" :invalid="invalid" />
+              </TlField>
+              <TlField v-slot="{ id, describedby, invalid }" label="Fim" hint="Vazio se não tem fim." :error="periodErrors.end">
+                <CalendarYearInput :id="id" v-model="periodForm.end" :calendar="cal" :describedby="describedby" :invalid="invalid" />
+              </TlField>
+            </div>
+            <div v-if="!cal" class="form__grid">
               <TlField v-slot="{ id, describedby, invalid }" label="Ano de início" :error="periodErrors.start">
                 <TlInput :id="id" v-model="periodForm.start" inputmode="numeric" placeholder="Ano" :aria-describedby="describedby" :invalid="invalid" />
               </TlField>
@@ -547,7 +570,7 @@ async function destroy() {
                 <TlInput :id="id" v-model="periodForm.startDay" inputmode="numeric" maxlength="2" :aria-describedby="describedby" :invalid="invalid" />
               </TlField>
             </div>
-            <div class="form__grid">
+            <div v-if="!cal" class="form__grid">
               <TlField v-slot="{ id, describedby, invalid }" label="Ano de fim" hint="Vazio se ainda não acabou." :error="periodErrors.end">
                 <TlInput :id="id" v-model="periodForm.end" inputmode="numeric" placeholder="Ano" :aria-describedby="describedby" :invalid="invalid" />
               </TlField>
@@ -572,7 +595,7 @@ async function destroy() {
           <TlCard v-if="periods.length" as="ul" padding="sm" class="list" aria-label="Lista de períodos">
             <li v-for="p in periods" :key="p.name" class="row">
               <span class="row__band" :style="{ background: `var(--tl-period-${p.shown})` }" aria-hidden="true"></span>
-              <span class="row__range">{{ periodRange(p) }}</span>
+              <span class="row__range">{{ periodRange(p, years) }}</span>
               <div class="row__text">
                 <span class="row__title">{{ p.name }}</span>
                 <span class="row__desc">{{ eventsIn(p) ? `${eventsIn(p)} ${eventsIn(p) === 1 ? 'evento marcado' : 'eventos marcados'}` : 'Agrupa os eventos pela data' }}</span>
@@ -595,7 +618,18 @@ async function destroy() {
 
         <TlCard v-if="formOpen" as="form" highlight class="form" @submit.prevent="submit">
           <h3 class="form__title">{{ editing ? 'Editar evento' : 'Novo evento' }}</h3>
-          <div class="form__grid">
+          <div v-if="cal" class="form__grid form__grid--two">
+            <TlField v-slot="{ id, describedby, invalid }" label="Ano" :error="errors.year">
+              <CalendarYearInput :id="id" v-model="form.year" :calendar="cal" :describedby="describedby" :invalid="invalid" />
+            </TlField>
+            <TlField v-slot="{ id, describedby, invalid }" label="Até (opcional)" :error="errors.endYear">
+              <CalendarYearInput :id="id" v-model="form.endYear" :calendar="cal" placeholder="Ano de fim" :describedby="describedby" :invalid="invalid" />
+            </TlField>
+            <TlField v-if="timeline.eras.length" v-slot="{ id, describedby }" label="Período" hint="Sem escolher, o evento entra no período do ano.">
+              <TlSelect :id="id" v-model="form.era" :options="eraOptions" :aria-describedby="describedby" />
+            </TlField>
+          </div>
+          <div v-else class="form__grid">
             <TlField v-slot="{ id, describedby, invalid }" label="Ano" :error="errors.year">
               <TlInput :id="id" v-model="form.year" inputmode="numeric" :aria-describedby="describedby" :invalid="invalid" />
             </TlField>
@@ -630,7 +664,7 @@ async function destroy() {
         <TlCard v-if="events.length" as="section" padding="sm" class="list" aria-label="Lista de eventos">
           <div v-for="e in events" :key="e.id" class="row" :class="{ 'row--new': e.id === justAdded }">
             <span class="row__dot" :style="{ background: `var(--tl-track-${timeline.color})` }" aria-hidden="true"></span>
-            <span class="row__year">{{ yearLabel(e) }}</span>
+            <span class="row__year">{{ yearLabel(e, cal) }}</span>
             <div class="row__text">
               <span class="row__title">{{ e.title }}</span>
               <span class="row__desc">{{ e.description }}</span>
@@ -794,6 +828,9 @@ async function destroy() {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: var(--tl-space-3);
+}
+.form__grid--two {
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
 }
 .form__actions {
   display: flex;

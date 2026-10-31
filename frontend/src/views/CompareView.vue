@@ -11,7 +11,7 @@ import {
   TlSegmented,
   TlSelect,
   TlTrackLabel,
-  axisTicks,
+  provideYearFormat,
   trackColors,
   type CompareEvent,
   type CompareLane,
@@ -20,11 +20,12 @@ import {
   type TrackPeriod,
 } from '@/design-system'
 import { errorMessage } from '@/data/api'
-import { currentUser, listSavedComparisons, listTimelines, loadComparison, loadSummary, saveComparison, yearRange, type Comparison } from '@/data/store'
+import { currentUser, listSavedComparisons, listTimelines, loadComparison, loadSummary, sameCalendar, saveComparison, yearRange, type Comparison } from '@/data/store'
 import type { SavedComparison, Timeline, TimelineEvent } from '@/data/types'
 import { extent, type EventWindow } from '@/data/windowing'
 import { copyLink, dateLabel } from '@/lib/format'
 import { useLatest } from '@/lib/useLatest'
+import { overviewTicksFor, yearFormatOf } from '@/lib/calendar'
 
 const route = useRoute()
 const router = useRouter()
@@ -45,19 +46,31 @@ const choices = computed(() => {
   return [...pub, ...own.filter((t) => t.eventCount && !pub.some((p) => p.slug === t.slug))]
 })
 const findTimeline = (slug: string) => choices.value.find((t) => t.slug === slug)
-const options = computed(() => choices.value.map((t) => ({ value: t.slug, label: t.title })))
+/** A primeira trilha escolhe qualquer timeline; as outras, só as do mesmo calendário. */
+const optionsFor = (i: number) => {
+  const first = i === 0 ? undefined : selected.value[0]
+  return choices.value.filter((t) => !first || sameCalendar(t, first)).map((t) => ({ value: t.slug, label: t.calendar ? `${t.title} (${t.calendar.name})` : t.title }))
+}
 
 const slugs = computed<string[]>(() => {
   const picked = KEYS.map((k) => route.query[k]).filter((v): v is string => typeof v === 'string' && !!findTimeline(v))
-  const out = [...picked]
-  // Sempre pelo menos duas: completa com as primeiras que ainda não estão na comparação.
+  // Só se compara no mesmo calendário: vale o da primeira trilha.
+  const first = picked.length ? findTimeline(picked[0]) : undefined
+  const out = first ? picked.filter((s) => sameCalendar(findTimeline(s)!, first)) : []
+  // Sempre pelo menos duas: completa com as primeiras do mesmo calendário que ainda não estão na comparação.
   for (const t of choices.value) {
     if (out.length >= 2) break
-    if (!out.includes(t.slug)) out.push(t.slug)
+    const base = out.length ? findTimeline(out[0]) : undefined
+    if (!out.includes(t.slug) && (!base || sameCalendar(t, base))) out.push(t.slug)
   }
   return out
 })
 const selected = computed(() => slugs.value.map((s) => findTimeline(s)).filter((t): t is Timeline => !!t))
+/** Timelines de um calendário sozinho não têm com o que comparar. */
+const alone = computed(() => selected.value.length < 2)
+const cal = computed(() => selected.value[0]?.calendar)
+const yearFmt = computed(() => yearFormatOf(cal.value))
+provideYearFormat(yearFmt)
 
 function setSlugs(next: string[], extra: Record<string, string | undefined> = {}) {
   const q: Record<string, string | undefined> = { de: route.query.de as string | undefined, ate: route.query.ate as string | undefined, ...extra }
@@ -66,6 +79,9 @@ function setSlugs(next: string[], extra: Record<string, string | undefined> = {}
 }
 
 function pick(i: number, slug: string) {
+  const picked = findTimeline(slug)
+  // Trocar a primeira por uma de outro calendário recomeça as outras trilhas.
+  if (i === 0 && picked && selected.value[1] && !sameCalendar(picked, selected.value[1])) return setSlugs([slug])
   const next = [...slugs.value]
   const other = next.indexOf(slug)
   if (other !== -1 && other !== i) next[other] = next[i] // escolher uma que já está troca as duas de lugar
@@ -74,7 +90,8 @@ function pick(i: number, slug: string) {
 }
 const swap = () => setSlugs([slugs.value[1], slugs.value[0], ...slugs.value.slice(2)])
 function addLane() {
-  const free = choices.value.find((t) => !slugs.value.includes(t.slug))
+  const first = selected.value[0]
+  const free = choices.value.find((t) => !slugs.value.includes(t.slug) && (!first || sameCalendar(t, first)))
   if (free) setSlugs([...slugs.value, free.slug])
 }
 const removeLane = (i: number) => setSlugs(slugs.value.filter((_, j) => j !== i))
@@ -206,7 +223,8 @@ const highlightText = computed(() => {
   const parts = allEvents.value.filter((e) => e.year === h.year && h.laneIds.includes(e.timeline.slug)).map((e) => e.title)
   const names = h.laneIds.map((id) => findTimeline(id)?.title ?? id)
   const and = (xs: string[]) => (xs.length > 1 ? `${xs.slice(0, -1).join(', ')} e ${xs[xs.length - 1]}` : xs[0])
-  return parts.length > 1 ? `Em ${h.year}, ${and(parts)} aparecem no mesmo ano.` : `Em ${h.year}, ${and(names)} têm eventos no mesmo ano.`
+  const y = yearFmt.value.year(h.year)
+  return parts.length > 1 ? `Em ${y}, ${and(parts)} aparecem no mesmo ano.` : `Em ${y}, ${and(names)} têm eventos no mesmo ano.`
 })
 const coincidenceCount = computed(() => {
   const n = comparison.value?.overlapsTotal ?? 0
@@ -226,7 +244,7 @@ const overviewTracks = computed<OverviewTrack[]>(() =>
     buckets: w.mode === 'faixas' ? w.buckets : w.events.map((e) => ({ from: e.year, to: e.year, count: 1 })),
   })),
 )
-const overviewTicks = computed(() => axisTicks(bounds.value[0], bounds.value[1]))
+const overviewTicks = computed(() => overviewTicksFor(bounds.value[0], bounds.value[1], cal.value))
 const overviewWindow = computed<[number, number] | undefined>({ get: () => view.value, set: (v) => v && (view.value = v) })
 
 // ---------- Salvar e compartilhar ----------
@@ -282,17 +300,21 @@ async function share() {
           <label :for="`tl-${i}`" class="picker__label">Timeline {{ KEYS[i].toUpperCase() }}</label>
           <div class="picker__box">
             <span class="picker__dot" aria-hidden="true"></span>
-            <TlSelect :id="`tl-${i}`" :model-value="t.slug" :options="options" class="picker__select" @update:model-value="(v) => v && pick(i, v)" />
+            <TlSelect :id="`tl-${i}`" :model-value="t.slug" :options="optionsFor(i)" class="picker__select" @update:model-value="(v) => v && pick(i, v)" />
             <TlButton v-if="i > 1" icon="close" icon-only size="sm" variant="ghost" :label="`Remover timeline ${KEYS[i].toUpperCase()}`" @click="removeLane(i)" />
           </div>
         </div>
         <TlButton v-if="i === 0" icon="swap" icon-only size="lg" label="Trocar A e B" class="pickers__swap" @click="swap" />
       </template>
-      <TlButton v-if="selected.length < 4 && choices.length > selected.length" variant="dashed" shape="rounded" size="lg" @click="addLane">+ Adicionar timeline</TlButton>
+      <TlButton v-if="selected.length < 4 && optionsFor(1).length > selected.length" variant="dashed" shape="rounded" size="lg" @click="addLane">+ Adicionar timeline</TlButton>
     </div>
 
+    <TlCard v-if="alone" tone="muted" padding="lg">
+      Nenhuma outra timeline usa o calendário {{ cal?.name ?? "gregoriano" }}. Só dá para comparar timelines do mesmo calendário.
+    </TlCard>
+    <template v-else>
     <div class="controls">
-      <form class="range" @submit.prevent="applyRange">
+      <form v-if="!cal" class="range" @submit.prevent="applyRange">
         <label for="de" class="range__label">Período</label>
         <TlInput id="de" v-model="startInput" inputmode="numeric" aria-label="Ano inicial" class="range__input" @blur="applyRange" />
         <span aria-hidden="true" class="range__label">até</span>
@@ -341,15 +363,15 @@ async function share() {
       <div v-for="r in visibleRows" :key="r.year" class="list__row">
         <template v-if="selected.length === 2">
           <div class="list__cell list__a">{{ r.cells[0].map((e) => e.title).join(' · ') }}</div>
-          <div class="list__year" :class="{ 'list__year--shared': r.shared }">{{ r.year }}</div>
+          <div class="list__year" :class="{ 'list__year--shared': r.shared }">{{ yearFmt.year(r.year) }}</div>
           <div class="list__cell">{{ r.cells[1].map((e) => e.title).join(' · ') }}</div>
         </template>
         <template v-else>
-          <div class="list__year" :class="{ 'list__year--shared': r.shared }">{{ r.year }}</div>
+          <div class="list__year" :class="{ 'list__year--shared': r.shared }">{{ yearFmt.year(r.year) }}</div>
           <div v-for="(c, i) in r.cells" :key="i" class="list__cell">{{ c.map((e) => e.title).join(' · ') }}</div>
         </template>
       </div>
-      <p v-if="!rows.length" class="list__empty">Nenhum evento entre {{ start }} e {{ end }}.</p>
+      <p v-if="!rows.length" class="list__empty">Nenhum evento entre {{ yearFmt.year(Math.floor(start)) }} e {{ yearFmt.year(Math.ceil(end)) }}.</p>
       <div v-if="rows.length > rowsShown" class="list__more">
         <TlButton size="sm" @click="rowsShown += ROWS_STEP">Ver mais ({{ (rows.length - rowsShown).toLocaleString('pt-BR') }} anos)</TlButton>
       </div>
@@ -357,7 +379,7 @@ async function share() {
 
     <div class="bottom">
       <TlCard v-if="current" class="detail" padding="lg">
-        <TlTrackLabel :color="current.color" size="sm" class="detail__meta">{{ current.timeline.title }} · {{ dateLabel(current) }}</TlTrackLabel>
+        <TlTrackLabel :color="current.color" size="sm" class="detail__meta">{{ current.timeline.title }} · {{ dateLabel(current, cal) }}</TlTrackLabel>
         <h2 class="detail__title">{{ current.title }}</h2>
         <p class="detail__desc">{{ current.description }}</p>
         <RouterLink :to="`/t/${current.timeline.slug}`" class="detail__link">Abrir na timeline</RouterLink>
@@ -373,6 +395,7 @@ async function share() {
         </div>
       </TlCard>
     </div>
+    </template>
     </template>
   </main>
 </template>

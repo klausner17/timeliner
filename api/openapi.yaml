@@ -769,7 +769,7 @@ components:
 
     Category:
       type: string
-      enum: [História, Política, Esporte, Ciência e tecnologia, Cultura, Pessoal]
+      enum: [História, Política, Esporte, Ciência e tecnologia, Cultura, Ficção, Pessoal]
 
     UserSummary:
       type: object

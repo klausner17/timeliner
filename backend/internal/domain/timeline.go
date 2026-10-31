@@ -43,7 +43,7 @@ func (m ContributionMode) Valid() bool {
 	return m == ContributionsSuggestions || m == ContributionsInvited || m == ContributionsClosed
 }
 
-var Categories = []string{"História", "Política", "Esporte", "Ciência e tecnologia", "Cultura", "Pessoal"}
+var Categories = []string{"História", "Política", "Esporte", "Ciência e tecnologia", "Cultura", "Ficção", "Pessoal"}
 
 func ValidCategory(c string) bool { return slices.Contains(Categories, c) }
 
