@@ -1,5 +1,6 @@
-import type { TimelineCalendar, TimelineEvent } from '@/data/types'
+import type { Scale, TimelineCalendar, TimelineEvent } from '@/data/types'
 import { parseEraYear } from './calendar'
+import { isScale, parseScalePos, type Reckoning } from './scale'
 import { daysInMonth, timePattern } from './format'
 
 export type ImportedEvent = Pick<TimelineEvent, 'year' | 'month' | 'day' | 'time' | 'title' | 'description' | 'sourceUrl'>
@@ -40,14 +41,20 @@ function parseEraWhen(cell: string, cal: TimelineCalendar): When | undefined {
   return year === undefined ? undefined : { year }
 }
 
-export function parseLine(line: string, cal?: TimelineCalendar): ImportedEvent | undefined {
+/** Numa timeline fixa, a primeira coluna é a posição ("60" ou "Dia 60"). */
+function parseScaleWhen(cell: string, cal: Scale): When | undefined {
+  const year = parseScalePos(cell, cal)
+  return year === undefined ? undefined : { year }
+}
+
+export function parseLine(line: string, cal?: Reckoning): ImportedEvent | undefined {
   const [when, title, description = '', source = ''] = line.split(separatorOf(line)).map((c) => c.trim().replace(/^"|"$/g, ''))
-  const parsed = cal ? parseEraWhen(when, cal) : parseWhen(when)
+  const parsed = isScale(cal) ? parseScaleWhen(when, cal) : cal ? parseEraWhen(when, cal) : parseWhen(when)
   if (!parsed || !title) return undefined
   return { ...parsed, title, description, sourceUrl: source || undefined }
 }
 
-export function parseSheet(text: string, cal?: TimelineCalendar): ImportedEvent[] {
+export function parseSheet(text: string, cal?: Reckoning): ImportedEvent[] {
   return text
     .split(/\r?\n/)
     .filter((l) => l.trim())

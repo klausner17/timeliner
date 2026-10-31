@@ -108,6 +108,9 @@ export type Calendar = {
   updatedAt: string
 }
 
+/** Unidade de uma timeline fixa: a posição dos eventos conta a partir do início (0). */
+export type Scale = 'dias' | 'semanas' | 'meses' | 'anos'
+
 /** O calendário que vem dentro da timeline. */
 export type TimelineCalendar = Pick<Calendar, 'id' | 'name' | 'eras'>
 
@@ -137,6 +140,13 @@ export type Timeline = {
   tags: string[]
   /** Calendário ficcional; sem ele, a timeline usa o gregoriano. */
   calendar?: TimelineCalendar
+  /**
+   * Timeline fixa (ciclo de vida do lagarto...): sem calendário, o `year` de eventos e
+   * períodos é a posição nessa unidade a partir do início.
+   */
+  scale?: Scale
+  /** Timeline fixa em que o fim volta ao começo. */
+  cyclic: boolean
   startYear?: number
   endYear?: number
   eventCount: number
@@ -165,9 +175,12 @@ export type TimelineInput = {
   tags?: string[]
   /** Só na criação: o calendário ficcional da timeline. */
   calendarId?: string
+  /** Só na criação: faz uma timeline fixa nessa escala. */
+  scale?: Scale
+  cyclic?: boolean
 }
 
-export type TimelinePatch = Partial<Omit<TimelineInput, 'calendarId'>>
+export type TimelinePatch = Partial<Omit<TimelineInput, 'calendarId' | 'scale'>>
 
 export type TimelinePage = { items: Timeline[]; page: number; pageSize: number; total: number }
 

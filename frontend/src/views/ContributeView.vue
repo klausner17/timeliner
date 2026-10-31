@@ -30,6 +30,7 @@ import {
 import { suggestionKindLabel, type EventInput, type Suggestion, type SuggestionStatus, type Timeline } from '@/data/types'
 import { dateLabel, monthOptions, readMoment, timeAgo, yearLabel } from '@/lib/format'
 import CalendarYearInput from '@/components/CalendarYearInput.vue'
+import { reckoningOf, unitLabel } from '@/lib/scale'
 import NotFoundView from './NotFoundView.vue'
 
 const route = useRoute()
@@ -90,8 +91,13 @@ const sendError = ref('')
 const sending = ref(false)
 const sent = ref<Suggestion>()
 
-/** Calendário ficcional: anos por era e só o ano, como numa data aproximada. */
-const cal = computed(() => timeline.value?.calendar)
+/**
+ * Calendário ficcional (anos por era) ou escala de uma timeline fixa (dias desde o início):
+ * só o ano, como numa data aproximada.
+ */
+const cal = computed(() => reckoningOf(timeline.value))
+const scale = computed(() => timeline.value?.scale)
+const posLabel = computed(() => (scale.value ? unitLabel(scale.value) : 'Ano'))
 const yearOnly = computed(() => form.approximate || !!cal.value)
 
 const eraOptions = computed(() => [{ value: '', label: 'Escolher pelo ano' }, ...(timeline.value?.eras ?? []).map((e) => ({ value: e.name, label: e.name }))])
@@ -120,8 +126,10 @@ const draft = computed<EventInput | undefined>(() => {
 function validate() {
   const e: Record<string, string> = {}
   const year = Number(form.year)
-  if (!form.year) e.year = 'Informe o ano.'
-  else if (cal.value) {
+  if (!form.year) e.year = scale.value ? `Informe o ${posLabel.value.toLowerCase()}.` : 'Informe o ano.'
+  else if (scale.value) {
+    if (!Number.isInteger(year) || year < 0) e.year = 'Use um número inteiro a partir do 0.'
+  } else if (cal.value) {
     if (!Number.isInteger(year)) e.year = 'Use um ano que exista na era.'
   } else if (!Number.isInteger(year) || year < -10000 || year > 2100) e.year = 'Use um ano válido, como 1992.'
   if (!yearOnly.value) Object.assign(e, readMoment(year, form).errors)
@@ -260,7 +268,7 @@ const statusBadge: Record<SuggestionStatus, { label: string; tone: BadgeTone }> 
         <TlCard v-else as="form" padding="lg" class="form" novalidate @submit.prevent="submit">
           <fieldset class="when">
             <legend class="when__legend">Quando aconteceu</legend>
-            <TlField v-if="cal" v-slot="{ id, describedby, invalid }" label="Ano" tone="muted" :error="errors.year" data-field="year">
+            <TlField v-if="cal" v-slot="{ id, describedby, invalid }" :label="posLabel" tone="muted" :error="errors.year" data-field="year">
               <CalendarYearInput :id="id" v-model="form.year" :calendar="cal" :describedby="describedby" :invalid="invalid" />
             </TlField>
             <div v-else class="when__grid" :class="{ 'when__grid--year': form.approximate }">
@@ -281,7 +289,7 @@ const statusBadge: Record<SuggestionStatus, { label: string; tone: BadgeTone }> 
             </div>
             <TlCheckbox v-if="!cal" v-model="form.approximate" label="Data aproximada (mostrar só o ano)" />
             <TlCheckbox v-model="form.period" label="É um período (tem data de fim)" />
-            <TlField v-if="form.period" v-slot="{ id, describedby, invalid }" label="Ano de fim" tone="muted" :error="errors.endYear" data-field="endYear" class="when__end">
+            <TlField v-if="form.period" v-slot="{ id, describedby, invalid }" :label="scale ? 'Fim' : 'Ano de fim'" tone="muted" :error="errors.endYear" data-field="endYear" class="when__end">
               <CalendarYearInput v-if="cal" :id="id" v-model="form.endYear" :calendar="cal" :describedby="describedby" :invalid="invalid" />
               <TlInput v-else :id="id" v-model="form.endYear" inputmode="numeric" :aria-describedby="describedby" :invalid="invalid" />
             </TlField>

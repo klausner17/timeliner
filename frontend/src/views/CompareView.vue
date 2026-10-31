@@ -26,6 +26,7 @@ import { extent, type EventWindow } from '@/data/windowing'
 import { copyLink, dateLabel } from '@/lib/format'
 import { useLatest } from '@/lib/useLatest'
 import { overviewTicksFor, yearFormatOf } from '@/lib/calendar'
+import { reckoningOf, scaleName } from '@/lib/scale'
 
 const route = useRoute()
 const router = useRouter()
@@ -47,9 +48,10 @@ const choices = computed(() => {
 })
 const findTimeline = (slug: string) => choices.value.find((t) => t.slug === slug)
 /** A primeira trilha escolhe qualquer timeline; as outras, só as do mesmo calendário. */
+const optionLabel = (t: Timeline) => (t.calendar ? `${t.title} (${t.calendar.name})` : t.scale ? `${t.title} (fixa, em ${scaleName(t.scale)})` : t.title)
 const optionsFor = (i: number) => {
   const first = i === 0 ? undefined : selected.value[0]
-  return choices.value.filter((t) => !first || sameCalendar(t, first)).map((t) => ({ value: t.slug, label: t.calendar ? `${t.title} (${t.calendar.name})` : t.title }))
+  return choices.value.filter((t) => !first || sameCalendar(t, first)).map((t) => ({ value: t.slug, label: optionLabel(t) }))
 }
 
 const slugs = computed<string[]>(() => {
@@ -69,7 +71,9 @@ const selected = computed(() => slugs.value.map((s) => findTimeline(s)).filter((
 /** Timelines de um calendário sozinho não têm com o que comparar. */
 const alone = computed(() => selected.value.length < 2)
 const cal = computed(() => selected.value[0]?.calendar)
-const yearFmt = computed(() => yearFormatOf(cal.value))
+const scale = computed(() => selected.value[0]?.scale)
+const reck = computed(() => reckoningOf(selected.value[0]))
+const yearFmt = computed(() => yearFormatOf(reck.value))
 provideYearFormat(yearFmt)
 
 function setSlugs(next: string[], extra: Record<string, string | undefined> = {}) {
@@ -224,11 +228,15 @@ const highlightText = computed(() => {
   const names = h.laneIds.map((id) => findTimeline(id)?.title ?? id)
   const and = (xs: string[]) => (xs.length > 1 ? `${xs.slice(0, -1).join(', ')} e ${xs[xs.length - 1]}` : xs[0])
   const y = yearFmt.value.year(h.year)
-  return parts.length > 1 ? `Em ${y}, ${and(parts)} aparecem no mesmo ano.` : `Em ${y}, ${and(names)} têm eventos no mesmo ano.`
+  // Numa timeline fixa a unidade pode ser dia ou mês: "no mesmo ponto do ciclo".
+  const same = scale.value ? 'no mesmo ponto' : 'no mesmo ano'
+  const at = !scale.value ? 'Em' : scale.value === 'semanas' ? 'Na' : 'No'
+  return parts.length > 1 ? `${at} ${y}, ${and(parts)} aparecem ${same}.` : `${at} ${y}, ${and(names)} têm eventos ${same}.`
 })
 const coincidenceCount = computed(() => {
   const n = comparison.value?.overlapsTotal ?? 0
-  return n > 1 ? `${n.toLocaleString('pt-BR')} anos com eventos em mais de uma timeline neste período.` : ''
+  const unit = scale.value ? scaleName(scale.value) : 'anos'
+  return n > 1 ? `${n.toLocaleString('pt-BR')} ${unit} com eventos em mais de uma timeline neste período.` : ''
 })
 
 // Minimapa com as timelines empilhadas sobre o eixo completo.
@@ -244,7 +252,7 @@ const overviewTracks = computed<OverviewTrack[]>(() =>
     buckets: w.mode === 'faixas' ? w.buckets : w.events.map((e) => ({ from: e.year, to: e.year, count: 1 })),
   })),
 )
-const overviewTicks = computed(() => overviewTicksFor(bounds.value[0], bounds.value[1], cal.value))
+const overviewTicks = computed(() => overviewTicksFor(bounds.value[0], bounds.value[1], reck.value))
 const overviewWindow = computed<[number, number] | undefined>({ get: () => view.value, set: (v) => v && (view.value = v) })
 
 // ---------- Salvar e compartilhar ----------
@@ -310,7 +318,8 @@ async function share() {
     </div>
 
     <TlCard v-if="alone" tone="muted" padding="lg">
-      Nenhuma outra timeline usa o calendário {{ cal?.name ?? "gregoriano" }}. Só dá para comparar timelines do mesmo calendário.
+      <template v-if="scale">Nenhuma outra timeline fixa conta em {{ scaleName(scale) }}. Timelines fixas só se comparam com outras da mesma escala.</template>
+      <template v-else>Nenhuma outra timeline usa o calendário {{ cal?.name ?? "gregoriano" }}. Só dá para comparar timelines do mesmo calendário.</template>
     </TlCard>
     <template v-else>
     <div class="controls">
@@ -379,7 +388,7 @@ async function share() {
 
     <div class="bottom">
       <TlCard v-if="current" class="detail" padding="lg">
-        <TlTrackLabel :color="current.color" size="sm" class="detail__meta">{{ current.timeline.title }} · {{ dateLabel(current, cal) }}</TlTrackLabel>
+        <TlTrackLabel :color="current.color" size="sm" class="detail__meta">{{ current.timeline.title }} · {{ dateLabel(current, reck) }}</TlTrackLabel>
         <h2 class="detail__title">{{ current.title }}</h2>
         <p class="detail__desc">{{ current.description }}</p>
         <RouterLink :to="`/t/${current.timeline.slug}`" class="detail__link">Abrir na timeline</RouterLink>

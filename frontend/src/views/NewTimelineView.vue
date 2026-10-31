@@ -4,15 +4,23 @@ import { useRouter } from 'vue-router'
 import { TlButton, TlCard, TlCheckbox, TlField, TlInput, TlSegmented, TlSelect } from '@/design-system'
 import { ApiError, errorMessage } from '@/data/api'
 import { createCalendar, createTimeline, listCalendars } from '@/data/store'
-import { categories, type Calendar, type Category } from '@/data/types'
+import { categories, type Calendar, type Category, type Scale } from '@/data/types'
+import { scaleOptions } from '@/lib/scale'
 import CalendarErasEditor, { eraRow, readEraRows, type EraRow } from '@/components/CalendarErasEditor.vue'
 
 // O endereço (slug) sai do título e não muda depois, por isso o título vem antes.
 const router = useRouter()
-const form = reactive({ title: '', category: 'História' as Category, world: 'real', calendar: '' })
+const form = reactive({ title: '', category: 'História' as Category, world: 'real', calendar: '', scale: 'dias' as Scale, cyclic: false })
 const fields = ref<Record<string, string>>({})
 const error = ref('')
 const sending = ref(false)
+
+// ---------- Fixa: sem calendário, contada do início (ciclo de vida do lagarto...) ----------
+
+const fixed = computed(() => form.world === 'fixa')
+watch(fixed, (on) => {
+  if (on && form.category === 'História') form.category = 'Natureza'
+})
 
 // ---------- Mundo ficcional: um calendário existente ou um novo ----------
 
@@ -60,7 +68,8 @@ async function submit() {
   sending.value = true
   try {
     const cal = await calendarId()
-    const t = await createTimeline({ title: form.title.trim(), category: form.category, calendarId: cal, draft: true, visibility: 'privada', contributions: 'fechada' })
+    const kind = fixed.value ? { scale: form.scale, cyclic: form.cyclic } : { calendarId: cal }
+    const t = await createTimeline({ title: form.title.trim(), category: form.category, ...kind, draft: true, visibility: 'privada', contributions: 'fechada' })
     router.replace({ path: `/t/${t.slug}/editar`, query: { nova: '1' } })
   } catch (e) {
     error.value = errorMessage(e)
@@ -82,10 +91,21 @@ async function submit() {
         v-model="form.world"
         label="Tipo de timeline"
         :options="[
-          { value: 'real', label: 'Mundo real' },
-          { value: 'ficcional', label: 'Mundo ficcional' },
+          { value: 'real', label: 'Real' },
+          { value: 'ficcional', label: 'Ficcional' },
+          { value: 'fixa', label: 'Fixa' },
         ]"
       />
+      <template v-if="fixed">
+        <p class="page__note">
+          Sem datas no calendário: cada evento fica a tantos dias, semanas, meses ou anos do início, como no ciclo de vida do lagarto (ovo no dia 0,
+          eclosão no dia 60...).
+        </p>
+        <TlField v-slot="{ id, describedby }" label="Contar em" hint="Timelines fixas na mesma unidade podem ser comparadas. Não muda depois.">
+          <TlSelect :id="id" v-model="form.scale" :options="scaleOptions" :aria-describedby="describedby" />
+        </TlField>
+        <TlCheckbox v-model="form.cyclic" label="Cíclica: depois do fim, recomeça do início" />
+      </template>
       <template v-if="fictional">
         <p v-if="calendarError" class="page__error" role="alert">{{ calendarError }}</p>
         <TlField v-else v-slot="{ id, describedby }" label="Calendário" hint="Como os anos são contados nesse mundo. Timelines do mesmo calendário podem ser comparadas.">

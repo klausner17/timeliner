@@ -1,9 +1,16 @@
-import type { TimelineCalendar, TimelineEvent } from '@/data/types'
+import type { TimelineEvent } from '@/data/types'
 import { formatEraRange } from './calendar'
+import { formatScaleRange, isScale, type Reckoning } from './scale'
 
-/** Ano curto para a coluna da timeline: "1992", "1983–84" ou, com calendário, "T.A. 3019". */
-export function yearLabel(e: Pick<TimelineEvent, 'year' | 'endYear'>, cal?: TimelineCalendar): string {
-  if (cal) return formatEraRange(e.year, e.endYear ?? e.year, cal)
+/** O trecho de um evento num calendário ficcional ou numa escala fixa. */
+function reckonedRange(e: Pick<TimelineEvent, 'year' | 'endYear'>, cal: Reckoning): string {
+  const to = e.endYear ?? e.year
+  return isScale(cal) ? formatScaleRange(e.year, to, cal) : formatEraRange(e.year, to, cal)
+}
+
+/** Ano curto para a coluna da timeline: "1992", "1983–84", "T.A. 3019" ou "Dia 60". */
+export function yearLabel(e: Pick<TimelineEvent, 'year' | 'endYear'>, cal?: Reckoning): string {
+  if (cal) return reckonedRange(e, cal)
   if (!e.endYear || e.endYear === e.year) return `${e.year}`
   const end = `${e.endYear}`
   return `${e.year}–${end.slice(0, 2) === `${e.year}`.slice(0, 2) ? end.slice(2) : end}`
@@ -13,13 +20,13 @@ export type Moment = Pick<TimelineEvent, 'year' | 'month' | 'day' | 'time'>
 type Dated = Moment & Pick<TimelineEvent, 'endYear'>
 
 /** Data montada com mês, dia e hora, ou o período em anos. */
-export function dateLabel(e: Dated, cal?: TimelineCalendar): string {
-  if (cal) return formatEraRange(e.year, e.endYear ?? e.year, cal)
+export function dateLabel(e: Dated, cal?: Reckoning): string {
+  if (cal) return reckonedRange(e, cal)
   return momentLabel(e) ?? (e.endYear && e.endYear !== e.year ? `${e.year}–${e.endYear}` : `${e.year}`)
 }
 
 /** A data ao lado do ano na timeline, só quando ela diz mais que o ano. */
-export function detailedDateLabel(e: Dated, cal?: TimelineCalendar): string | undefined {
+export function detailedDateLabel(e: Dated, cal?: Reckoning): string | undefined {
   if (cal) return undefined
   return e.month || (e.endYear && e.endYear !== e.year) ? dateLabel(e) : undefined
 }

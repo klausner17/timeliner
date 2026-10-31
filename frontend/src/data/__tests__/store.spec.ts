@@ -36,6 +36,7 @@ const timeline = (over: Partial<Timeline> = {}): Timeline => ({
   visibility: 'publica',
   contributions: 'fechada',
   draft: false,
+  cyclic: false,
   eras: [],
   tags: [],
   startYear: 1900,

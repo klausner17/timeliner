@@ -5,6 +5,7 @@ import {
   TlBadge,
   TlButton,
   TlCard,
+  TlCheckbox,
   TlColorPicker,
   TlField,
   TlIcon,
@@ -24,6 +25,7 @@ import { chronological } from '@/data/windowing'
 import { momentFields, monthOptions, readMoment, yearLabel } from '@/lib/format'
 import { parseSheet } from '@/lib/importSheet'
 import { yearFormatOf } from '@/lib/calendar'
+import { reckoningOf, scaleName, unitLabel } from '@/lib/scale'
 import CalendarYearInput from '@/components/CalendarYearInput.vue'
 import NotFoundView from './NotFoundView.vue'
 
@@ -38,8 +40,8 @@ const timeline = ref<Timeline>()
 const events = ref<TimelineEvent[]>([])
 
 // Cópia editável dos dados da timeline; cada mudança vai para a API depois de uma pausa.
-type Meta = Pick<Timeline, 'title' | 'description' | 'category' | 'color' | 'visibility' | 'contributions' | 'tags'>
-const meta = reactive<Meta>({ title: '', description: '', category: 'História', color: 'a', visibility: 'privada', contributions: 'fechada', tags: [] })
+type Meta = Pick<Timeline, 'title' | 'description' | 'category' | 'color' | 'visibility' | 'contributions' | 'tags' | 'cyclic'>
+const meta = reactive<Meta>({ title: '', description: '', category: 'História', color: 'a', visibility: 'privada', contributions: 'fechada', tags: [], cyclic: false })
 let saved: Meta = { ...meta }
 const saveState = ref<'idle' | 'pending' | 'saving' | 'saved' | 'error'>('idle')
 const saveError = ref('')
@@ -71,7 +73,7 @@ watch(
 )
 
 function pickMeta(t: Meta): Meta {
-  return { title: t.title, description: t.description, category: t.category, color: t.color, visibility: t.visibility, contributions: t.contributions, tags: [...t.tags] }
+  return { title: t.title, description: t.description, category: t.category, color: t.color, visibility: t.visibility, contributions: t.contributions, tags: [...t.tags], cyclic: t.cyclic }
 }
 
 function changes(): TimelinePatch {
@@ -134,7 +136,12 @@ const saveLabel = computed(() => {
 const urlPlaceholder = 'https://'
 /** Calendário ficcional da timeline: anos por era e sem mês, dia ou hora. */
 const cal = computed(() => timeline.value?.calendar)
-const years = computed(() => yearFormatOf(cal.value))
+/** Timeline fixa: posição em dias, semanas, meses ou anos desde o início, sem mês nem dia. */
+const scale = computed(() => timeline.value?.scale)
+const reck = computed(() => reckoningOf(timeline.value))
+const years = computed(() => yearFormatOf(reck.value))
+/** Rótulo do campo de ano: "Ano", ou a unidade da timeline fixa ("Dia"). */
+const posLabel = computed(() => (scale.value ? unitLabel(scale.value) : 'Ano'))
 const categoryOptions = categories.map((c) => c)
 const eraOptions = computed(() => [{ value: '', label: 'Pelo ano' }, ...(timeline.value?.eras ?? []).map((e) => ({ value: e.name, label: e.name }))])
 
@@ -353,7 +360,8 @@ async function submit() {
   const endYear = form.endYear ? Number(form.endYear) : undefined
   const moment = readMoment(year, form)
   const e: typeof errors.value = { ...moment.errors }
-  if (!form.year || !Number.isInteger(year)) e.year = 'Informe o ano.'
+  if (!form.year || !Number.isInteger(year)) e.year = scale.value ? `Informe o ${posLabel.value.toLowerCase()}.` : 'Informe o ano.'
+  else if (scale.value && year < 0) e.year = 'A contagem começa do 0.'
   if (endYear !== undefined && (!Number.isInteger(endYear) || endYear < year)) e.endYear = 'O fim precisa ser depois do começo.'
   if (!form.title.trim()) e.title = 'Dê um título ao evento.'
   errors.value = e
@@ -408,9 +416,11 @@ async function importFile(ev: Event) {
   const file = input.files?.[0]
   input.value = ''
   if (!t || !file) return
-  const rows = parseSheet(await file.text(), t.calendar)
+  const rows = parseSheet(await file.text(), reckoningOf(t))
   if (!rows.length) {
-    importMsg.value = t.calendar
+    importMsg.value = t.scale
+      ? `Nenhuma linha válida. Use: ${scaleName(t.scale)} desde o início (ex.: 60); título; descrição; fonte.`
+      : t.calendar
       ? `Nenhuma linha válida. Use: era e ano (ex.: ${t.calendar.eras[0]?.abbr ?? ''} 10); título; descrição; fonte.`
       : 'Nenhuma linha válida. Use: ano ou data; título; descrição; fonte.'
     return
@@ -509,6 +519,15 @@ async function destroy() {
           </div>
         </TlCard>
 
+        <TlCard v-if="scale" as="section" class="box">
+          <h2 class="box__title">Timeline fixa</h2>
+          <p class="box__hint">
+            Sem datas no calendário: cada evento fica a tantos <strong>{{ scaleName(scale) }}</strong> do início, que é o {{ posLabel.toLowerCase() }} 0.
+            Ela só se compara com outras timelines fixas em {{ scaleName(scale) }}.
+          </p>
+          <TlCheckbox v-model="meta.cyclic" label="Cíclica: depois do fim, recomeça do início" />
+        </TlCard>
+
         <TlCard v-if="cal" as="section" class="box">
           <h2 class="box__title">Calendário</h2>
           <p class="box__hint">
@@ -542,24 +561,25 @@ async function destroy() {
             <TlButton icon="plus" @click="openPeriod()">Novo período</TlButton>
           </div>
           <p class="main__msg">
-            Divida a história em fases, como República Velha, Era Vargas e Estado Novo. Um período pode ficar dentro de outro. Eles aparecem como faixas coloridas na
+            <template v-if="scale">Divida o ciclo em fases, como ovo, filhote, jovem e adulto.</template>
+            <template v-else>Divida a história em fases, como República Velha, Era Vargas e Estado Novo.</template> Um período pode ficar dentro de outro. Eles aparecem como faixas coloridas na
             timeline e na comparação, e os eventos são agrupados por eles.
           </p>
 
           <TlCard v-if="periodOpen" as="form" highlight class="form" @submit.prevent="submitPeriod">
             <h3 class="form__title">{{ periodEditing ? 'Editar período' : 'Novo período' }}</h3>
             <TlField v-slot="{ id, describedby, invalid }" label="Nome" :error="periodErrors.name">
-              <TlInput :id="id" v-model="periodForm.name" placeholder="Ex.: Era Vargas" :aria-describedby="describedby" :invalid="invalid" />
+              <TlInput :id="id" v-model="periodForm.name" :placeholder="scale ? 'Ex.: Filhote' : 'Ex.: Era Vargas'" :aria-describedby="describedby" :invalid="invalid" />
             </TlField>
-            <div v-if="cal" class="form__grid form__grid--two">
+            <div v-if="reck" class="form__grid form__grid--two">
               <TlField v-slot="{ id, describedby, invalid }" label="Início" :error="periodErrors.start">
-                <CalendarYearInput :id="id" v-model="periodForm.start" :calendar="cal" :describedby="describedby" :invalid="invalid" />
+                <CalendarYearInput :id="id" v-model="periodForm.start" :calendar="reck" :describedby="describedby" :invalid="invalid" />
               </TlField>
               <TlField v-slot="{ id, describedby, invalid }" label="Fim" hint="Vazio se não tem fim." :error="periodErrors.end">
-                <CalendarYearInput :id="id" v-model="periodForm.end" :calendar="cal" :describedby="describedby" :invalid="invalid" />
+                <CalendarYearInput :id="id" v-model="periodForm.end" :calendar="reck" :describedby="describedby" :invalid="invalid" />
               </TlField>
             </div>
-            <div v-if="!cal" class="form__grid">
+            <div v-if="!reck" class="form__grid">
               <TlField v-slot="{ id, describedby, invalid }" label="Ano de início" :error="periodErrors.start">
                 <TlInput :id="id" v-model="periodForm.start" inputmode="numeric" placeholder="Ano" :aria-describedby="describedby" :invalid="invalid" />
               </TlField>
@@ -570,7 +590,7 @@ async function destroy() {
                 <TlInput :id="id" v-model="periodForm.startDay" inputmode="numeric" maxlength="2" :aria-describedby="describedby" :invalid="invalid" />
               </TlField>
             </div>
-            <div v-if="!cal" class="form__grid">
+            <div v-if="!reck" class="form__grid">
               <TlField v-slot="{ id, describedby, invalid }" label="Ano de fim" hint="Vazio se ainda não acabou." :error="periodErrors.end">
                 <TlInput :id="id" v-model="periodForm.end" inputmode="numeric" placeholder="Ano" :aria-describedby="describedby" :invalid="invalid" />
               </TlField>
@@ -618,12 +638,12 @@ async function destroy() {
 
         <TlCard v-if="formOpen" as="form" highlight class="form" @submit.prevent="submit">
           <h3 class="form__title">{{ editing ? 'Editar evento' : 'Novo evento' }}</h3>
-          <div v-if="cal" class="form__grid form__grid--two">
-            <TlField v-slot="{ id, describedby, invalid }" label="Ano" :error="errors.year">
-              <CalendarYearInput :id="id" v-model="form.year" :calendar="cal" :describedby="describedby" :invalid="invalid" />
+          <div v-if="reck" class="form__grid form__grid--two">
+            <TlField v-slot="{ id, describedby, invalid }" :label="posLabel" :error="errors.year">
+              <CalendarYearInput :id="id" v-model="form.year" :calendar="reck" :describedby="describedby" :invalid="invalid" />
             </TlField>
             <TlField v-slot="{ id, describedby, invalid }" label="Até (opcional)" :error="errors.endYear">
-              <CalendarYearInput :id="id" v-model="form.endYear" :calendar="cal" placeholder="Ano de fim" :describedby="describedby" :invalid="invalid" />
+              <CalendarYearInput :id="id" v-model="form.endYear" :calendar="reck" :placeholder="scale ? 'Fim' : 'Ano de fim'" :describedby="describedby" :invalid="invalid" />
             </TlField>
             <TlField v-if="timeline.eras.length" v-slot="{ id, describedby }" label="Período" hint="Sem escolher, o evento entra no período do ano.">
               <TlSelect :id="id" v-model="form.era" :options="eraOptions" :aria-describedby="describedby" />
@@ -664,7 +684,7 @@ async function destroy() {
         <TlCard v-if="events.length" as="section" padding="sm" class="list" aria-label="Lista de eventos">
           <div v-for="e in events" :key="e.id" class="row" :class="{ 'row--new': e.id === justAdded }">
             <span class="row__dot" :style="{ background: `var(--tl-track-${timeline.color})` }" aria-hidden="true"></span>
-            <span class="row__year">{{ yearLabel(e, cal) }}</span>
+            <span class="row__year">{{ yearLabel(e, reck) }}</span>
             <div class="row__text">
               <span class="row__title">{{ e.title }}</span>
               <span class="row__desc">{{ e.description }}</span>
@@ -675,7 +695,10 @@ async function destroy() {
           </div>
         </TlCard>
         <TlCard v-else-if="!formOpen" tone="dashed" class="empty">
-          <p>Comece pelo primeiro evento. Você pode importar uma planilha com as colunas ano ou data; título; descrição; fonte. A data pode ser 13/05/1888, 05/1888 ou 1888-05-13, com hora opcional, como 13/05/1888 14:30.</p>
+          <p v-if="scale">
+            Comece pelo primeiro evento, no {{ posLabel.toLowerCase() }} 0. Você pode importar uma planilha com as colunas {{ scaleName(scale) }} desde o início; título; descrição; fonte.
+          </p>
+          <p v-else>Comece pelo primeiro evento. Você pode importar uma planilha com as colunas ano ou data; título; descrição; fonte. A data pode ser 13/05/1888, 05/1888 ou 1888-05-13, com hora opcional, como 13/05/1888 14:30.</p>
           <TlButton variant="dark" icon="plus" @click="openNew">Novo evento</TlButton>
         </TlCard>
         <p class="main__note">Os eventos são ordenados pela data automaticamente.</p>

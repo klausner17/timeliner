@@ -84,6 +84,7 @@ export function periodDate(year: number, month?: number, day?: number, fmt: Year
 
 /** "1930–1945", "15/11/1889 a 24/10/1930", "1985–hoje", ou "-500 a -27" quando o traço confundiria. */
 export function periodRange(p: Omit<TrackPeriod, 'name' | 'color'>, fmt: YearFormat = gregorianYears): string {
+  if (fmt.range) return p.end === undefined ? `${fmt.year(p.start)} ${fmt.openLabel}` : fmt.range(p.start, p.end)
   const from = periodDate(p.start, p.startMonth, p.startDay, fmt)
   const to = p.end === undefined ? fmt.openLabel : periodDate(p.end, p.endMonth, p.endDay, fmt)
   if (fmt !== gregorianYears) return `${from} a ${to}`

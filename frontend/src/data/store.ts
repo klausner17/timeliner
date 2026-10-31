@@ -24,6 +24,7 @@ import type {
 } from './types'
 import type { EventPage, EventWindow, Overlap, WindowOptions } from './windowing'
 import { formatEraRange } from '@/lib/calendar'
+import { formatScaleRange } from '@/lib/scale'
 
 // ---------- Nulos da API viram undefined ----------
 
@@ -102,15 +103,20 @@ export function yearRange(t: Pick<Timeline, 'startYear' | 'endYear'>): [number, 
   return t.startYear !== undefined && t.endYear !== undefined ? [t.startYear, t.endYear] : undefined
 }
 
-export function rangeLabel(t: Pick<Timeline, 'startYear' | 'endYear' | 'calendar'>): string {
+export function rangeLabel(t: Pick<Timeline, 'startYear' | 'endYear' | 'calendar' | 'scale'>): string {
   const r = yearRange(t)
   if (!r) return 'Sem datas'
+  if (t.scale) return formatScaleRange(r[0], r[1], t.scale)
   if (t.calendar) return formatEraRange(r[0], r[1], t.calendar)
   return r[0] === r[1] ? `${r[0]}` : `${r[0]}–${r[1]}`
 }
 
-/** Duas timelines podem ser comparadas: as duas no gregoriano ou no mesmo calendário. */
-export const sameCalendar = (a: Pick<Timeline, 'calendar'>, b: Pick<Timeline, 'calendar'>) => a.calendar?.id === b.calendar?.id
+/**
+ * Duas timelines podem ser comparadas: as duas no gregoriano, no mesmo calendário ou
+ * fixas na mesma escala.
+ */
+export const sameCalendar = (a: Pick<Timeline, 'calendar' | 'scale'>, b: Pick<Timeline, 'calendar' | 'scale'>) =>
+  a.calendar?.id === b.calendar?.id && a.scale === b.scale
 
 export function canEdit(t: Pick<Timeline, 'owner'>) {
   return !!session.user && session.user.handle === t.owner.handle

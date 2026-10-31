@@ -8,6 +8,8 @@ import { computed, inject, provide, toValue, type ComputedRef, type InjectionKey
 export type YearFormat = {
   /** "1930" ou "T.A. 3019". */
   year(y: number): string
+  /** Um trecho de from a to, quando há um jeito mais curto que "from a to" ("Dias 12–30"). */
+  range?(from: number, to: number): string
   /** Marcações do eixo em [lo, hi] com o passo dado; sem isso, múltiplos do passo. */
   ticks?(lo: number, hi: number, step: number): number[]
   /** Só anos: sem meses no eixo nem nas datas. */
