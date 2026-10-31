@@ -42,13 +42,13 @@ func tagsOf(t *domain.Timeline) []string {
 }
 
 const timelineCols = `t.id, t.slug, t.title, t.description, t.category, t.color, t.owner_id, t.visibility,
-	t.contributions, t.draft, t.eras, t.tags, t.calendar_id, t.created_at, t.updated_at`
+	t.contributions, t.draft, t.eras, t.tags, t.calendar_id, t.scale, t.cyclic, t.created_at, t.updated_at`
 
 func scanTimeline(row pgx.Row) (*domain.Timeline, error) {
 	var t domain.Timeline
 	var eras []byte
 	err := row.Scan(&t.ID, &t.Slug, &t.Title, &t.Description, &t.Category, &t.Color, &t.OwnerID, &t.Visibility,
-		&t.Contributions, &t.Draft, &eras, &t.Tags, &t.CalendarID, &t.CreatedAt, &t.UpdatedAt)
+		&t.Contributions, &t.Draft, &eras, &t.Tags, &t.CalendarID, &t.Scale, &t.Cyclic, &t.CreatedAt, &t.UpdatedAt)
 	if err != nil {
 		return nil, translate(err)
 	}
@@ -65,18 +65,18 @@ func scanTimeline(row pgx.Row) (*domain.Timeline, error) {
 
 func (r timelines) Create(ctx context.Context, t *domain.Timeline) error {
 	_, err := r.q(ctx).Exec(ctx, `INSERT INTO timelines (id, slug, title, description, category, color, owner_id,
-		visibility, contributions, draft, eras, tags, calendar_id, created_at, updated_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+		visibility, contributions, draft, eras, tags, calendar_id, scale, cyclic, created_at, updated_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
 		t.ID, t.Slug, t.Title, t.Description, t.Category, t.Color, t.OwnerID, t.Visibility, t.Contributions,
-		t.Draft, erasToJSON(t.Eras), tagsOf(t), t.CalendarID, t.CreatedAt, t.UpdatedAt)
+		t.Draft, erasToJSON(t.Eras), tagsOf(t), t.CalendarID, t.Scale, t.Cyclic, t.CreatedAt, t.UpdatedAt)
 	return translate(err)
 }
 
 func (r timelines) Update(ctx context.Context, t *domain.Timeline) error {
 	return mustAffect(r.q(ctx).Exec(ctx, `UPDATE timelines SET title=$2, description=$3, category=$4, color=$5,
-		visibility=$6, contributions=$7, draft=$8, eras=$9, tags=$10, updated_at=$11 WHERE id=$1`,
+		visibility=$6, contributions=$7, draft=$8, eras=$9, tags=$10, cyclic=$11, updated_at=$12 WHERE id=$1`,
 		t.ID, t.Title, t.Description, t.Category, t.Color, t.Visibility, t.Contributions, t.Draft,
-		erasToJSON(t.Eras), tagsOf(t), t.UpdatedAt))
+		erasToJSON(t.Eras), tagsOf(t), t.Cyclic, t.UpdatedAt))
 }
 
 func (r timelines) Delete(ctx context.Context, id string) error {

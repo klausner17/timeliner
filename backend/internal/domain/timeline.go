@@ -43,7 +43,7 @@ func (m ContributionMode) Valid() bool {
 	return m == ContributionsSuggestions || m == ContributionsInvited || m == ContributionsClosed
 }
 
-var Categories = []string{"História", "Política", "Esporte", "Ciência e tecnologia", "Cultura", "Ficção", "Pessoal"}
+var Categories = []string{"História", "Política", "Esporte", "Ciência e tecnologia", "Cultura", "Natureza", "Ficção", "Pessoal"}
 
 func ValidCategory(c string) bool { return slices.Contains(Categories, c) }
 
@@ -110,6 +110,21 @@ func CompareEras(a, b Era) int {
 // EndsBeforeStart diz se o fim vem antes do início.
 func (e Era) EndsBeforeStart() bool { return compareKeys(e.EndKey(), e.StartKey()) < 0 }
 
+// Scale é a unidade de uma timeline fixa. Event.Year guarda a posição nessa unidade,
+// contada do início (0).
+type Scale string
+
+const (
+	ScaleDays   Scale = "dias"
+	ScaleWeeks  Scale = "semanas"
+	ScaleMonths Scale = "meses"
+	ScaleYears  Scale = "anos"
+)
+
+var Scales = []Scale{ScaleDays, ScaleWeeks, ScaleMonths, ScaleYears}
+
+func (s Scale) Valid() bool { return slices.Contains(Scales, s) }
+
 type Timeline struct {
 	ID            string
 	Slug          string
@@ -126,8 +141,14 @@ type Timeline struct {
 	// CalendarID é o calendário ficcional da timeline; nil é o calendário gregoriano.
 	// Só é escolhido na criação.
 	CalendarID *string
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
+	// Scale faz da timeline uma timeline fixa (ex.: ciclo de vida do lagarto): sem data no
+	// calendário, os eventos ficam a tantos dias, semanas, meses ou anos do início. nil é
+	// uma timeline com calendário. Só é escolhida na criação e não convive com CalendarID.
+	Scale *Scale
+	// Cyclic diz que, numa timeline fixa, o fim volta ao começo (o adulto põe ovos).
+	Cyclic    bool
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 // VisibleTo diz se o usuário pode abrir a timeline. Rascunhos e privadas só o dono vê;

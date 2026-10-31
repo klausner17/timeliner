@@ -119,7 +119,7 @@ export type CalendarInput = { name?: string; description?: string; shared?: bool
 export type Visibility = 'publica' | 'link' | 'privada'
 export type ContributionMode = 'sugestoes' | 'convidados' | 'fechada'
 
-export const categories = ['História', 'Política', 'Esporte', 'Ciência e tecnologia', 'Cultura', 'Ficção', 'Pessoal'] as const
+export const categories = ['História', 'Política', 'Esporte', 'Ciência e tecnologia', 'Cultura', 'Natureza', 'Ficção', 'Pessoal'] as const
 export type Category = (typeof categories)[number]
 
 /** Resumo usado em listas e cartões (sem os eventos). */

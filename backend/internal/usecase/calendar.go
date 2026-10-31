@@ -336,19 +336,29 @@ func (uc *DeleteCalendar) Execute(ctx context.Context, in CalendarRefInput) (Emp
 	return Empty{}, uc.d.Calendars.Delete(ctx, c.ID)
 }
 
-// yearRules são os limites de ano de uma timeline: os do calendário gregoriano ou os do
-// calendário ficcional, que também não tem mês nem dia.
+// yearRules são os limites de ano de uma timeline: os do calendário gregoriano, os do
+// calendário ficcional ou os da escala de uma timeline fixa. Os dois últimos não têm mês
+// nem dia; YearOnlyMsg é o erro de quem manda mês.
 type yearRules struct {
-	Lo, Hi   int
-	YearOnly bool
+	Lo, Hi      int
+	YearOnly    bool
+	YearOnlyMsg string
 }
+
+// MaxScalePos é a maior posição de um evento numa timeline fixa (em qualquer unidade).
+const MaxScalePos = 1000000
 
 func rulesFor(c *domain.Calendar) yearRules {
 	if c == nil {
 		return yearRules{Lo: minYear, Hi: maxYear}
 	}
 	lo, hi := c.Bounds()
-	return yearRules{Lo: lo, Hi: hi, YearOnly: true}
+	return yearRules{Lo: lo, Hi: hi, YearOnly: true, YearOnlyMsg: "Timelines com calendário próprio usam só o ano."}
+}
+
+// scaleRules são os limites de uma timeline fixa: do início (0) em diante, só a posição.
+func scaleRules() yearRules {
+	return yearRules{Lo: 0, Hi: MaxScalePos, YearOnly: true, YearOnlyMsg: "Timelines fixas usam só a posição na escala, sem mês nem dia."}
 }
 
 // calendarOf devolve o calendário da timeline, ou nil no gregoriano.
@@ -360,6 +370,9 @@ func calendarOf(ctx context.Context, d *Deps, t *domain.Timeline) (*domain.Calen
 }
 
 func rulesOf(ctx context.Context, d *Deps, t *domain.Timeline) (yearRules, error) {
+	if t.Scale != nil {
+		return scaleRules(), nil
+	}
 	c, err := calendarOf(ctx, d, t)
 	return rulesFor(c), err
 }
