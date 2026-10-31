@@ -59,13 +59,16 @@ const (
 
 // validateEvent confere os campos de um evento. prefix vai na frente dos nomes dos campos
 // (ex.: "event." numa sugestão, "events[2]." na criação da timeline).
-func validateEvent(f fieldErrors, prefix string, e domain.EventData, eras []domain.Era) {
-	f.check(e.Year >= minYear && e.Year <= maxYear, prefix+"year", "Ano fora do intervalo.")
+func validateEvent(f fieldErrors, prefix string, e domain.EventData, eras []domain.Era, r yearRules) {
+	f.check(e.Year >= r.Lo && e.Year <= r.Hi, prefix+"year", "Ano fora do intervalo.")
+	if r.YearOnly {
+		f.check(e.Month == nil, prefix+"month", "Timelines com calendário próprio usam só o ano.")
+	}
 	f.check(length(e.Title, 1, 160), prefix+"title", "O título precisa ter de 1 a 160 caracteres.")
 	f.check(length(e.Description, 0, 4000), prefix+"description", "A descrição pode ter até 4000 caracteres.")
 	validateMoment(f, prefix, e)
 	if e.EndYear != nil {
-		f.check(*e.EndYear >= e.Year && *e.EndYear <= maxYear, prefix+"endYear", "O fim precisa ser depois do início.")
+		f.check(*e.EndYear >= e.Year && *e.EndYear <= r.Hi, prefix+"endYear", "O fim precisa ser depois do início.")
 	}
 	if e.SourceURL != nil {
 		f.check(validURL(*e.SourceURL), prefix+"sourceUrl", "Link inválido.")

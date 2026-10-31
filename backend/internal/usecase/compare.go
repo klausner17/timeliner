@@ -67,6 +67,11 @@ func (uc *Compare) Execute(ctx context.Context, in CompareInput) (ComparisonView
 		}
 		ts[i] = *t
 	}
+	for _, t := range ts[1:] {
+		if calendarKey(t) != calendarKey(ts[0]) {
+			return ComparisonView{}, domain.Invalid(map[string]string{"slugs": "Só dá para comparar timelines do mesmo calendário."})
+		}
+	}
 	views, err := timelineViews(ctx, uc.d, ts, in.ActorID)
 	if err != nil {
 		return ComparisonView{}, err
@@ -188,4 +193,12 @@ func (uc *DeleteSavedComparison) Execute(ctx context.Context, in DeleteSavedComp
 		return Empty{}, err
 	}
 	return Empty{}, notFound(uc.d.Comparisons.Delete(ctx, in.ComparisonID, in.ActorID), "Comparação não encontrada.")
+}
+
+// calendarKey é o ID do calendário da timeline, ou "" no gregoriano.
+func calendarKey(t domain.Timeline) string {
+	if t.CalendarID == nil {
+		return ""
+	}
+	return *t.CalendarID
 }

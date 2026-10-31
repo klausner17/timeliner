@@ -81,7 +81,8 @@ func (c *Controller) listTimelines(w http.ResponseWriter, r *http.Request) {
 func (c *Controller) createTimeline(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		timelineFieldsJSON
-		Events []eventInputJSON `json:"events"`
+		CalendarID *string          `json:"calendarId"`
+		Events     []eventInputJSON `json:"events"`
 	}
 	if err := decode(r, &body); err != nil {
 		c.fail(w, r, err)
@@ -97,7 +98,7 @@ func (c *Controller) createTimeline(w http.ResponseWriter, r *http.Request) {
 		c.fail(w, r, err)
 		return
 	}
-	v, err := c.uc.CreateTimeline.Execute(r.Context(), usecase.CreateTimelineInput{ActorID: actor(r), TimelineFields: body.fields(), Events: events})
+	v, err := c.uc.CreateTimeline.Execute(r.Context(), usecase.CreateTimelineInput{ActorID: actor(r), TimelineFields: body.fields(), CalendarID: deref(body.CalendarID), Events: events})
 	if err != nil {
 		c.fail(w, r, err)
 		return
@@ -334,4 +335,11 @@ func (c *Controller) deleteSavedComparison(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func deref(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }

@@ -70,6 +70,24 @@ func (r events) RemapEras(ctx context.Context, timelineID string, remap map[stri
 	return translate(err)
 }
 
+func (r events) LatestYearIn(ctx context.Context, timelineIDs []string, from, to int) (*int, error) {
+	var latest *int
+	err := r.q(ctx).QueryRow(ctx, `SELECT max(y) FROM events e, LATERAL (VALUES (e.year), (e.end_year)) AS v(y)
+		WHERE e.timeline_id = ANY($1) AND y BETWEEN $2 AND $3`, timelineIDs, from, to).Scan(&latest)
+	return latest, err
+}
+
+func (r events) ShiftYears(ctx context.Context, timelineIDs []string, shifts []domain.YearShift) error {
+	from, to, delta := shiftArgs(shifts)
+	shift := func(col string) string {
+		return col + ` + COALESCE((SELECT s.d FROM unnest($2::int[], $3::int[], $4::int[]) AS s(lo, hi, d)
+			WHERE ` + col + ` BETWEEN s.lo AND s.hi LIMIT 1), 0)`
+	}
+	_, err := r.q(ctx).Exec(ctx, `UPDATE events SET year = `+shift("year")+`, end_year = `+shift("end_year")+`
+		WHERE timeline_id = ANY($1)`, timelineIDs, from, to, delta)
+	return translate(err)
+}
+
 func (r events) CreateMany(ctx context.Context, es []domain.Event) error {
 	rows := make([][]any, len(es))
 	for i := range es {

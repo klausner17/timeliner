@@ -123,8 +123,11 @@ type Timeline struct {
 	Draft         bool
 	Eras          []Era
 	Tags          []string
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	// CalendarID é o calendário ficcional da timeline; nil é o calendário gregoriano.
+	// Só é escolhido na criação.
+	CalendarID *string
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
 }
 
 // VisibleTo diz se o usuário pode abrir a timeline. Rascunhos e privadas só o dono vê;

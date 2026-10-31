@@ -69,6 +69,14 @@ type eraJSON struct {
 	EndDay     *int                `json:"endDay"`
 }
 
+// timelineCalendarJSON é o calendário que vem dentro da timeline: o bastante para a
+// tela escrever os anos ("T.A. 3019").
+type timelineCalendarJSON struct {
+	ID   string            `json:"id"`
+	Name string            `json:"name"`
+	Eras []calendarEraJSON `json:"eras"`
+}
+
 type timelineJSON struct {
 	Slug               string                  `json:"slug"`
 	Title              string                  `json:"title"`
@@ -81,6 +89,7 @@ type timelineJSON struct {
 	Draft              bool                    `json:"draft"`
 	Eras               []eraJSON               `json:"eras"`
 	Tags               []string                `json:"tags"`
+	Calendar           *timelineCalendarJSON   `json:"calendar"`
 	StartYear          *int                    `json:"startYear"`
 	EndYear            *int                    `json:"endYear"`
 	EventCount         int                     `json:"eventCount"`
@@ -103,8 +112,17 @@ func toTimeline(v usecase.TimelineView) timelineJSON {
 	if tags == nil {
 		tags = []string{}
 	}
+	var cal *timelineCalendarJSON
+	if v.Calendar != nil {
+		eras := make([]calendarEraJSON, len(v.Calendar.Eras))
+		for i, e := range v.Calendar.Eras {
+			eras[i] = calendarEraJSON(e)
+		}
+		cal = &timelineCalendarJSON{ID: v.Calendar.ID, Name: v.Calendar.Name, Eras: eras}
+	}
 	return timelineJSON{
-		Slug: t.Slug, Title: t.Title, Description: t.Description, Category: t.Category, Color: t.Color,
+		Calendar: cal,
+		Slug:     t.Slug, Title: t.Title, Description: t.Description, Category: t.Category, Color: t.Color,
 		Owner: toUserSummary(v.Owner), Visibility: t.Visibility, Contributions: t.Contributions, Draft: t.Draft,
 		Eras: eras, Tags: tags, StartYear: v.Stats.StartYear, EndYear: v.Stats.EndYear,
 		EventCount: v.Stats.EventCount, ContributorCount: v.Stats.ContributorCount,
