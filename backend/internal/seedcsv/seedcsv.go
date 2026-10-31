@@ -3,12 +3,13 @@
 //
 // Uma pasta de dados tem:
 //
-//	timelines.csv            slug,titulo,descricao,categoria,cor,tags,visibilidade,contribuicoes
+//	timelines.csv            slug,titulo,descricao,categoria,cor,tags,visibilidade,contribuicoes[,escala,ciclica]
 //	periodos/<slug>.csv      nome,inicio,fim,cor                       (opcional)
 //	eventos/<slug>.csv       data,ano_fim,hora,titulo,descricao,periodo,fonte
 //
 // Datas são AAAA, AAAA-MM ou AAAA-MM-DD (ano negativo para antes de Cristo). Tags vão
-// separadas por "|". Um período sem fim continua até hoje.
+// separadas por "|". Um período sem fim continua até hoje. Numa timeline fixa (coluna
+// escala preenchida) a data é só a posição a partir do início (ex.: 60 = dia 60).
 package seedcsv
 
 import (
@@ -31,6 +32,8 @@ import (
 type Seed struct {
 	Slug   string
 	Fields usecase.TimelineFields
+	// Scale faz uma timeline fixa (posições contadas do início, sem calendário).
+	Scale  *domain.Scale
 	Events []domain.EventData
 }
 
@@ -98,6 +101,21 @@ func timelineOf(r map[string]string) (Seed, error) {
 	s.Fields = usecase.TimelineFields{
 		Title: &title, Description: &desc, Category: &cat, Color: &color,
 		Visibility: &vis, Contributions: &contrib, Tags: &tags,
+	}
+	if v := r["escala"]; v != "" {
+		sc := domain.Scale(v)
+		if !sc.Valid() {
+			return s, fmt.Errorf("escala %q inválida (dias, semanas, meses ou anos)", v)
+		}
+		s.Scale = &sc
+	}
+	switch r["ciclica"] {
+	case "", "nao", "não":
+	case "sim":
+		cyclic := true
+		s.Fields.Cyclic = &cyclic
+	default:
+		return s, fmt.Errorf("ciclica precisa ser sim ou nao, veio %q", r["ciclica"])
 	}
 	return s, nil
 }
@@ -246,7 +264,7 @@ func Import(ctx context.Context, d *usecase.Deps, ownerID string, seeds []Seed, 
 		case !errors.Is(err, domain.ErrNotFound):
 			return out, err
 		}
-		v, err := create.Execute(ctx, usecase.CreateTimelineInput{ActorID: ownerID, TimelineFields: s.Fields, Events: s.Events})
+		v, err := create.Execute(ctx, usecase.CreateTimelineInput{ActorID: ownerID, TimelineFields: s.Fields, Scale: s.Scale, Events: s.Events})
 		if err != nil {
 			var de *domain.Error
 			if errors.As(err, &de) && len(de.Fields) > 0 {

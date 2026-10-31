@@ -41,6 +41,7 @@ Tudo em UTF-8, com vírgula como separador e aspas em textos que têm vírgula.
 | `cor` | Cor da trilha: `a`, `b`, `c` ou `d`. |
 | `tags` | Até 10, separadas por `\|`. |
 | `visibilidade`, `contribuicoes` | `publica`/`link`/`privada` e `sugestoes`/`convidados`/`fechada`. Vazio usa `publica` e `sugestoes`. |
+| `escala`, `ciclica` | Opcionais. Vazios numa timeline real. Numa timeline fixa, `escala` é `dias`, `semanas`, `meses` ou `anos` e `ciclica` é `sim` ou `nao`; datas de eventos e períodos viram só a posição a partir do início (ex.: `60`). |
 
 **`periodos/<slug>.csv`** (opcional): `nome,inicio,fim,cor`. Início e fim em `AAAA`, `AAAA-MM` ou
 `AAAA-MM-DD`; fim vazio continua até hoje. Cor: azul, laranja, verde, roxo, amarelo, vermelho ou
@@ -50,6 +51,11 @@ cinza. Períodos podem se sobrepor (o Estado Novo fica dentro da Era Vargas).
 mesmo formato dos períodos; `ano_fim` marca eventos que duram anos (guerras, revoltas); `hora`
 é `HH:MM` e pede o dia; `periodo` precisa ser o nome de um período do arquivo de períodos; `fonte`
 é um link.
+
+## Gerando timelines novas com outra LLM
+
+[prompt-para-llm.md](../prompt-para-llm.md) tem um prompt pronto para outra LLM gerar os três
+arquivos de um assunto qualquer a partir da Wikipédia, já neste formato.
 
 ## Sobre o conteúdo
 

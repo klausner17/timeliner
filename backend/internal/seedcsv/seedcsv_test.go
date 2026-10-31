@@ -71,3 +71,31 @@ func write(t *testing.T, path, content string) {
 		t.Fatal(err)
 	}
 }
+
+func TestTimelineFixa(t *testing.T) {
+	dir := t.TempDir()
+	os.Mkdir(dir+"/eventos", 0o755)
+	os.Mkdir(dir+"/periodos", 0o755)
+	write(t, dir+"/timelines.csv", "slug,titulo,descricao,categoria,cor,tags,visibilidade,contribuicoes,escala,ciclica\n"+
+		"ciclo-do-sapo,Ciclo do sapo,,Natureza,a,,,,dias,sim\n")
+	write(t, dir+"/periodos/ciclo-do-sapo.csv", "nome,inicio,fim,cor\nGirino,3,60,verde\n")
+	write(t, dir+"/eventos/ciclo-do-sapo.csv", "data,ano_fim,hora,titulo,descricao,periodo,fonte\n0,,,Ovos,,,\n3,,,Eclosão,,Girino,\n")
+	seeds, err := seedcsv.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	d := memory.New()
+	d.Clock, d.IDs = platform.SystemClock{}, platform.RandomIDs{}
+	u := &domain.User{ID: "us_1", Handle: "dono", Name: "Dono", Email: "dono@exemplo.com", Tint: domain.TintNeutral}
+	if err := d.Users.Create(ctx, u); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := seedcsv.Import(ctx, d, u.ID, seeds, false); err != nil {
+		t.Fatal(err)
+	}
+	tl, err := d.Timelines.BySlug(ctx, "ciclo-do-sapo")
+	if err != nil || tl.Scale == nil || *tl.Scale != domain.ScaleDays || !tl.Cyclic {
+		t.Errorf("esperava timeline fixa em dias e cíclica, veio %+v %v", tl, err)
+	}
+}
