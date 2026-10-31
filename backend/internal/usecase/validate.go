@@ -153,3 +153,7 @@ func slugify(s string) string {
 	}
 	return out
 }
+
+// Slugify é o slug que uma timeline com esse título recebe na criação (sem o sufixo
+// -2, -3 de quando ele já está em uso).
+func Slugify(title string) string { return slugify(strings.TrimSpace(title)) }
