@@ -86,6 +86,15 @@ describe('TlCompareTracks', () => {
     expect(w.findAll('button')[0].attributes('style')).toContain('left: 25%')
   })
 
+  it('com mês e dia, o evento fica na posição dentro do ano e o rótulo mostra a data', () => {
+    const lane: CompareLane[] = [{ id: 'm', name: 'M', color: 'a', events: [{ id: 'm1', year: 1930, month: 7, day: 2, title: 'Meio do ano' }] }]
+    const w = mount(TlCompareTracks, { props: { lanes: lane, start: 1930, end: 1931 } })
+    const button = w.find('.tl-compare__event')
+    expect(button.text()).toContain('02/07/1930')
+    const left = Number(button.attributes('style')!.match(/left: ([\d.]+)%/)![1])
+    expect(left).toBeCloseTo((182 / 365) * 100, 1)
+  })
+
   it('desenha os períodos da janela em faixas, os sobrepostos na linha de baixo', () => {
     const withPeriods: CompareLane[] = [
       {

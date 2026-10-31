@@ -70,7 +70,7 @@ export function stackPeriods(periods: TrackPeriod[], openEnd: number): PlacedPer
   })
 }
 
-const MONTHS = ['jan.', 'fev.', 'mar.', 'abr.', 'maio', 'jun.', 'jul.', 'ago.', 'set.', 'out.', 'nov.', 'dez.']
+export const MONTHS = ['jan.', 'fev.', 'mar.', 'abr.', 'maio', 'jun.', 'jul.', 'ago.', 'set.', 'out.', 'nov.', 'dez.']
 const pad = (n: number) => String(n).padStart(2, '0')
 
 /** "15/11/1889", "nov. 1889" ou "1889". */

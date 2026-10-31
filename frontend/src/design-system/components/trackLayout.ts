@@ -4,7 +4,16 @@
  * os itens próximos viram grupos por coluna de LABEL_W pixels, e aí sempre cabem.
  */
 
-export type CompareEvent = { id: string; year: number; title: string }
+import { MONTHS, datePos } from './periodLayout'
+
+/** Um evento na trilha. Com mês e dia, ele fica na posição exata dentro do ano. */
+export type CompareEvent = { id: string; year: number; month?: number; day?: number; title: string }
+
+/** Posição do evento no eixo de anos (ano com fração). */
+export const eventPos = (e: Pick<CompareEvent, 'year' | 'month' | 'day'>) => datePos(e.year, e.month, e.day)
+
+/** Menor janela do zoom: três meses. */
+export const MIN_SPAN = 0.25
 /** Uma faixa de anos com muitos eventos (vem do backend em mode=faixas). */
 export type CompareBucket = { from: number; to: number; count: number; sample?: CompareEvent[] }
 
@@ -87,8 +96,12 @@ export function layout(items: TrackItem[], width: number, yearToPx: (y: number) 
   return pack(mergeByColumn(items, yearToPx, crowded), width) ?? pack(mergeByColumn(items, yearToPx), width, Infinity)!
 }
 
-/** Passo das marcações do eixo para ter no máximo cerca de `target` marcações. */
+/**
+ * Passo das marcações do eixo para ter no máximo cerca de `target` marcações. Em janelas
+ * de até dois anos, o passo pode ser de meses (1/12, 1/6, 1/4 ou 1/2 ano).
+ */
 export function niceStep(span: number, target = 8): number {
+  if (span <= 2) for (const m of [1, 2, 3, 6]) if (span / (m / 12) <= target) return m / 12
   for (const s of [1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000, 5000]) if (span / s <= target) return s
   return 10000
 }
@@ -101,26 +114,52 @@ export function axisTicks(lo: number, hi: number, target = 8): number[] {
   return hi > lo ? [...out, hi] : out
 }
 
+/** Marcações da janela [lo, hi] com o passo dado, contadas em meses para não acumular erro. */
+export function windowTicks(lo: number, hi: number, step: number): number[] {
+  const stepM = Math.max(1, Math.round(step * 12))
+  const out: number[] = []
+  for (let m = Math.ceil((lo * 12) / stepM) * stepM; m <= hi * 12 + 1e-9; m += stepM) out.push(m / 12)
+  return out
+}
+
+/** Rótulo de uma posição do eixo: "1930" no começo do ano, "out." nos outros meses. */
+export function tickLabel(pos: number): string {
+  const months = Math.round(pos * 12)
+  const m = months - Math.floor(months / 12) * 12
+  return m === 0 ? `${months / 12}` : MONTHS[m]
+}
+
+/** Posição como texto: "1930" ou, no meio do ano, "out. 1930". */
+export function posLabel(pos: number): string {
+  const months = Math.round(pos * 12)
+  const y = Math.floor(months / 12)
+  const m = months - y * 12
+  return m === 0 ? `${y}` : `${MONTHS[m]} ${y}`
+}
+
 /**
  * Nova janela depois de um zoom com fator `factor` (< 1 aproxima) em volta de `anchor`,
  * limitada a [min, max] e a pelo menos minSpan anos.
  */
 export function zoomWindow(start: number, end: number, factor: number, anchor: number, bounds: { min?: number; max?: number; minSpan?: number } = {}): [number, number] {
-  const minSpan = bounds.minSpan ?? 2
+  const minSpan = bounds.minSpan ?? MIN_SPAN
   const full = bounds.min !== undefined && bounds.max !== undefined ? bounds.max - bounds.min : Infinity
   const span = Math.min(full, Math.max(minSpan, (end - start) * factor))
   const t = end > start ? (anchor - start) / (end - start) : 0.5
   return clampWindow(anchor - span * t, anchor - span * t + span, bounds)
 }
 
-/** Arredonda para anos inteiros e encaixa a janela em [min, max] sem mudar o tamanho. */
+/** Arredonda para meses inteiros e encaixa a janela em [min, max] sem mudar o tamanho. */
 export function clampWindow(start: number, end: number, bounds: { min?: number; max?: number } = {}): [number, number] {
-  let s = Math.round(start)
-  let e = Math.round(end)
+  // Conta em meses inteiros para a janela não acumular frações.
+  let s = Math.round(start * 12)
+  let e = Math.round(end * 12)
   if (e <= s) e = s + 1
   const span = e - s
-  if (bounds.min !== undefined && s < bounds.min) [s, e] = [bounds.min, bounds.min + span]
-  if (bounds.max !== undefined && e > bounds.max) [s, e] = [bounds.max - span, bounds.max]
-  if (bounds.min !== undefined && s < bounds.min) s = bounds.min
-  return [s, e]
+  const min = bounds.min !== undefined ? Math.round(bounds.min * 12) : undefined
+  const max = bounds.max !== undefined ? Math.round(bounds.max * 12) : undefined
+  if (min !== undefined && s < min) [s, e] = [min, min + span]
+  if (max !== undefined && e > max) [s, e] = [max - span, max]
+  if (min !== undefined && s < min) s = min
+  return [s / 12, e / 12]
 }

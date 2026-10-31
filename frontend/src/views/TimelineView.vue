@@ -12,11 +12,14 @@ import {
   TlOverviewBar,
   TlSegmented,
   axisTicks,
+  clampWindow,
   datePos,
   innermostPeriod,
   parentPeriod,
   periodColorOf,
+  periodFrom,
   periodRange,
+  periodTo,
   type CompareEvent,
   type CompareLane,
   type PeriodColor,
@@ -194,7 +197,16 @@ const bounds = computed<[number, number]>(() => {
   return [r[0] - pad, r[1] + pad]
 })
 const view = ref<[number, number]>([0, 1])
-watch([bounds, eraRange], () => (view.value = eraRange.value ?? bounds.value), { immediate: true })
+// Ao escolher um período, a trilha mostra a data exata dele, com uma folga dos lados.
+const eraWindow = computed<[number, number] | undefined>(() => {
+  const p = periods.value.find((x) => x.name === era.value)
+  if (!p || !range.value) return undefined
+  const from = periodFrom(p)
+  const to = periodTo(p, Math.max(THIS_YEAR, range.value[1]))
+  const pad = Math.max(1 / 12, (to - from) * 0.05)
+  return clampWindow(from - pad, to + pad, { min: bounds.value[0], max: bounds.value[1] })
+})
+watch([bounds, eraWindow], () => (view.value = eraWindow.value ?? bounds.value), { immediate: true })
 const viewStart = computed({ get: () => view.value[0], set: (v) => (view.value = [v, view.value[1]]) })
 const viewEnd = computed({ get: () => view.value[1], set: (v) => (view.value = [view.value[0], v]) })
 const overviewWindow = computed<[number, number] | undefined>({
@@ -203,10 +215,10 @@ const overviewWindow = computed<[number, number] | undefined>({
 })
 
 const { data: windowData } = useLatest(
-  () => (timeline.value && mode.value === 'horizontal' ? loadSummary(timeline.value.slug, { from: view.value[0], to: view.value[1], buckets: 60 }) : undefined),
+  () => (timeline.value && mode.value === 'horizontal' ? loadSummary(timeline.value.slug, { from: Math.floor(view.value[0]), to: Math.ceil(view.value[1]), buckets: 60 }) : undefined),
   undefined as EventWindow | undefined,
 )
-const toCompare = (e: TimelineEvent): CompareEvent => ({ id: e.id, year: e.year, title: e.title })
+const toCompare = (e: TimelineEvent): CompareEvent => ({ id: e.id, year: e.year, month: e.month, day: e.day, title: e.title })
 const lanes = computed<CompareLane[]>(() => {
   const t = timeline.value
   const w = windowData.value
@@ -391,7 +403,7 @@ async function share() {
       </div>
     </section>
 
-    <div class="tl-container body">
+    <div class="tl-container body" :class="{ 'body--wide': mode === 'horizontal' }">
       <main class="body__main">
         <TlCard v-if="!timeline.eventCount" tone="dashed" class="empty">
           <p>Esta timeline ainda não tem eventos.</p>
@@ -618,6 +630,19 @@ async function share() {
   display: flex;
   flex-direction: column;
   gap: var(--tl-space-4);
+}
+/* No modo horizontal a linha do tempo fica sozinha na largura toda; o resto vai para baixo. */
+.body--wide .body__main {
+  flex-basis: 100%;
+}
+.body--wide .body__side {
+  flex-basis: 100%;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: start;
+}
+.body--wide .side {
+  flex: 1 1 280px;
 }
 .era {
   display: flex;

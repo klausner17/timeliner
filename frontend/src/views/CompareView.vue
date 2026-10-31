@@ -91,7 +91,9 @@ const defaultRange = computed<[number, number]>(() => {
   return [Math.floor(s / 5) * 5, Math.ceil(e / 5) * 5]
 })
 const routeStart = computed(() => Number(route.query.de) || defaultRange.value[0])
-const routeEnd = computed(() => Math.max(routeStart.value + 1, Number(route.query.ate) || defaultRange.value[1]))
+const routeEnd = computed(() => Math.max(routeStart.value + 1 / 12, Number(route.query.ate) || defaultRange.value[1]))
+/** Ano na URL: inteiro, ou com fração quando o zoom está em meses. */
+const urlPos = (x: number) => (Number.isInteger(x) ? String(x) : x.toFixed(4))
 
 // A janela segue a URL, e o zoom nas trilhas ou no minimapa volta para a URL logo depois.
 const view = ref<[number, number]>([routeStart.value, routeEnd.value])
@@ -102,7 +104,7 @@ let urlTimer: ReturnType<typeof setTimeout> | undefined
 watch(view, ([s, e]) => {
   clearTimeout(urlTimer)
   if (s === routeStart.value && e === routeEnd.value) return
-  urlTimer = setTimeout(() => setSlugs(slugs.value, { de: String(s), ate: String(e) }), 400)
+  urlTimer = setTimeout(() => setSlugs(slugs.value, { de: urlPos(s), ate: urlPos(e) }), 400)
 })
 onBeforeUnmount(() => clearTimeout(urlTimer))
 const start = computed({ get: () => view.value[0], set: (v) => (view.value = [v, view.value[1]]) })
@@ -118,20 +120,22 @@ const bounds = computed<[number, number]>(() => {
   return [Math.min(Math.floor(lo[0] / 5) * 5, routeStart.value), Math.max(Math.ceil(hi[1] / 5) * 5, routeEnd.value)]
 })
 
-const startInput = ref(String(start.value))
-const endInput = ref(String(end.value))
+// Os campos mostram anos inteiros; com zoom em meses, os anos que cobrem a janela.
+const startInput = ref(String(Math.floor(start.value)))
+const endInput = ref(String(Math.ceil(end.value)))
 watch(view, ([s, e]) => {
-  startInput.value = String(s)
-  endInput.value = String(e)
+  startInput.value = String(Math.floor(s))
+  endInput.value = String(Math.ceil(e))
 })
 function applyRange() {
   const s = Number(startInput.value)
   const e = Number(endInput.value)
   if (!Number.isInteger(s) || !Number.isInteger(e) || e <= s) {
-    startInput.value = String(start.value)
-    endInput.value = String(end.value)
+    startInput.value = String(Math.floor(start.value))
+    endInput.value = String(Math.ceil(end.value))
     return
   }
+  if (s === Math.floor(start.value) && e === Math.ceil(end.value)) return
   view.value = [s, e]
   setSlugs(slugs.value, { de: String(s), ate: String(e) })
 }
@@ -149,13 +153,13 @@ const periodsOf = (t: Timeline | undefined): TrackPeriod[] | undefined => (showP
 
 // Cada trilha vem como na API: os eventos do trecho, ou faixas quando são muitos.
 const { data: comparison } = useLatest(
-  () => (selected.value.length >= 2 ? loadComparison(slugs.value, view.value[0], view.value[1], { buckets: 60 }) : undefined),
+  () => (selected.value.length >= 2 ? loadComparison(slugs.value, Math.floor(view.value[0]), Math.ceil(view.value[1]), { buckets: 60 }) : undefined),
   undefined as Comparison | undefined,
 )
 const windows = computed(() => comparison.value?.lanes ?? [])
 const bucketed = computed(() => windows.value.some((w) => w.mode === 'faixas'))
 
-const toCompare = (e: TimelineEvent): CompareEvent => ({ id: e.id, year: e.year, title: e.title })
+const toCompare = (e: TimelineEvent): CompareEvent => ({ id: e.id, year: e.year, month: e.month, day: e.day, title: e.title })
 const lanes = computed<CompareLane[]>(() =>
   selected.value.map((t, i) => {
     const w = windows.value[i]
@@ -236,7 +240,7 @@ watch(
   { immediate: true },
 )
 const sameSlugs = (a: string[], b: string[]) => a.length === b.length && a.every((s, i) => s === b[i])
-const saved = computed(() => savedList.value.some((c) => sameSlugs(c.timelines, slugs.value) && c.start === start.value && c.end === end.value))
+const saved = computed(() => savedList.value.some((c) => sameSlugs(c.timelines, slugs.value) && c.start === Math.floor(start.value) && c.end === Math.ceil(end.value)))
 const saving = ref(false)
 const shareMsg = ref('')
 async function save() {
@@ -246,7 +250,7 @@ async function save() {
   }
   saving.value = true
   try {
-    savedList.value = [await saveComparison(slugs.value, start.value, end.value), ...savedList.value]
+    savedList.value = [await saveComparison(slugs.value, Math.floor(start.value), Math.ceil(end.value)), ...savedList.value]
   } catch (e) {
     shareMsg.value = errorMessage(e, 'Não deu para salvar a comparação.')
   } finally {
@@ -254,7 +258,7 @@ async function save() {
   }
 }
 async function share() {
-  const url = new URL(router.resolve({ query: { ...route.query, a: slugs.value[0], b: slugs.value[1], de: String(start.value), ate: String(end.value) } }).href, window.location.origin)
+  const url = new URL(router.resolve({ query: { ...route.query, a: slugs.value[0], b: slugs.value[1], de: urlPos(start.value), ate: urlPos(end.value) } }).href, window.location.origin)
   shareMsg.value = (await copyLink(url.href)) ? 'Link copiado' : 'Não deu para copiar o link'
   setTimeout(() => (shareMsg.value = ''), 2500)
 }

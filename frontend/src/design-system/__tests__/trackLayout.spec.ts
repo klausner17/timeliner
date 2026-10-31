@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { LABEL_W, MAX_ROWS, clampWindow, mergeByColumn, niceStep, pack, zoomWindow, type TrackItem } from '../components/trackLayout'
+import { LABEL_W, MAX_ROWS, clampWindow, mergeByColumn, niceStep, pack, posLabel, tickLabel, windowTicks, zoomWindow, type TrackItem } from '../components/trackLayout'
 
 const item = (px: number, id = `e${px}`): TrackItem => ({ kind: 'event', key: id, event: { id, year: px, title: id }, year: px, px })
 
@@ -24,7 +24,10 @@ describe('zoom', () => {
     expect(zoomWindow(1900, 2000, 0.5, 1950)).toEqual([1925, 1975])
     expect(zoomWindow(1900, 2000, 0.5, 1900)).toEqual([1900, 1950])
     expect(zoomWindow(1900, 2000, 4, 1950, { min: 1800, max: 2020 })).toEqual([1800, 2020])
-    expect(zoomWindow(1900, 1902, 0.1, 1901)).toEqual([1900, 1902])
+    // O zoom chega a três meses, em meses inteiros.
+    const [a, b] = zoomWindow(1900, 1902, 0.1, 1901)
+    expect(Math.round((b - a) * 12)).toBe(3)
+    expect(Number.isInteger(Math.round(a * 12 * 1e6) / 1e6)).toBe(true)
   })
 
   it('arraste não sai dos limites nem muda o tamanho', () => {
@@ -36,5 +39,13 @@ describe('zoom', () => {
     expect(niceStep(40)).toBe(5)
     expect(niceStep(4000)).toBe(500)
     expect(niceStep(3)).toBe(1)
+    expect(niceStep(1)).toBe(2 / 12)
+    expect(niceStep(0.5)).toBe(1 / 12)
+  })
+
+  it('marca e escreve os meses no eixo', () => {
+    expect(windowTicks(1930.5, 1931.25, 3 / 12).map(tickLabel)).toEqual(['jul.', 'out.', '1931', 'abr.'])
+    expect(posLabel(1930 + 9 / 12)).toBe('out. 1930')
+    expect(posLabel(1930)).toBe('1930')
   })
 })

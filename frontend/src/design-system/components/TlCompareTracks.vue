@@ -2,8 +2,8 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { TrackColor } from '../tokens'
 import TlButton from './TlButton.vue'
-import { periodRange, stackPeriods, type TrackPeriod } from './periodLayout'
-import { clampWindow, layout, niceStep, zoomWindow, type CompareBucket, type CompareEvent, type TrackItem } from './trackLayout'
+import { periodDate, periodRange, stackPeriods, type TrackPeriod } from './periodLayout'
+import { MIN_SPAN, clampWindow, eventPos, layout, niceStep, posLabel, tickLabel, windowTicks, zoomWindow, type CompareBucket, type CompareEvent, type TrackItem } from './trackLayout'
 
 export type { CompareBucket, CompareEvent, TrackPeriod }
 /** Uma trilha traz eventos soltos, faixas com contagem (timelines grandes) ou os dois. */
@@ -62,28 +62,23 @@ onMounted(() => {
 })
 onBeforeUnmount(() => observer?.disconnect())
 
-const span = computed(() => Math.max(1, end.value - start.value))
+const span = computed(() => Math.max(1 / 12, end.value - start.value))
 const pct = (y: number) => ((y - start.value) / span.value) * 100
 const clampPct = (y: number) => Math.min(100, Math.max(0, pct(y)))
 const toPx = (y: number) => (clampPct(y) / 100) * plotWidth.value
 
-const ticks = computed(() => {
-  const step = props.tickStep ?? niceStep(span.value)
-  const out: number[] = []
-  const first = Math.ceil(start.value / step) * step
-  for (let y = first; y <= end.value; y += step) out.push(y)
-  return out
-})
+const ticks = computed(() => windowTicks(start.value, end.value, props.tickStep ?? niceStep(span.value)).map((pos) => ({ pos, label: tickLabel(pos), month: Math.round(pos * 12) % 12 !== 0 })))
 
 function itemsOf(lane: CompareLane): TrackItem[] {
   const items: TrackItem[] = []
   for (const e of lane.events ?? []) {
-    if (e.year >= start.value && e.year <= end.value) items.push({ kind: 'event', key: e.id, event: e, year: e.year, px: toPx(e.year) })
+    const pos = eventPos(e)
+    if (pos >= start.value && pos <= end.value) items.push({ kind: 'event', key: e.id, event: e, year: e.year, px: toPx(pos) })
   }
   for (const b of lane.buckets ?? []) {
     if (b.to < start.value || b.from > end.value) continue
     const only = b.count === 1 ? b.sample?.[0] : undefined
-    if (only) items.push({ kind: 'event', key: only.id, event: only, year: only.year, px: toPx(only.year) })
+    if (only) items.push({ kind: 'event', key: only.id, event: only, year: only.year, px: toPx(eventPos(only)) })
     else items.push({ kind: 'cluster', key: `c${b.from}-${b.to}`, from: b.from, to: b.to, count: b.count, sample: b.sample ?? [], px: toPx((b.from + b.to + 1) / 2) })
   }
   return items.sort((a, b) => a.px - b.px)
@@ -139,7 +134,13 @@ function edgesOf(lane: CompareLane) {
 
 const label = computed(() => `Comparação de ${start.value} a ${end.value}`)
 /** "1930–1945", ou "-1813 a -876" quando o traço confundiria com o sinal de menos. */
-const rangeText = (from: number, to: number) => (from === to ? `${from}` : from < 0 || to < 0 ? `${from} a ${to}` : `${from}–${to}`)
+const rangeText = (from: number, to: number) => {
+  if (from === to) return posLabel(from)
+  const [a, b] = [posLabel(from), posLabel(to)]
+  return from < 0 || to < 0 || a.includes(' ') || b.includes(' ') ? `${a} a ${b}` : `${a}–${b}`
+}
+/** Data do evento no rótulo: "1930", "out. 1930" ou "03/10/1930". */
+const eventDate = (e: CompareEvent) => periodDate(e.year, e.month, e.day)
 
 // ---------- Zoom ----------
 
@@ -228,7 +229,7 @@ function onPointerUp(ev: PointerEvent) {
       <span class="tl-compare__window" aria-live="polite">{{ rangeText(start, end) }}</span>
       <div class="tl-compare__zoom">
         <TlButton icon="minus" icon-only size="sm" label="Afastar" :disabled="!canZoomOut" @click="zoomBy(2)" />
-        <TlButton icon="plus" icon-only size="sm" label="Aproximar" :disabled="end - start <= 2" @click="zoomBy(0.5)" />
+        <TlButton icon="plus" icon-only size="sm" label="Aproximar" :disabled="end - start <= MIN_SPAN + 1e-9" @click="zoomBy(0.5)" />
         <TlButton v-if="min !== undefined && max !== undefined" icon="expand" size="sm" :disabled="!canZoomOut" @click="showAll">Ver tudo</TlButton>
       </div>
     </div>
@@ -236,7 +237,7 @@ function onPointerUp(ev: PointerEvent) {
       <div class="tl-compare__row">
         <div></div>
         <div class="tl-compare__ticks" aria-hidden="true">
-          <span v-for="t in ticks" :key="t" :style="{ left: `${pct(t)}%` }">{{ t }}</span>
+          <span v-for="t in ticks" :key="t.pos" :class="{ 'tl-compare__tick--month': t.month }" :style="{ left: `${pct(t.pos)}%` }">{{ t.label }}</span>
         </div>
       </div>
       <div class="tl-compare__row">
@@ -256,7 +257,7 @@ function onPointerUp(ev: PointerEvent) {
           @pointerup="onPointerUp"
           @pointercancel="onPointerUp"
         >
-          <div v-for="t in ticks" :key="t" class="tl-compare__grid" :style="{ left: `${pct(t)}%` }" aria-hidden="true"></div>
+          <div v-for="t in ticks" :key="t.pos" class="tl-compare__grid" :style="{ left: `${pct(t.pos)}%` }" aria-hidden="true"></div>
           <div v-if="highlightYear !== undefined && highlightYear >= start && highlightYear <= end" class="tl-compare__highlight" :style="{ left: `${pct(highlightYear)}%` }" aria-hidden="true"></div>
           <div
             v-for="(lane, li) in laneViews"
@@ -317,7 +318,7 @@ function onPointerUp(ev: PointerEvent) {
                   :aria-pressed="selected === e.event.id"
                   @click="selected = e.event.id"
                 >
-                  <span class="tl-compare__year">{{ e.event.year }}</span>
+                  <span class="tl-compare__year">{{ eventDate(e.event) }}</span>
                   <span class="tl-compare__title" :title="e.event.title">{{ e.event.title }}</span>
                 </button>
                 <button
@@ -389,6 +390,9 @@ function onPointerUp(ev: PointerEvent) {
 .tl-compare__ticks span {
   position: absolute;
   transform: translateX(-50%);
+}
+.tl-compare__ticks .tl-compare__tick--month {
+  color: var(--tl-color-text-subtle);
 }
 .tl-compare__name {
   display: flex;
