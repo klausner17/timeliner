@@ -67,47 +67,30 @@ export function buildSlides(groups: readonly PeriodGroup[], complete: boolean): 
 }
 
 export type EventLink = { url: string; label: string }
-export type EventMedia = { imageUrl?: string; imageAlt?: string; imageCaption?: string; longDescription?: string; links: EventLink[] }
+/** O texto do evento em slide: o primeiro parágrafo em destaque, o resto embaixo, e os links. */
+export type EventText = { lead: string; body: string[]; links: EventLink[] }
 
-const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : undefined)
 const isHttp = (v: string | undefined): boolean => !!v && /^https?:\/\//i.test(v)
 
 /**
- * Imagem, links e descrição longa do evento, quando existirem. Os campos de mídia ainda
- * não fazem parte do tipo do evento, então são lidos sem depender do formato exato:
- * `imageUrl` (ou `image` como texto ou `{ url, alt, caption }`), `imageAlt`,
- * `imageCaption`, `longDescription` e `links` (textos ou `{ url, label | title }`).
- * A fonte (`sourceUrl`) entra como o primeiro link.
+ * Divide a descrição (parágrafos separados por linha em branco) e junta a fonte
+ * (`sourceUrl`, primeiro) com os links extras do evento (`links: [{ url, label? }]`).
+ * O campo `links` é lido sem depender do tipo, para funcionar antes e depois dele existir.
  */
-export function mediaOf(e: TimelineEvent): EventMedia {
-  const r = e as TimelineEvent & Record<string, unknown>
-  const img = r.image && typeof r.image === 'object' ? (r.image as Record<string, unknown>) : undefined
-  const imageUrl = str(r.imageUrl) ?? str(r.image) ?? str(img?.url)
+export function eventText(e: TimelineEvent): EventText {
+  const [lead = '', ...body] = e.description
+    .split(/\n\s*\n/)
+    .map((p) => p.trim())
+    .filter(Boolean)
   const links: EventLink[] = []
-  const seen = new Set<string>()
-  const add = (url: string | undefined, label: string | undefined) => {
-    if (!url || !isHttp(url) || seen.has(url)) return
-    seen.add(url)
-    links.push({ url, label: label ?? hostOf(url) })
+  const add = (url: unknown, label: unknown) => {
+    if (typeof url !== 'string' || !isHttp(url.trim()) || links.some((l) => l.url === url.trim())) return
+    links.push({ url: url.trim(), label: typeof label === 'string' && label.trim() ? label.trim() : hostOf(url.trim()) })
   }
-  add(str(e.sourceUrl), 'Fonte')
-  if (Array.isArray(r.links)) {
-    for (const l of r.links) {
-      if (typeof l === 'string') add(str(l), undefined)
-      else if (l && typeof l === 'object') {
-        const o = l as Record<string, unknown>
-        add(str(o.url) ?? str(o.href), str(o.label) ?? str(o.title))
-      }
-    }
-  }
-  const longDescription = str(r.longDescription) ?? str(r.details)
-  return {
-    imageUrl: imageUrl && (isHttp(imageUrl) || imageUrl.startsWith('/')) ? imageUrl : undefined,
-    imageAlt: str(r.imageAlt) ?? str(img?.alt),
-    imageCaption: str(r.imageCaption) ?? str(img?.caption),
-    longDescription: longDescription && longDescription !== e.description.trim() ? longDescription : undefined,
-    links,
-  }
+  add(e.sourceUrl, 'Fonte')
+  const extra = (e as TimelineEvent & { links?: unknown }).links
+  if (Array.isArray(extra)) for (const l of extra) if (l && typeof l === 'object') add((l as { url?: unknown }).url, (l as { label?: unknown }).label)
+  return { lead, body, links }
 }
 
 function hostOf(url: string): string {

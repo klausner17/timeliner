@@ -13,7 +13,7 @@ import type { TimelineDetail, TimelineEvent } from '@/data/types'
 import { dateLabel } from '@/lib/format'
 import { yearFormatOf } from '@/lib/calendar'
 import { reckoningOf } from '@/lib/scale'
-import { axisFraction, buildSlides, groupByPeriod, mediaOf, type Slide } from '@/lib/presentation'
+import { axisFraction, buildSlides, groupByPeriod, eventText, type Slide } from '@/lib/presentation'
 import NotFoundView from './NotFoundView.vue'
 
 const route = useRoute()
@@ -222,13 +222,12 @@ watch(index, () => nextTick(() => stage.value?.querySelector('.slide__scroll')?.
 // ---------- O que aparece no slide ----------
 
 const current = computed(() => (slide.value?.kind === 'event' ? slide.value : undefined))
-const media = computed(() => (current.value ? mediaOf(current.value.event) : undefined))
+const text = computed(() => (current.value ? eventText(current.value.event) : undefined))
 const currentGroup = computed(() => (slide.value?.kind === 'event' || slide.value?.kind === 'period' ? slide.value.group : undefined))
 const accent = computed(() => {
   const c = currentGroup.value?.color
   return c ? `var(--tl-period-${c})` : `var(--tl-track-${timeline.value?.color ?? 'a'})`
 })
-const brokenImage = ref<string>()
 
 /** O eixo de baixo: as faixas dos períodos e onde o evento atual está. */
 const axis = computed(() => {
@@ -323,20 +322,16 @@ const periodEventCount = computed(() => (slide.value?.kind === 'period' ? slide.
           </p>
         </section>
 
-        <article v-else-if="slide?.kind === 'event'" :key="slide.key" class="slide slide--event" :class="{ 'slide--media': media?.imageUrl && brokenImage !== media.imageUrl }">
+        <article v-else-if="slide?.kind === 'event'" :key="slide.key" class="slide slide--event">
           <div class="slide__scroll">
             <span class="slide__date">{{ dateLabel(slide.event, reck) }}</span>
             <h2 class="slide__title">{{ slide.event.title }}</h2>
-            <p v-if="slide.event.description" class="slide__lead">{{ slide.event.description }}</p>
-            <p v-if="media?.longDescription" class="slide__long">{{ media.longDescription }}</p>
-            <p v-if="media?.links.length" class="slide__links">
-              <a v-for="l in media.links" :key="l.url" :href="l.url" target="_blank" rel="noopener">{{ l.label }}</a>
+            <p v-if="text?.lead" class="slide__lead" :class="{ 'slide__lead--small': text.lead.length > 280 }">{{ text.lead }}</p>
+            <p v-for="(para, i) in text?.body" :key="i" class="slide__long">{{ para }}</p>
+            <p v-if="text?.links.length" class="slide__links">
+              <a v-for="l in text.links" :key="l.url" :href="l.url" target="_blank" rel="noopener">{{ l.label }}</a>
             </p>
           </div>
-          <figure v-if="media?.imageUrl && brokenImage !== media.imageUrl" class="slide__figure">
-            <img :src="media.imageUrl" :alt="media.imageAlt ?? ''" @error="brokenImage = media.imageUrl" />
-            <figcaption v-if="media.imageCaption">{{ media.imageCaption }}</figcaption>
-          </figure>
         </article>
 
         <section v-else-if="slide?.kind === 'end'" :key="slide.key" class="slide slide--intro">
@@ -502,9 +497,6 @@ const periodEventCount = computed(() => (slide.value?.kind === 'period' ? slide.
   padding-left: var(--tl-space-5);
   border-left: 6px solid var(--accent);
 }
-.slide--media .slide__scroll {
-  flex-basis: 50%;
-}
 .slide__eyebrow,
 .slide__date {
   font-size: clamp(14px, 1.6vw, 20px);
@@ -536,6 +528,9 @@ const periodEventCount = computed(() => (slide.value?.kind === 'period' ? slide.
   max-width: 60ch;
   text-wrap: pretty;
 }
+.slide__lead--small {
+  font-size: clamp(17px, 1.6vw, 21px);
+}
 .slide__long {
   font-size: clamp(16px, 1.5vw, 20px);
   line-height: 1.6;
@@ -562,26 +557,6 @@ const periodEventCount = computed(() => (slide.value?.kind === 'period' ? slide.
   justify-content: center;
   gap: var(--tl-space-2);
   margin-top: var(--tl-space-3);
-}
-.slide__figure {
-  flex: 1 1 0;
-  min-width: 0;
-  max-height: 100%;
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--tl-space-2);
-}
-.slide__figure img {
-  width: 100%;
-  max-height: min(62vh, 640px);
-  object-fit: contain;
-  border-radius: var(--tl-radius-lg);
-  background: var(--tl-color-surface-sunken);
-}
-.slide__figure figcaption {
-  font-size: var(--tl-text-sm);
-  color: var(--tl-color-text-muted);
 }
 
 .foot {
@@ -675,11 +650,8 @@ const periodEventCount = computed(() => (slide.value?.kind === 'period' ? slide.
     padding: var(--tl-space-3) var(--tl-space-4);
   }
   .slide--event {
-    flex-direction: column-reverse;
-    align-items: stretch;
-    justify-content: flex-end;
-    gap: var(--tl-space-4);
     height: 100%;
+    align-items: stretch;
   }
   .slide--intro,
   .slide--period {
@@ -690,13 +662,7 @@ const periodEventCount = computed(() => (slide.value?.kind === 'period' ? slide.
     padding-left: var(--tl-space-3);
     border-left-width: 4px;
   }
-  .slide__figure {
-    flex: none;
-  }
-  .slide__figure img {
-    max-height: 32vh;
-  }
-  .foot {
+      .foot {
     padding: var(--tl-space-2) var(--tl-space-3) var(--tl-space-4);
     gap: var(--tl-space-3);
   }

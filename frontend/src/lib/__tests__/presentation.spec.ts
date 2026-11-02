@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { gregorianYears } from '@/design-system'
 import type { TimelineEvent } from '@/data/types'
-import { OUTSIDE_PERIODS, axisFraction, buildSlides, groupByPeriod, mediaOf } from '../presentation'
+import { OUTSIDE_PERIODS, axisFraction, buildSlides, groupByPeriod, eventText } from '../presentation'
 
 const ev = (id: string, year: number, over: Partial<TimelineEvent> = {}): TimelineEvent => ({ id, year, title: id, description: '', by: 'k', ...over })
 
@@ -46,34 +46,23 @@ describe('buildSlides', () => {
   })
 })
 
-describe('mediaOf', () => {
-  it('sem mídia, só a fonte', () => {
-    expect(mediaOf(ev('a', 1, { sourceUrl: 'https://www.exemplo.com/x' }))).toEqual({
-      imageUrl: undefined,
-      imageAlt: undefined,
-      imageCaption: undefined,
-      longDescription: undefined,
-      links: [{ url: 'https://www.exemplo.com/x', label: 'Fonte' }],
-    })
+describe('eventText', () => {
+  it('separa o primeiro parágrafo e põe a fonte primeiro', () => {
+    const t = eventText(ev('a', 1, { description: 'Primeiro.\n\nSegundo\ncom quebra.\n \nTerceiro.', sourceUrl: 'https://www.exemplo.com/x' }))
+    expect(t.lead).toBe('Primeiro.')
+    expect(t.body).toEqual(['Segundo\ncom quebra.', 'Terceiro.'])
+    expect(t.links).toEqual([{ url: 'https://www.exemplo.com/x', label: 'Fonte' }])
   })
 
-  it('lê imagem, descrição longa e links em formatos diferentes', () => {
-    const e = { ...ev('a', 1, { description: 'curta' }), image: { url: 'https://img.com/a.jpg', alt: 'Foto', caption: 'Legenda' }, longDescription: 'Texto longo', links: ['https://www.wiki.org/a', { url: 'https://b.com', label: 'Livro' }, { href: 'javascript:alert(1)' }] }
-    const m = mediaOf(e)
-    expect(m.imageUrl).toBe('https://img.com/a.jpg')
-    expect(m.imageAlt).toBe('Foto')
-    expect(m.imageCaption).toBe('Legenda')
-    expect(m.longDescription).toBe('Texto longo')
-    expect(m.links).toEqual([
+  it('junta os links extras, sem repetir e só http', () => {
+    const e = { ...ev('a', 1, { description: '', sourceUrl: 'https://a.com' }), links: [{ url: 'https://a.com' }, { url: 'https://www.wiki.org/a' }, { url: 'https://b.com', label: 'Livro' }, { url: 'javascript:alert(1)' }] }
+    const t = eventText(e)
+    expect(t.lead).toBe('')
+    expect(t.links).toEqual([
+      { url: 'https://a.com', label: 'Fonte' },
       { url: 'https://www.wiki.org/a', label: 'wiki.org' },
       { url: 'https://b.com', label: 'Livro' },
     ])
-  })
-
-  it('ignora imagem que não é http e descrição longa igual à curta', () => {
-    const m = mediaOf({ ...ev('a', 1, { description: 'igual' }), imageUrl: 'javascript:x', longDescription: 'igual' })
-    expect(m.imageUrl).toBeUndefined()
-    expect(m.longDescription).toBeUndefined()
   })
 })
 
