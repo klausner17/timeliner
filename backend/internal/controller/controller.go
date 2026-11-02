@@ -43,6 +43,7 @@ type UseCases struct {
 	CreateEvent     usecase.UseCase[usecase.CreateEventInput, usecase.EventView]
 	UpdateEvent     usecase.UseCase[usecase.UpdateEventInput, usecase.EventView]
 	DeleteEvent     usecase.UseCase[usecase.EventRefInput, usecase.Empty]
+	PreviewLinks    usecase.UseCase[usecase.EventRefInput, []domain.LinkPreview]
 
 	ListSuggestions    usecase.UseCase[usecase.ListSuggestionsInput, []usecase.SuggestionView]
 	CreateSuggestion   usecase.UseCase[usecase.CreateSuggestionInput, usecase.SuggestionView]
@@ -68,7 +69,7 @@ func UseCasesFrom(d *usecase.Deps) UseCases {
 		ListCalendars: usecase.NewListCalendars(d), CreateCalendar: usecase.NewCreateCalendar(d), GetCalendar: usecase.NewGetCalendar(d),
 		UpdateCalendar: usecase.NewUpdateCalendar(d), DeleteCalendar: usecase.NewDeleteCalendar(d),
 		ListEvents: usecase.NewListEvents(d), SummarizeEvents: usecase.NewSummarizeEvents(d), CreateEvent: usecase.NewCreateEvent(d), UpdateEvent: usecase.NewUpdateEvent(d),
-		DeleteEvent:     usecase.NewDeleteEvent(d),
+		DeleteEvent: usecase.NewDeleteEvent(d), PreviewLinks: usecase.NewPreviewEventLinks(d),
 		ListSuggestions: usecase.NewListSuggestions(d), CreateSuggestion: usecase.NewCreateSuggestion(d),
 		ResubmitSuggestion: usecase.NewResubmitSuggestion(d), ReviewSuggestion: usecase.NewReviewSuggestion(d),
 		ReopenSuggestion: usecase.NewReopenSuggestion(d),
@@ -126,6 +127,7 @@ func (c *Controller) routes(r chi.Router) {
 	r.Post("/timelines/{slug}/events", c.createEvent)
 	r.Patch("/timelines/{slug}/events/{eventId}", c.updateEvent)
 	r.Delete("/timelines/{slug}/events/{eventId}", c.deleteEvent)
+	r.Get("/timelines/{slug}/events/{eventId}/link-previews", c.previewLinks)
 	r.Get("/timelines/{slug}/suggestions", c.listSuggestions)
 	r.Post("/timelines/{slug}/suggestions", c.createSuggestion)
 

@@ -99,6 +99,7 @@ type EventPatch struct {
 	Description *string
 	SourceURL   **string
 	Era         **string
+	Links       *[]domain.EventLink
 }
 
 type UpdateEventInput struct {
@@ -144,6 +145,9 @@ func (uc *UpdateEvent) Execute(ctx context.Context, in UpdateEventInput) (EventV
 	}
 	if p.Era != nil {
 		e.Era = *p.Era
+	}
+	if p.Links != nil {
+		e.Links = *p.Links
 	}
 	e.EventData = normalizeEvent(e.EventData)
 	rules, err := rulesOf(ctx, uc.d, t)

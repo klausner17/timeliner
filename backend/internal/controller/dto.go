@@ -161,19 +161,42 @@ type timelinePageJSON struct {
 
 // eventInputJSON é o EventInput do contrato, usado na entrada e no "event" das sugestões.
 type eventInputJSON struct {
-	Year        *int    `json:"year"`
-	Month       *int    `json:"month"`
-	Day         *int    `json:"day"`
-	Time        *string `json:"time"`
-	EndYear     *int    `json:"endYear"`
-	Title       string  `json:"title"`
-	Description string  `json:"description"`
-	SourceURL   *string `json:"sourceUrl"`
-	Era         *string `json:"era"`
+	Year        *int       `json:"year"`
+	Month       *int       `json:"month"`
+	Day         *int       `json:"day"`
+	Time        *string    `json:"time"`
+	EndYear     *int       `json:"endYear"`
+	Title       string     `json:"title"`
+	Description string     `json:"description"`
+	SourceURL   *string    `json:"sourceUrl"`
+	Era         *string    `json:"era"`
+	Links       []linkJSON `json:"links"`
+}
+
+// linkJSON é um EventLink do contrato.
+type linkJSON struct {
+	URL   string `json:"url"`
+	Label string `json:"label"`
+}
+
+func linksToDomain(ls []linkJSON) []domain.EventLink {
+	out := make([]domain.EventLink, len(ls))
+	for i, l := range ls {
+		out[i] = domain.EventLink{URL: l.URL, Label: l.Label}
+	}
+	return out
+}
+
+func linksFromDomain(ls []domain.EventLink) []linkJSON {
+	out := make([]linkJSON, len(ls))
+	for i, l := range ls {
+		out[i] = linkJSON{URL: l.URL, Label: l.Label}
+	}
+	return out
 }
 
 func (e eventInputJSON) data() domain.EventData {
-	d := domain.EventData{Month: e.Month, Day: e.Day, Time: e.Time, EndYear: e.EndYear, Title: e.Title, Description: e.Description, SourceURL: e.SourceURL, Era: e.Era}
+	d := domain.EventData{Month: e.Month, Day: e.Day, Time: e.Time, EndYear: e.EndYear, Title: e.Title, Description: e.Description, SourceURL: e.SourceURL, Era: e.Era, Links: linksToDomain(e.Links)}
 	if e.Year != nil {
 		d.Year = *e.Year
 	}
@@ -190,29 +213,30 @@ func (e eventInputJSON) requireYear(fields map[string]string, prefix string) {
 
 func toEventInput(d domain.EventData) eventInputJSON {
 	y := d.Year
-	return eventInputJSON{Year: &y, Month: d.Month, Day: d.Day, Time: d.Time, EndYear: d.EndYear, Title: d.Title, Description: d.Description, SourceURL: d.SourceURL, Era: d.Era}
+	return eventInputJSON{Year: &y, Month: d.Month, Day: d.Day, Time: d.Time, EndYear: d.EndYear, Title: d.Title, Description: d.Description, SourceURL: d.SourceURL, Era: d.Era, Links: linksFromDomain(d.Links)}
 }
 
 type eventJSON struct {
-	ID          string    `json:"id"`
-	Year        int       `json:"year"`
-	Month       *int      `json:"month"`
-	Day         *int      `json:"day"`
-	Time        *string   `json:"time"`
-	EndYear     *int      `json:"endYear"`
-	Title       string    `json:"title"`
-	Description string    `json:"description"`
-	SourceURL   *string   `json:"sourceUrl"`
-	By          string    `json:"by"`
-	Era         *string   `json:"era"`
-	CreatedAt   time.Time `json:"createdAt"`
+	ID          string     `json:"id"`
+	Year        int        `json:"year"`
+	Month       *int       `json:"month"`
+	Day         *int       `json:"day"`
+	Time        *string    `json:"time"`
+	EndYear     *int       `json:"endYear"`
+	Title       string     `json:"title"`
+	Description string     `json:"description"`
+	SourceURL   *string    `json:"sourceUrl"`
+	Links       []linkJSON `json:"links"`
+	By          string     `json:"by"`
+	Era         *string    `json:"era"`
+	CreatedAt   time.Time  `json:"createdAt"`
 }
 
 func toEvent(v usecase.EventView) eventJSON {
 	e := v.Event
 	return eventJSON{
 		ID: e.ID, Year: e.Year, Month: e.Month, Day: e.Day, Time: e.Time, EndYear: e.EndYear, Title: e.Title, Description: e.Description,
-		SourceURL: e.SourceURL, By: v.AuthorHandle, Era: e.Era, CreatedAt: e.CreatedAt,
+		SourceURL: e.SourceURL, Links: linksFromDomain(e.Links), By: v.AuthorHandle, Era: e.Era, CreatedAt: e.CreatedAt,
 	}
 }
 
@@ -357,4 +381,13 @@ type followingJSON struct {
 
 type itemsJSON[T any] struct {
 	Items []T `json:"items"`
+}
+
+// linkPreviewJSON é o LinkPreview do contrato; campos que a página não tem vêm vazios.
+type linkPreviewJSON struct {
+	URL         string `json:"url"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	Image       string `json:"image"`
+	SiteName    string `json:"siteName"`
 }

@@ -1,6 +1,7 @@
 package usecase
 
 import (
+	"fmt"
 	"net/mail"
 	"net/url"
 	"regexp"
@@ -53,6 +54,13 @@ func validURL(s string) bool {
 }
 
 const (
+	// MaxDescription é o tamanho máximo da descrição de um evento, em caracteres.
+	MaxDescription = 10000
+	// MaxLinks é quantos links a mais um evento pode ter.
+	MaxLinks = 10
+)
+
+const (
 	minYear = -100000
 	maxYear = 3000
 )
@@ -65,13 +73,19 @@ func validateEvent(f fieldErrors, prefix string, e domain.EventData, eras []doma
 		f.check(e.Month == nil, prefix+"month", r.YearOnlyMsg)
 	}
 	f.check(length(e.Title, 1, 160), prefix+"title", "O título precisa ter de 1 a 160 caracteres.")
-	f.check(length(e.Description, 0, 4000), prefix+"description", "A descrição pode ter até 4000 caracteres.")
+	f.check(length(e.Description, 0, MaxDescription), prefix+"description", "A descrição pode ter até 10000 caracteres.")
 	validateMoment(f, prefix, e)
 	if e.EndYear != nil {
 		f.check(*e.EndYear >= e.Year && *e.EndYear <= r.Hi, prefix+"endYear", "O fim precisa ser depois do início.")
 	}
 	if e.SourceURL != nil {
 		f.check(validURL(*e.SourceURL), prefix+"sourceUrl", "Link inválido.")
+	}
+	f.check(len(e.Links) <= MaxLinks, prefix+"links", "Use até 10 links.")
+	for i, l := range e.Links {
+		p := fmt.Sprintf("%slinks[%d].", prefix, i)
+		f.check(validURL(l.URL), p+"url", "Link inválido.")
+		f.check(length(l.Label, 0, 120), p+"label", "O nome do link pode ter até 120 caracteres.")
 	}
 	if e.Era != nil {
 		found := false
@@ -114,6 +128,14 @@ func normalizeEvent(e domain.EventData) domain.EventData {
 	e.Time = emptyToNil(e.Time)
 	e.SourceURL = emptyToNil(e.SourceURL)
 	e.Era = emptyToNil(e.Era)
+	links := make([]domain.EventLink, 0, len(e.Links))
+	for _, l := range e.Links {
+		l.URL, l.Label = strings.TrimSpace(l.URL), strings.TrimSpace(l.Label)
+		if l.URL != "" {
+			links = append(links, l)
+		}
+	}
+	e.Links = links
 	return e
 }
 

@@ -186,6 +186,17 @@ func TestTimelineSuggestionCompareFlow(t *testing.T) {
 	}
 	a.want(a.do("PATCH", "/api/timelines/historia-do-brasil/events/"+evID, beto, map[string]any{"title": "x"}), 403)
 
+	upd = a.want(a.do("PATCH", "/api/timelines/historia-do-brasil/events/"+evID, ana, map[string]any{
+		"sourceUrl": "https://exemplo.com/fonte", "links": []map[string]any{{"url": "https://exemplo.com/mais", "label": "Mais"}},
+	}), 200)
+	if l := upd.Body["links"].([]any); len(l) != 1 || l[0].(map[string]any)["label"] != "Mais" {
+		t.Fatalf("links = %s", upd.Raw)
+	}
+	prev := a.want(a.do("GET", "/api/timelines/historia-do-brasil/events/"+evID+"/link-previews", "", nil), 200)
+	if items := prev.Body["items"].([]any); len(items) != 2 || items[0].(map[string]any)["url"] != "https://exemplo.com/fonte" {
+		t.Fatalf("prévias = %s", prev.Raw)
+	}
+
 	sug := a.want(a.do("POST", "/api/timelines/historia-do-brasil/suggestions", beto, map[string]any{
 		"kind": "new_event", "event": map[string]any{"year": 1888, "title": "Lei Áurea", "era": "Império"}, "note": "faltou",
 	}), 201)

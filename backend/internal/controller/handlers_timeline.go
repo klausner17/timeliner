@@ -244,17 +244,23 @@ func (c *Controller) updateEvent(w http.ResponseWriter, r *http.Request) {
 		Description *string          `json:"description"`
 		SourceURL   Optional[string] `json:"sourceUrl"`
 		Era         Optional[string] `json:"era"`
+		Links       *[]linkJSON      `json:"links"`
 	}
 	if err := decode(r, &body); err != nil {
 		c.fail(w, r, err)
 		return
+	}
+	var links *[]domain.EventLink
+	if body.Links != nil {
+		ls := linksToDomain(*body.Links)
+		links = &ls
 	}
 	in := slugInput(r)
 	v, err := c.uc.UpdateEvent.Execute(r.Context(), usecase.UpdateEventInput{
 		ActorID: in.ActorID, Slug: in.Slug, EventID: chi.URLParam(r, "eventId"),
 		Patch: usecase.EventPatch{
 			Year: body.Year, Month: body.Month.ptr(), Day: body.Day.ptr(), Time: body.Time.ptr(), EndYear: body.EndYear.ptr(), Title: body.Title,
-			Description: body.Description, SourceURL: body.SourceURL.ptr(), Era: body.Era.ptr(),
+			Description: body.Description, SourceURL: body.SourceURL.ptr(), Era: body.Era.ptr(), Links: links,
 		},
 	})
 	if err != nil {
@@ -271,6 +277,22 @@ func (c *Controller) deleteEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (c *Controller) previewLinks(w http.ResponseWriter, r *http.Request) {
+	in := slugInput(r)
+	ps, err := c.uc.PreviewLinks.Execute(r.Context(), usecase.EventRefInput{ActorID: in.ActorID, Slug: in.Slug, EventID: chi.URLParam(r, "eventId")})
+	if err != nil {
+		c.fail(w, r, err)
+		return
+	}
+	out := make([]linkPreviewJSON, len(ps))
+	for i, p := range ps {
+		out[i] = linkPreviewJSON{URL: p.URL, Title: p.Title, Description: p.Description, Image: p.Image, SiteName: p.SiteName}
+	}
+	// A prévia muda pouco: o navegador pode reaproveitar por uma hora.
+	w.Header().Set("Cache-Control", "private, max-age=3600")
+	writeJSON(w, http.StatusOK, map[string]any{"items": out})
 }
 
 func (c *Controller) compare(w http.ResponseWriter, r *http.Request) {
