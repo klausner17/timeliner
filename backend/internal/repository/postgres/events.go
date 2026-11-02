@@ -221,7 +221,11 @@ func linksToJSON(ls []domain.EventLink) []linkJSON {
 	return out
 }
 
+// linksFromJSON devolve nil quando os links não vieram (correção que não mexe neles).
 func linksFromJSON(ls []linkJSON) []domain.EventLink {
+	if ls == nil {
+		return nil
+	}
 	out := make([]domain.EventLink, len(ls))
 	for i, l := range ls {
 		out[i] = domain.EventLink{URL: l.URL, Label: l.Label}
@@ -240,7 +244,7 @@ func (l *linksColumn) Scan(src any) error {
 	var b []byte
 	switch v := src.(type) {
 	case nil:
-		*l = linksColumn{}
+		*l = nil
 		return nil
 	case []byte:
 		b = v

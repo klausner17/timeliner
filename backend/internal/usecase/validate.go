@@ -128,14 +128,17 @@ func normalizeEvent(e domain.EventData) domain.EventData {
 	e.Time = emptyToNil(e.Time)
 	e.SourceURL = emptyToNil(e.SourceURL)
 	e.Era = emptyToNil(e.Era)
-	links := make([]domain.EventLink, 0, len(e.Links))
-	for _, l := range e.Links {
-		l.URL, l.Label = strings.TrimSpace(l.URL), strings.TrimSpace(l.Label)
-		if l.URL != "" {
-			links = append(links, l)
+	// nil quer dizer "não veio" (uma correção sem links mantém os do evento).
+	if e.Links != nil {
+		links := make([]domain.EventLink, 0, len(e.Links))
+		for _, l := range e.Links {
+			l.URL, l.Label = strings.TrimSpace(l.URL), strings.TrimSpace(l.Label)
+			if l.URL != "" {
+				links = append(links, l)
+			}
 		}
+		e.Links = links
 	}
-	e.Links = links
 	return e
 }
 

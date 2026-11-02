@@ -180,6 +180,9 @@ type linkJSON struct {
 }
 
 func linksToDomain(ls []linkJSON) []domain.EventLink {
+	if ls == nil {
+		return nil
+	}
 	out := make([]domain.EventLink, len(ls))
 	for i, l := range ls {
 		out[i] = domain.EventLink{URL: l.URL, Label: l.Label}

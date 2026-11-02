@@ -9,6 +9,7 @@ import type {
   CalendarInput,
   EventInput,
   EventPatch,
+  LinkPreview,
   Profile,
   SavedComparison,
   Suggestion,
@@ -209,6 +210,23 @@ export const createEvent = async (slug: string, input: EventInput) => cleanEvent
 export const updateEvent = async (slug: string, id: string, input: EventPatch) =>
   cleanEvent(await patch<TimelineEvent>(`/timelines/${slug}/events/${id}`, input))
 export const deleteEvent = (slug: string, id: string) => del(`/timelines/${slug}/events/${id}`)
+
+const previews = new Map<string, Promise<LinkPreview[]>>()
+
+/**
+ * GET /timelines/{slug}/events/{id}/link-previews: título, resumo e miniatura de cada link
+ * do evento. Fica guardado por evento e por lista de links; falha não fica guardada.
+ */
+export function loadLinkPreviews(slug: string, e: Pick<TimelineEvent, 'id' | 'sourceUrl' | 'links'>): Promise<LinkPreview[]> {
+  const key = [slug, e.id, e.sourceUrl ?? '', ...(e.links ?? []).map((l) => l.url)].join('\n')
+  let p = previews.get(key)
+  if (!p) {
+    p = get<{ items: LinkPreview[] }>(`/timelines/${slug}/events/${e.id}/link-previews`).then((r) => r.items)
+    p.catch(() => previews.delete(key))
+    previews.set(key, p)
+  }
+  return p
+}
 
 // ---------- Comparação ----------
 
