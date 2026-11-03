@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"strings"
@@ -64,7 +65,10 @@ func run(log *slog.Logger) error {
 		}
 	}
 
-	deps := newDeps(pool, log)
+	deps, err := newDeps(pool, log)
+	if err != nil {
+		return err
+	}
 	addr := ":" + envOr("PORT", "8080")
 	srv := &http.Server{
 		Addr: addr,
@@ -92,7 +96,7 @@ func run(log *slog.Logger) error {
 	return nil
 }
 
-func newDeps(pool *pgxpool.Pool, log *slog.Logger) *usecase.Deps {
+func newDeps(pool *pgxpool.Pool, log *slog.Logger) (*usecase.Deps, error) {
 	deps := postgres.New(pool)
 	deps.Log = log
 	deps.Hasher, deps.Clock, deps.IDs = platform.Bcrypt{}, platform.SystemClock{}, platform.RandomIDs{}
@@ -101,13 +105,36 @@ func newDeps(pool *pgxpool.Pool, log *slog.Logger) *usecase.Deps {
 	// SIGNUP=closed: ninguém se cadastra pela API; contas só com create-user.
 	deps.SignupClosed = os.Getenv("SIGNUP") == "closed"
 	// E-mails (confirmação e senha) pelo Resend; sem chave, os links vão para o log.
-	deps.AppURL = envOr("APP_URL", "http://localhost:8000")
-	if key := os.Getenv("RESEND_API_KEY"); key != "" {
+	key := os.Getenv("RESEND_API_KEY")
+	appURL, err := appURLFrom(os.Getenv("APP_URL"), key != "")
+	if err != nil {
+		return nil, err
+	}
+	deps.AppURL = appURL
+	if key != "" {
 		deps.Mailer = platform.Resend{APIKey: key, From: envOr("EMAIL_FROM", "Timeliner <onboarding@resend.dev>")}
 	} else {
 		deps.Mailer = platform.LogMailer{Log: log}
 	}
-	return deps
+	return deps, nil
+}
+
+// appURLFrom confere o APP_URL, base dos links mandados por e-mail. Sem e-mail de
+// verdade, o padrão local serve; com o Resend ligado, um APP_URL ausente mandaria
+// links para localhost a gente de verdade, então a API nem sobe.
+func appURLFrom(raw string, sending bool) (string, error) {
+	raw = strings.TrimRight(strings.TrimSpace(raw), "/")
+	if raw == "" {
+		if sending {
+			return "", errors.New("APP_URL é obrigatório com RESEND_API_KEY: é o endereço público do site, base dos links dos e-mails (ex.: https://klausner.site/app/timeliner)")
+		}
+		return "http://localhost:8000", nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.RawQuery != "" || u.Fragment != "" {
+		return "", fmt.Errorf("APP_URL inválido (%q): use o endereço completo do site, como https://klausner.site/app/timeliner", raw)
+	}
+	return raw, nil
 }
 
 // clientIPHeader é o cabeçalho com o IP do cliente posto pelo proxy (padrão
@@ -155,7 +182,11 @@ func resetPassword(args []string, log *slog.Logger) error {
 		return err
 	}
 	defer pool.Close()
-	u, err := usecase.NewResetPassword(newDeps(pool, log)).Execute(ctx, usecase.ResetPasswordInput{Email: *email, Password: password})
+	deps, err := newDeps(pool, log)
+	if err != nil {
+		return err
+	}
+	u, err := usecase.NewResetPassword(deps).Execute(ctx, usecase.ResetPasswordInput{Email: *email, Password: password})
 	if err != nil {
 		return commandError(err)
 	}
@@ -184,7 +215,11 @@ func createUser(args []string, log *slog.Logger) error {
 		return err
 	}
 	defer pool.Close()
-	out, err := usecase.NewAdminRegister(newDeps(pool, log)).Execute(ctx, usecase.RegisterInput{
+	deps, err := newDeps(pool, log)
+	if err != nil {
+		return err
+	}
+	out, err := usecase.NewAdminRegister(deps).Execute(ctx, usecase.RegisterInput{
 		Handle: *handle, Name: *name, Email: *email, Password: password,
 	})
 	if err != nil {

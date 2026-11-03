@@ -26,7 +26,8 @@ services:
       PORT: "8080"
       DATABASE_URL: postgres://timeliner:timeliner@postgres:5432/timeliner?sslmode=disable
       # E-mails de confirmação e senha: sem RESEND_API_KEY, os links aparecem no log da API.
-      APP_URL: ${APP_URL:-http://localhost:8000}
+      # Obrigatório com RESEND_API_KEY: endereço público do site (ex.: https://klausner.site/app/timeliner).
+      APP_URL: ${APP_URL:-}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       EMAIL_FROM: ${EMAIL_FROM:-Timeliner <onboarding@resend.dev>}
     # Só na própria máquina: a API confia no X-Real-IP posto pelo nginx, então quem
