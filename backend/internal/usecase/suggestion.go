@@ -11,25 +11,30 @@ type ListSuggestionsInput struct {
 	ActorID string
 	Slug    string
 	Status  domain.SuggestionStatus
+	PageInput
 }
 
 type ListSuggestions struct{ d *Deps }
 
 func NewListSuggestions(d *Deps) *ListSuggestions { return &ListSuggestions{d} }
 
-func (uc *ListSuggestions) Execute(ctx context.Context, in ListSuggestionsInput) ([]SuggestionView, error) {
-	if in.Status != "" && !in.Status.Valid() {
-		return nil, domain.Invalid(map[string]string{"status": "Status inválido."})
+func (uc *ListSuggestions) Execute(ctx context.Context, in ListSuggestionsInput) (Page[SuggestionView], error) {
+	f := fieldErrors{}
+	f.check(in.Status == "" || in.Status.Valid(), "status", "Status inválido.")
+	in.normalize(f, 50, 100)
+	if err := f.err(); err != nil {
+		return Page[SuggestionView]{}, err
 	}
 	t, err := visibleTimeline(ctx, uc.d, in.Slug, in.ActorID)
 	if err != nil {
-		return nil, err
+		return Page[SuggestionView]{}, err
 	}
-	ss, err := uc.d.Suggestions.ListByTimeline(ctx, t.ID, in.Status)
+	ss, total, err := uc.d.Suggestions.List(ctx, SuggestionFilter{TimelineID: t.ID, Status: in.Status, Paging: in.paging()})
 	if err != nil {
-		return nil, err
+		return Page[SuggestionView]{}, err
 	}
-	return suggestionViews(ctx, uc.d, ss, in.ActorID)
+	vs, err := suggestionViews(ctx, uc.d, ss, in.ActorID)
+	return pageOf(vs, in.PageInput, total), err
 }
 
 type CreateSuggestionInput struct {

@@ -11,14 +11,20 @@ import (
 
 func (c *Controller) listSuggestions(w http.ResponseWriter, r *http.Request) {
 	in := slugInput(r)
-	vs, err := c.uc.ListSuggestions.Execute(r.Context(), usecase.ListSuggestionsInput{
-		ActorID: in.ActorID, Slug: in.Slug, Status: domain.SuggestionStatus(r.URL.Query().Get("status")),
-	})
+	fields := map[string]string{}
+	q := usecase.ListSuggestionsInput{
+		ActorID: in.ActorID, Slug: in.Slug, Status: domain.SuggestionStatus(r.URL.Query().Get("status")), PageInput: pageInput(r, fields),
+	}
+	if err := fieldsErr(fields); err != nil {
+		c.fail(w, r, err)
+		return
+	}
+	page, err := c.uc.ListSuggestions.Execute(r.Context(), q)
 	if err != nil {
 		c.fail(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, itemsJSON[suggestionJSON]{toSuggestions(vs)})
+	writeJSON(w, http.StatusOK, toPage(page, toSuggestions(page.Items)))
 }
 
 func (c *Controller) createSuggestion(w http.ResponseWriter, r *http.Request) {

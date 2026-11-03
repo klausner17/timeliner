@@ -47,9 +47,19 @@ func TestSavedComparisons(t *testing.T) {
 	_, err := save.Execute(ctx, usecase.SaveComparisonInput{ActorID: ana.ID, Slugs: []string{"brasil", "sumiu"}, Start: 1980, End: 2020})
 	wantKind(t, err, domain.KindValidation)
 
-	list := must[[]domain.SavedComparison](t)(usecase.NewListSavedComparisons(d).Execute(ctx, usecase.ActorInput{ActorID: ana.ID}))
+	list := must[usecase.Page[domain.SavedComparison]](t)(usecase.NewListSavedComparisons(d).Execute(ctx, usecase.ListSavedComparisonsInput{ActorID: ana.ID})).Items
 	if len(list) != 1 || list[0].ID != c.ID {
 		t.Fatalf("salvas = %+v", list)
+	}
+	// Procurar pela comparação das timelines na tela: a ordem conta.
+	for _, tc := range []struct {
+		slugs []string
+		want  int
+	}{{c.Slugs, 1}, {[]string{c.Slugs[1], c.Slugs[0]}, 0}} {
+		p := must[usecase.Page[domain.SavedComparison]](t)(usecase.NewListSavedComparisons(d).Execute(ctx, usecase.ListSavedComparisonsInput{ActorID: ana.ID, Timelines: tc.slugs}))
+		if p.Total != tc.want {
+			t.Errorf("salvas com %v = %d", tc.slugs, p.Total)
+		}
 	}
 	del := usecase.NewDeleteSavedComparison(d)
 	_, err = del.Execute(ctx, usecase.DeleteSavedComparisonInput{ActorID: beto.ID, ComparisonID: c.ID})

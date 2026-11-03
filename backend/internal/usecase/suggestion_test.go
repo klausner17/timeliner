@@ -125,13 +125,17 @@ func TestRequestChangesAndResubmit(t *testing.T) {
 	_, err = resubmit.Execute(ctx, usecase.ResubmitSuggestionInput{ActorID: w.bob.ID, SuggestionID: s.Suggestion.ID})
 	wantKind(t, err, domain.KindConflict)
 
-	list := must[[]usecase.SuggestionView](t)(usecase.NewListSuggestions(w.d).Execute(ctx, usecase.ListSuggestionsInput{Slug: "escandalos", Status: domain.StatusRejected}))
-	if len(list) != 1 {
-		t.Fatalf("recusadas = %d", len(list))
+	list := must[usecase.Page[usecase.SuggestionView]](t)(usecase.NewListSuggestions(w.d).Execute(ctx, usecase.ListSuggestionsInput{Slug: "escandalos", Status: domain.StatusRejected}))
+	if len(list.Items) != 1 || list.Total != 1 {
+		t.Fatalf("recusadas = %d", len(list.Items))
 	}
-	contrib := must[[]usecase.SuggestionView](t)(usecase.NewListContributions(w.d).Execute(ctx, usecase.HandleInput{Handle: "beto"}))
-	if len(contrib) != 1 {
-		t.Fatalf("contribuições = %d", len(contrib))
+	contrib := must[usecase.Page[usecase.SuggestionView]](t)(usecase.NewListContributions(w.d).Execute(ctx, usecase.ListContributionsInput{Handle: "beto"}))
+	if len(contrib.Items) != 1 || contrib.Total != 1 {
+		t.Fatalf("contribuições = %d", len(contrib.Items))
+	}
+	inTimeline := must[usecase.Page[usecase.SuggestionView]](t)(usecase.NewListContributions(w.d).Execute(ctx, usecase.ListContributionsInput{Handle: "beto", Slug: "escandalos"}))
+	if inTimeline.Total != 1 {
+		t.Fatalf("contribuições na timeline = %d", inTimeline.Total)
 	}
 }
 

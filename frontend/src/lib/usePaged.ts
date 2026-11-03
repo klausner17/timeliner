@@ -69,3 +69,45 @@ export function usePaged<T, K>(key: () => K | undefined, load: (key: K, page: nu
 
   return { items, total, loading, error, hasMore, loadMore }
 }
+
+export type Pages<T> = {
+  items: ShallowRef<T[]>
+  total: ShallowRef<number>
+  loading: ShallowRef<boolean>
+  hasMore: ComputedRef<boolean>
+  /** Põe a primeira página (vinda junto com outras chamadas, por exemplo). */
+  reset: (first: Page<T>) => void
+  /** Busca a página seguinte e junta às que já estão na tela. */
+  loadMore: () => Promise<void>
+}
+
+/**
+ * Versão manual de usePaged: a primeira página chega por fora (reset) e "carregar mais"
+ * pede a seguinte a fetch. Erros sobem para quem chamou loadMore.
+ */
+export function usePages<T>(fetch: (page: number) => Promise<Page<T>>, idOf: (item: T) => string): Pages<T> {
+  const items = shallowRef<T[]>([])
+  const total = shallowRef(0)
+  const loading = shallowRef(false)
+  let page = 1
+  const hasMore = computed(() => items.value.length < total.value)
+  function reset(first: Page<T>) {
+    items.value = first.items
+    total.value = first.total
+    page = 1
+  }
+  async function loadMore() {
+    if (loading.value || !hasMore.value) return
+    loading.value = true
+    try {
+      const next = await fetch(page + 1)
+      const seen = new Set(items.value.map(idOf))
+      items.value = [...items.value, ...next.items.filter((x) => !seen.has(idOf(x)))]
+      total.value = next.total
+      page++
+    } finally {
+      loading.value = false
+    }
+  }
+  return { items, total, loading, hasMore, reset, loadMore }
+}

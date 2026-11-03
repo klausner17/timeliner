@@ -2,7 +2,6 @@ package usecase
 
 import (
 	"context"
-	"errors"
 
 	"github.com/klausner17/timeliner/backend/internal/domain"
 )
@@ -60,8 +59,12 @@ func (uc *FollowUser) Execute(ctx context.Context, in FollowUserInput) (Empty, e
 }
 
 type FollowingView struct {
-	Users     []domain.User
-	Timelines []TimelineView
+	Users          []domain.User
+	Timelines      []TimelineView
+	UsersTotal     int
+	TimelinesTotal int
+	Page           int
+	PageSize       int
 }
 
 // ListFollowing é o que o usuário segue. Timelines que o viewer não vê ficam de fora.
@@ -69,12 +72,24 @@ type ListFollowing struct{ d *Deps }
 
 func NewListFollowing(d *Deps) *ListFollowing { return &ListFollowing{d} }
 
-func (uc *ListFollowing) Execute(ctx context.Context, in HandleInput) (FollowingView, error) {
+type ListFollowingInput struct {
+	ActorID string
+	Handle  string
+	// A mesma página vale para as duas listas (pessoas e timelines).
+	PageInput
+}
+
+func (uc *ListFollowing) Execute(ctx context.Context, in ListFollowingInput) (FollowingView, error) {
+	f := fieldErrors{}
+	in.normalize(f, 50, 100)
+	if err := f.err(); err != nil {
+		return FollowingView{}, err
+	}
 	u, err := uc.d.Users.ByHandle(ctx, in.Handle)
 	if err != nil {
 		return FollowingView{}, notFound(err, "Usuário não encontrado.")
 	}
-	userIDs, err := uc.d.Follows.FollowedUsers(ctx, u.ID)
+	userIDs, usersTotal, err := uc.d.Follows.FollowedUsers(ctx, u.ID, in.paging())
 	if err != nil {
 		return FollowingView{}, err
 	}
@@ -82,29 +97,18 @@ func (uc *ListFollowing) Execute(ctx context.Context, in HandleInput) (Following
 	if err != nil {
 		return FollowingView{}, err
 	}
-	out := FollowingView{Users: []domain.User{}, Timelines: []TimelineView{}}
+	out := FollowingView{Users: []domain.User{}, Timelines: []TimelineView{}, UsersTotal: usersTotal, Page: in.Page, PageSize: in.PageSize}
 	for _, id := range userIDs {
 		if fu, ok := users[id]; ok {
 			out.Users = append(out.Users, fu)
 		}
 	}
-	timelineIDs, err := uc.d.Follows.FollowedTimelines(ctx, u.ID)
+	p := in.paging()
+	ts, timelinesTotal, err := uc.d.Timelines.List(ctx, TimelineFilter{FollowedBy: u.ID, ViewerID: in.ActorID, Limit: p.Limit, Offset: p.Offset})
 	if err != nil {
 		return FollowingView{}, err
 	}
-	ts := []domain.Timeline{}
-	for _, id := range timelineIDs {
-		t, err := uc.d.Timelines.ByID(ctx, id)
-		if err != nil {
-			if errors.Is(err, domain.ErrNotFound) {
-				continue
-			}
-			return FollowingView{}, err
-		}
-		if t.VisibleTo(in.ActorID) {
-			ts = append(ts, *t)
-		}
-	}
+	out.TimelinesTotal = timelinesTotal
 	if out.Timelines, err = timelineViews(ctx, uc.d, ts, in.ActorID); err != nil {
 		return FollowingView{}, err
 	}

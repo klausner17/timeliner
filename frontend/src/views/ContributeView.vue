@@ -41,12 +41,42 @@ const isOwner = computed(() => !!timeline.value && canEdit(timeline.value))
 const open = computed(() => timeline.value?.contributions === 'sugestoes')
 const loginPath = computed(() => `/entrar?next=${encodeURIComponent(route.fullPath)}`)
 
-/** Dono: a fila de sugestões. Outros: as próprias sugestões nesta timeline. */
+/** Dono: a fila de sugestões. Outros: as próprias sugestões nesta timeline. Vêm 20 por vez. */
 const suggestions = ref<Suggestion[]>([])
+const suggestionsTotal = ref(0)
+const suggestionsPage = ref(1)
+const loadingMore = ref(false)
+/** Pendentes na timeline toda (não só nas páginas carregadas). */
+const pendingTotal = ref(0)
+const SUGGESTION_PAGE = 20
+
+function fetchSuggestions(t: Timeline, page: number) {
+  const me = currentUser.value?.handle
+  if (canEdit(t)) return listSuggestions(t.slug, { page, pageSize: SUGGESTION_PAGE })
+  if (me) return listContributions(me, { timeline: t.slug, page, pageSize: SUGGESTION_PAGE })
+  return Promise.resolve({ items: [], page, pageSize: SUGGESTION_PAGE, total: 0 })
+}
+
+async function loadMoreSuggestions() {
+  const t = timeline.value
+  if (!t || loadingMore.value || suggestions.value.length >= suggestionsTotal.value) return
+  loadingMore.value = true
+  try {
+    const next = await fetchSuggestions(t, suggestionsPage.value + 1)
+    const seen = new Set(suggestions.value.map((x) => x.id))
+    suggestions.value = [...suggestions.value, ...next.items.filter((x) => !seen.has(x.id))]
+    suggestionsTotal.value = next.total
+    suggestionsPage.value++
+  } catch (e) {
+    reviewError.value = errorMessage(e, 'Não deu para carregar mais sugestões.')
+  } finally {
+    loadingMore.value = false
+  }
+}
 
 watch(
   [() => String(route.params.slug), () => currentUser.value?.handle],
-  async ([slug, me]) => {
+  async ([slug]) => {
     status.value = 'loading'
     try {
       const t = await getTimeline(slug)
@@ -55,8 +85,11 @@ watch(
         return
       }
       timeline.value = t
-      if (canEdit(t)) suggestions.value = await listSuggestions(slug)
-      else suggestions.value = me ? (await listContributions(me)).filter((s) => s.timeline.slug === slug) : []
+      const first = await fetchSuggestions(t, 1)
+      suggestions.value = first.items
+      suggestionsTotal.value = first.total
+      suggestionsPage.value = 1
+      pendingTotal.value = t.pendingSuggestions ?? 0
       status.value = 'ok'
     } catch (e) {
       statusError.value = errorMessage(e, 'Não deu para carregar as sugestões.')
@@ -165,6 +198,7 @@ async function submit() {
   try {
     const s = await suggest(timeline.value.slug, { kind: 'new_event', event: draft.value, note: form.note.trim() || undefined })
     suggestions.value = [s, ...suggestions.value]
+    suggestionsTotal.value++
     sent.value = s
     Object.assign(form, blank())
   } catch (e) {
@@ -180,7 +214,7 @@ async function submit() {
 
 // ---------- Revisão (dono) ----------
 
-const pendingCount = computed(() => suggestions.value.filter((s) => s.status === 'pendente').length)
+const pendingCount = computed(() => pendingTotal.value)
 
 const adjusting = ref<string>()
 const feedback = ref('')
@@ -193,6 +227,9 @@ async function act(id: string, call: () => Promise<Suggestion>) {
   reviewError.value = ''
   try {
     const s = await call()
+    const before = suggestions.value.find((x) => x.id === id)?.status
+    if (before === 'pendente' && s.status !== 'pendente') pendingTotal.value = Math.max(0, pendingTotal.value - 1)
+    if (before !== 'pendente' && s.status === 'pendente') pendingTotal.value++
     suggestions.value = suggestions.value.map((x) => (x.id === id ? s : x))
     return true
   } catch (e) {
@@ -353,6 +390,9 @@ const statusBadge: Record<SuggestionStatus, { label: string; tone: BadgeTone }> 
                 <TlBadge :tone="statusBadge[s.status].tone">{{ statusBadge[s.status].label }}</TlBadge>
               </li>
             </ul>
+            <TlButton v-if="suggestions.length < suggestionsTotal" size="sm" variant="ghost" :disabled="loadingMore" @click="loadMoreSuggestions">
+              {{ loadingMore ? 'Carregando…' : `Ver mais (${suggestionsTotal - suggestions.length})` }}
+            </TlButton>
           </TlCard>
         </aside>
       </div>
@@ -397,11 +437,23 @@ const statusBadge: Record<SuggestionStatus, { label: string; tone: BadgeTone }> 
           <TlButton variant="ghost" :disabled="busy === s.id" @click="undo(s.id)">Desfazer</TlButton>
         </div>
       </TlCard>
+      <div v-if="suggestions.length < suggestionsTotal" class="more">
+        <span>Mostrando {{ suggestions.length }} de {{ suggestionsTotal }}</span>
+        <TlButton :disabled="loadingMore" @click="loadMoreSuggestions">{{ loadingMore ? 'Carregando…' : 'Carregar mais' }}</TlButton>
+      </div>
     </section>
   </main>
 </template>
 
 <style scoped>
+.more {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--tl-space-3);
+  font-size: var(--tl-text-md);
+  color: var(--tl-color-text-muted);
+}
 .page {
   padding-top: var(--tl-space-7);
   padding-bottom: calc(var(--tl-space-8) * 2);

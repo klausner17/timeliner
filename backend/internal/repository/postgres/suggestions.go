@@ -3,10 +3,13 @@ package postgres
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 
 	"github.com/klausner17/timeliner/backend/internal/domain"
+	"github.com/klausner17/timeliner/backend/internal/usecase"
 )
 
 type suggestions struct{ *db }
@@ -70,22 +73,39 @@ func (r suggestions) ByID(ctx context.Context, id string) (*domain.Suggestion, e
 	return scanSuggestion(r.q(ctx).QueryRow(ctx, `SELECT `+suggestionCols+` FROM suggestions WHERE id=$1`, id))
 }
 
-func (r suggestions) ListByTimeline(ctx context.Context, timelineID string, status domain.SuggestionStatus) ([]domain.Suggestion, error) {
-	rows, err := r.q(ctx).Query(ctx, `SELECT `+suggestionCols+` FROM suggestions
-		WHERE timeline_id=$1 AND ($2 = '' OR status=$2) ORDER BY created_at DESC, id DESC`, timelineID, string(status))
-	if err != nil {
-		return nil, err
+func (r suggestions) List(ctx context.Context, f usecase.SuggestionFilter) ([]domain.Suggestion, int, error) {
+	where := []string{"true"}
+	args := []any{}
+	arg := func(v any) string {
+		args = append(args, v)
+		return fmt.Sprintf("$%d", len(args))
 	}
-	return collect(rows, scanSuggestion)
-}
-
-func (r suggestions) ListByAuthor(ctx context.Context, authorID string) ([]domain.Suggestion, error) {
-	rows, err := r.q(ctx).Query(ctx, `SELECT `+suggestionCols+` FROM suggestions
-		WHERE author_id=$1 ORDER BY created_at DESC, id DESC`, authorID)
-	if err != nil {
-		return nil, err
+	if f.TimelineID != "" {
+		where = append(where, "timeline_id="+arg(f.TimelineID))
 	}
-	return collect(rows, scanSuggestion)
+	if f.AuthorID != "" {
+		where = append(where, "author_id="+arg(f.AuthorID))
+	}
+	if f.Status != "" {
+		where = append(where, "status="+arg(string(f.Status)))
+	}
+	if f.ViewerID != "" {
+		v := arg(f.ViewerID)
+		where = append(where, `EXISTS (SELECT 1 FROM timelines t WHERE t.id=suggestions.timeline_id
+			AND ((NOT t.draft AND t.visibility<>'privada') OR t.owner_id=`+v+`))`)
+	}
+	cond := strings.Join(where, " AND ")
+	var total int
+	if err := r.q(ctx).QueryRow(ctx, `SELECT count(*) FROM suggestions WHERE `+cond, args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	rows, err := r.q(ctx).Query(ctx, `SELECT `+suggestionCols+` FROM suggestions WHERE `+cond+
+		` ORDER BY created_at DESC, id DESC LIMIT `+arg(f.Limit)+` OFFSET `+arg(f.Offset), args...)
+	if err != nil {
+		return nil, 0, err
+	}
+	ss, err := collect(rows, scanSuggestion)
+	return ss, total, err
 }
 
 func (r suggestions) ShiftYears(ctx context.Context, timelineIDs []string, shifts []domain.YearShift) error {

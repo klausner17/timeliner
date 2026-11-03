@@ -317,16 +317,25 @@ func (c *Controller) compare(w http.ResponseWriter, r *http.Request) {
 }
 
 func (c *Controller) listSavedComparisons(w http.ResponseWriter, r *http.Request) {
-	cs, err := c.uc.ListSavedComparisons.Execute(r.Context(), usecase.ActorInput{ActorID: actor(r)})
+	fields := map[string]string{}
+	in := usecase.ListSavedComparisonsInput{ActorID: actor(r), PageInput: pageInput(r, fields)}
+	if s := r.URL.Query().Get("timelines"); s != "" {
+		in.Timelines = strings.Split(s, ",")
+	}
+	if err := fieldsErr(fields); err != nil {
+		c.fail(w, r, err)
+		return
+	}
+	page, err := c.uc.ListSavedComparisons.Execute(r.Context(), in)
 	if err != nil {
 		c.fail(w, r, err)
 		return
 	}
-	out := make([]savedComparisonJSON, len(cs))
-	for i, s := range cs {
+	out := make([]savedComparisonJSON, len(page.Items))
+	for i, s := range page.Items {
 		out[i] = toSavedComparison(s)
 	}
-	writeJSON(w, http.StatusOK, itemsJSON[savedComparisonJSON]{out})
+	writeJSON(w, http.StatusOK, toPage(page, out))
 }
 
 func (c *Controller) saveComparison(w http.ResponseWriter, r *http.Request) {

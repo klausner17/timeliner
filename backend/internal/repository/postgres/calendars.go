@@ -7,6 +7,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/klausner17/timeliner/backend/internal/domain"
+	"github.com/klausner17/timeliner/backend/internal/usecase"
 )
 
 type calendars struct{ *db }
@@ -94,10 +95,16 @@ func (r calendars) ByIDs(ctx context.Context, ids []string) (map[string]domain.C
 	return out, nil
 }
 
-func (r calendars) Usable(ctx context.Context, userID, query string) ([]domain.Calendar, error) {
-	return r.list(ctx, `SELECT `+calendarCols+` FROM calendars
-		WHERE (shared OR ($1 <> '' AND owner_id = $1)) AND name ILIKE $2
-		ORDER BY lower(name), id`, userID, "%"+escapeLike(query)+"%")
+func (r calendars) Usable(ctx context.Context, userID, query string, p usecase.Paging) ([]domain.Calendar, int, error) {
+	const cond = `(shared OR ($1 <> '' AND owner_id = $1)) AND name ILIKE $2`
+	like := "%" + escapeLike(query) + "%"
+	var total int
+	if err := r.q(ctx).QueryRow(ctx, `SELECT count(*) FROM calendars WHERE `+cond, userID, like).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	cs, err := r.list(ctx, `SELECT `+calendarCols+` FROM calendars WHERE `+cond+`
+		ORDER BY lower(name), id LIMIT $3 OFFSET $4`, userID, like, p.Limit, p.Offset)
+	return cs, total, err
 }
 
 func (r calendars) InUse(ctx context.Context, id string) (bool, error) {

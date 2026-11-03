@@ -172,11 +172,24 @@ type ListSavedComparisons struct{ d *Deps }
 
 func NewListSavedComparisons(d *Deps) *ListSavedComparisons { return &ListSavedComparisons{d} }
 
-func (uc *ListSavedComparisons) Execute(ctx context.Context, in ActorInput) ([]domain.SavedComparison, error) {
+type ListSavedComparisonsInput struct {
+	ActorID string
+	// Timelines, se vier, procura só a comparação dessas timelines, nessa ordem.
+	Timelines []string
+	PageInput
+}
+
+func (uc *ListSavedComparisons) Execute(ctx context.Context, in ListSavedComparisonsInput) (Page[domain.SavedComparison], error) {
 	if err := requireActor(in.ActorID); err != nil {
-		return nil, err
+		return Page[domain.SavedComparison]{}, err
 	}
-	return uc.d.Comparisons.ListByUser(ctx, in.ActorID)
+	f := fieldErrors{}
+	in.normalize(f, 50, 100)
+	if err := f.err(); err != nil {
+		return Page[domain.SavedComparison]{}, err
+	}
+	cs, total, err := uc.d.Comparisons.ListByUser(ctx, in.ActorID, in.Timelines, in.paging())
+	return pageOf(cs, in.PageInput, total), err
 }
 
 type DeleteSavedComparisonInput struct {

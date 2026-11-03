@@ -106,8 +106,8 @@ func (r timelines) List(ctx context.Context, f usecase.TimelineFilter) ([]domain
 	}
 	switch {
 	case f.IncludeUnlisted:
-	case len(f.Slugs) > 0:
-		// Pedindo pelo slug, vale o mesmo que abrir a timeline: as de link também aparecem.
+	case len(f.Slugs) > 0 || f.FollowedBy != "":
+		// Pedindo pelo slug ou pelas seguidas, vale o mesmo que abrir a timeline: as de link também aparecem.
 		where = append(where, "((NOT t.draft AND t.visibility<>'privada') OR t.owner_id="+arg(f.ViewerID)+")")
 	case f.IncludeMine:
 		where = append(where, "((t.visibility='publica' AND NOT t.draft) OR t.owner_id="+arg(f.ViewerID)+")")
@@ -116,6 +116,9 @@ func (r timelines) List(ctx context.Context, f usecase.TimelineFilter) ([]domain
 	}
 	if len(f.Slugs) > 0 {
 		where = append(where, "t.slug = ANY("+arg(f.Slugs)+")")
+	}
+	if f.FollowedBy != "" {
+		where = append(where, "EXISTS (SELECT 1 FROM timeline_follows tf WHERE tf.timeline_id=t.id AND tf.user_id="+arg(f.FollowedBy)+")")
 	}
 	switch scale, fixed := strings.CutPrefix(f.Calendar, "escala:"); {
 	case f.Calendar == "":
@@ -153,7 +156,11 @@ func (r timelines) List(ctx context.Context, f usecase.TimelineFilter) ([]domain
 		return nil, 0, err
 	}
 	order := "t.created_at DESC, t.id"
-	if f.Sort == usecase.SortPopular {
+	switch {
+	case f.FollowedBy != "":
+		// As seguidas mais recentemente primeiro.
+		order = "(SELECT tf.id FROM timeline_follows tf WHERE tf.timeline_id=t.id AND tf.user_id=" + arg(f.FollowedBy) + ") DESC, " + order
+	case f.Sort == usecase.SortPopular:
 		order = "t.followers_count DESC, " + order
 	}
 	rows, err := r.q(ctx).Query(ctx, `SELECT `+timelineCols+` FROM timelines t WHERE `+cond+

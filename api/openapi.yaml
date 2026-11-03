@@ -357,18 +357,14 @@ paths:
         - name: status
           in: query
           schema: { $ref: '#/components/schemas/SuggestionStatus' }
+        - { $ref: '#/components/parameters/Page' }
+        - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
       responses:
         '200':
-          description: OK
+          description: OK (mais recentes primeiro)
           content:
             application/json:
-              schema:
-                type: object
-                required: [items]
-                properties:
-                  items:
-                    type: array
-                    items: { $ref: '#/components/schemas/Suggestion' }
+              schema: { $ref: '#/components/schemas/SuggestionPage' }
         '404': { $ref: '#/components/responses/NotFound' }
     post:
       tags: [suggestions]
@@ -482,14 +478,14 @@ paths:
       summary: Calendários que o usuário pode usar (os dele e os compartilhados), por nome
       parameters:
         - { name: q, in: query, schema: { type: string }, description: Filtra pelo nome }
+        - { $ref: '#/components/parameters/Page' }
+        - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
       responses:
         '200':
           description: OK
           content:
             application/json:
-              schema:
-                type: array
-                items: { $ref: '#/components/schemas/Calendar' }
+              schema: { $ref: '#/components/schemas/CalendarPage' }
     post:
       tags: [calendars]
       summary: Cria um calendário ficcional
@@ -585,18 +581,16 @@ paths:
     get:
       tags: [compare]
       summary: Comparações salvas do usuário logado (mais recentes primeiro)
+      parameters:
+        - { name: timelines, in: query, schema: { type: string }, description: 'Slugs separados por vírgula: só a comparação dessas timelines, nessa ordem' }
+        - { $ref: '#/components/parameters/Page' }
+        - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
       responses:
         '200':
           description: OK
           content:
             application/json:
-              schema:
-                type: object
-                required: [items]
-                properties:
-                  items:
-                    type: array
-                    items: { $ref: '#/components/schemas/SavedComparison' }
+              schema: { $ref: '#/components/schemas/SavedComparisonPage' }
         '401': { $ref: '#/components/responses/Unauthorized' }
     post:
       tags: [compare]
@@ -666,7 +660,10 @@ paths:
     get:
       tags: [users]
       security: []
-      summary: O que o usuário segue
+      summary: O que o usuário segue, os seguidos mais recentes primeiro (a página vale para as duas listas)
+      parameters:
+        - { $ref: '#/components/parameters/Page' }
+        - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
       responses:
         '200':
           description: OK
@@ -674,7 +671,7 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [users, timelines]
+                required: [users, timelines, usersTotal, timelinesTotal, page, pageSize]
                 properties:
                   users:
                     type: array
@@ -682,6 +679,10 @@ paths:
                   timelines:
                     type: array
                     items: { $ref: '#/components/schemas/Timeline' }
+                  usersTotal: { type: integer }
+                  timelinesTotal: { type: integer }
+                  page: { type: integer }
+                  pageSize: { type: integer }
         '404': { $ref: '#/components/responses/NotFound' }
 
   /users/{handle}/contributions:
@@ -690,19 +691,17 @@ paths:
     get:
       tags: [users]
       security: []
-      summary: Sugestões enviadas pelo usuário (aba de contribuições do perfil)
+      summary: Sugestões enviadas pelo usuário (aba de contribuições do perfil), mais recentes primeiro
+      parameters:
+        - { name: timeline, in: query, schema: { type: string }, description: Slug; só as sugestões nessa timeline }
+        - { $ref: '#/components/parameters/Page' }
+        - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
       responses:
         '200':
           description: OK
           content:
             application/json:
-              schema:
-                type: object
-                required: [items]
-                properties:
-                  items:
-                    type: array
-                    items: { $ref: '#/components/schemas/Suggestion' }
+              schema: { $ref: '#/components/schemas/SuggestionPage' }
         '404': { $ref: '#/components/responses/NotFound' }
 
   /tags:
@@ -1038,6 +1037,39 @@ components:
         items:
           type: array
           items: { $ref: '#/components/schemas/Timeline' }
+        page: { type: integer }
+        pageSize: { type: integer }
+        total: { type: integer }
+
+    SuggestionPage:
+      type: object
+      required: [items, page, pageSize, total]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Suggestion' }
+        page: { type: integer }
+        pageSize: { type: integer }
+        total: { type: integer }
+
+    CalendarPage:
+      type: object
+      required: [items, page, pageSize, total]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Calendar' }
+        page: { type: integer }
+        pageSize: { type: integer }
+        total: { type: integer }
+
+    SavedComparisonPage:
+      type: object
+      required: [items, page, pageSize, total]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/SavedComparison' }
         page: { type: integer }
         pageSize: { type: integer }
         total: { type: integer }

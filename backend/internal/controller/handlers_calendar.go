@@ -64,16 +64,22 @@ func calendarRef(r *http.Request) usecase.CalendarRefInput {
 }
 
 func (c *Controller) listCalendars(w http.ResponseWriter, r *http.Request) {
-	vs, err := c.uc.ListCalendars.Execute(r.Context(), usecase.ListCalendarsInput{ActorID: actor(r), Query: r.URL.Query().Get("q")})
+	fields := map[string]string{}
+	in := usecase.ListCalendarsInput{ActorID: actor(r), Query: r.URL.Query().Get("q"), PageInput: pageInput(r, fields)}
+	if err := fieldsErr(fields); err != nil {
+		c.fail(w, r, err)
+		return
+	}
+	page, err := c.uc.ListCalendars.Execute(r.Context(), in)
 	if err != nil {
 		c.fail(w, r, err)
 		return
 	}
-	out := make([]calendarJSON, len(vs))
-	for i, v := range vs {
+	out := make([]calendarJSON, len(page.Items))
+	for i, v := range page.Items {
 		out[i] = toCalendar(v)
 	}
-	writeJSON(w, http.StatusOK, out)
+	writeJSON(w, http.StatusOK, toPage(page, out))
 }
 
 func (c *Controller) createCalendar(w http.ResponseWriter, r *http.Request) {

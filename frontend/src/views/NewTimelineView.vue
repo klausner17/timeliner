@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { TlButton, TlCard, TlCheckbox, TlField, TlInput, TlSegmented, TlSelect } from '@/design-system'
 import { ApiError, errorMessage } from '@/data/api'
@@ -25,24 +25,51 @@ watch(fixed, (on) => {
 // ---------- Mundo ficcional: um calendário existente ou um novo ----------
 
 const NEW = '__novo'
+// Os calendários compartilhados crescem com o site: a lista vem do servidor, 50 por vez,
+// e a busca pelo nome acha os que não couberam.
+const CALENDAR_PAGE = 50
 const calendars = ref<Calendar[]>()
+const calendarTotal = ref(0)
 const calendarError = ref('')
+const calendarSearch = ref('')
+/** O calendário escolhido continua nas opções mesmo se a busca não o trouxer. */
+const picked = ref<Calendar>()
 const fictional = computed(() => form.world === 'ficcional')
-watch(fictional, async (on) => {
-  if (on && form.category === 'História') form.category = 'Ficção'
-  if (!on || calendars.value) return
+let calendarSeq = 0
+async function loadCalendars(q: string) {
+  const id = ++calendarSeq
   try {
-    calendars.value = await listCalendars()
-    form.calendar = calendars.value[0]?.id ?? NEW
+    const page = await listCalendars({ q: q || undefined, pageSize: CALENDAR_PAGE })
+    if (id !== calendarSeq) return
+    calendars.value = page.items
+    calendarTotal.value = page.total
+    calendarError.value = ''
+    if (!form.calendar) form.calendar = page.items[0]?.id ?? NEW
   } catch (e) {
-    calendarError.value = errorMessage(e, 'Não deu para carregar os calendários.')
+    if (id === calendarSeq) calendarError.value = errorMessage(e, 'Não deu para carregar os calendários.')
   }
+}
+watch(fictional, (on) => {
+  if (on && form.category === 'História') form.category = 'Ficção'
+  if (on && !calendars.value) void loadCalendars('')
 })
-const calendarOptions = computed(() => [
-  ...(calendars.value ?? []).map((c) => ({ value: c.id, label: c.shared ? `${c.name} (de @${c.owner})` : c.name })),
-  { value: NEW, label: 'Criar um calendário novo…' },
-])
-const chosen = computed(() => calendars.value?.find((c) => c.id === form.calendar))
+let searchTimer: ReturnType<typeof setTimeout> | undefined
+watch(calendarSearch, (q) => {
+  clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => loadCalendars(q.trim()), 250)
+})
+onBeforeUnmount(() => clearTimeout(searchTimer))
+const calendarLabel = (c: Calendar) => (c.shared ? `${c.name} (de @${c.owner})` : c.name)
+const calendarOptions = computed(() => {
+  const list = calendars.value ?? []
+  const extra = picked.value && !list.some((c) => c.id === picked.value!.id) ? [picked.value] : []
+  return [...extra, ...list].map((c) => ({ value: c.id, label: calendarLabel(c) })).concat({ value: NEW, label: 'Criar um calendário novo…' })
+})
+const chosen = computed(() => calendars.value?.find((c) => c.id === form.calendar) ?? (picked.value?.id === form.calendar ? picked.value : undefined))
+watch(chosen, (c) => {
+  if (c) picked.value = c
+})
+const moreCalendars = computed(() => calendarTotal.value - (calendars.value?.length ?? 0))
 const newCalendar = reactive({ name: '', shared: false, eras: [eraRow()] as EraRow[] })
 
 async function calendarId(): Promise<string | undefined> {
@@ -108,9 +135,15 @@ async function submit() {
       </template>
       <template v-if="fictional">
         <p v-if="calendarError" class="page__error" role="alert">{{ calendarError }}</p>
-        <TlField v-else v-slot="{ id, describedby }" label="Calendário" hint="Como os anos são contados nesse mundo. Timelines do mesmo calendário podem ser comparadas.">
-          <TlSelect :id="id" v-model="form.calendar" :options="calendarOptions" :aria-describedby="describedby" />
-        </TlField>
+        <template v-else>
+          <TlField v-if="calendarTotal > CALENDAR_PAGE || calendarSearch" v-slot="{ id }" label="Buscar calendário">
+            <TlInput :id="id" v-model="calendarSearch" type="search" placeholder="Pelo nome: Terra-média, Westeros…" />
+          </TlField>
+          <TlField v-slot="{ id, describedby }" label="Calendário" hint="Como os anos são contados nesse mundo. Timelines do mesmo calendário podem ser comparadas.">
+            <TlSelect :id="id" v-model="form.calendar" :options="calendarOptions" :aria-describedby="describedby" />
+          </TlField>
+          <p v-if="moreCalendars > 0" class="page__note">Mostrando {{ calendars?.length }} de {{ calendarTotal }}. Busque pelo nome para achar os outros.</p>
+        </template>
         <p v-if="chosen" class="page__note">{{ chosen.eras.map((e) => `${e.name} (${e.abbr})`).join(' · ') }}</p>
         <div v-if="form.calendar === NEW" class="page__calendar">
           <TlField v-slot="{ id, describedby, invalid }" label="Nome do calendário" :error="fields.calendarName">

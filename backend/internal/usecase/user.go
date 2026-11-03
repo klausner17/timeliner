@@ -93,14 +93,36 @@ type ListContributions struct{ d *Deps }
 
 func NewListContributions(d *Deps) *ListContributions { return &ListContributions{d} }
 
-func (uc *ListContributions) Execute(ctx context.Context, in HandleInput) ([]SuggestionView, error) {
+type ListContributionsInput struct {
+	ActorID string
+	Handle  string
+	// Slug, se vier, deixa só as sugestões nessa timeline.
+	Slug string
+	PageInput
+}
+
+func (uc *ListContributions) Execute(ctx context.Context, in ListContributionsInput) (Page[SuggestionView], error) {
+	f := fieldErrors{}
+	in.normalize(f, 50, 100)
+	if err := f.err(); err != nil {
+		return Page[SuggestionView]{}, err
+	}
 	u, err := uc.d.Users.ByHandle(ctx, in.Handle)
 	if err != nil {
-		return nil, notFound(err, "Usuário não encontrado.")
+		return Page[SuggestionView]{}, notFound(err, "Usuário não encontrado.")
 	}
-	ss, err := uc.d.Suggestions.ListByAuthor(ctx, u.ID)
+	filter := SuggestionFilter{AuthorID: u.ID, ViewerID: in.ActorID, Paging: in.paging()}
+	if in.Slug != "" {
+		t, err := visibleTimeline(ctx, uc.d, in.Slug, in.ActorID)
+		if err != nil {
+			return Page[SuggestionView]{}, err
+		}
+		filter.TimelineID = t.ID
+	}
+	ss, total, err := uc.d.Suggestions.List(ctx, filter)
 	if err != nil {
-		return nil, err
+		return Page[SuggestionView]{}, err
 	}
-	return suggestionViews(ctx, uc.d, ss, in.ActorID)
+	vs, err := suggestionViews(ctx, uc.d, ss, in.ActorID)
+	return pageOf(vs, in.PageInput, total), err
 }
