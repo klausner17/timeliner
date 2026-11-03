@@ -31,6 +31,33 @@ func (uc *FollowTimeline) Execute(ctx context.Context, in FollowTimelineInput) (
 	return Empty{}, uc.d.Follows.UnfollowTimeline(ctx, in.ActorID, t.ID)
 }
 
+type FavoriteTimelineInput struct {
+	ActorID string
+	Slug    string
+	// Favorite false tira a estrela.
+	Favorite bool
+}
+
+// FavoriteTimeline dá ou tira a estrela. É como ler: vale para quem ainda não confirmou o
+// e-mail e para as próprias timelines.
+type FavoriteTimeline struct{ d *Deps }
+
+func NewFavoriteTimeline(d *Deps) *FavoriteTimeline { return &FavoriteTimeline{d} }
+
+func (uc *FavoriteTimeline) Execute(ctx context.Context, in FavoriteTimelineInput) (Empty, error) {
+	if err := requireActor(in.ActorID); err != nil {
+		return Empty{}, err
+	}
+	t, err := visibleTimeline(ctx, uc.d, in.Slug, in.ActorID)
+	if err != nil {
+		return Empty{}, err
+	}
+	if in.Favorite {
+		return Empty{}, uc.d.Follows.FavoriteTimeline(ctx, in.ActorID, t.ID)
+	}
+	return Empty{}, uc.d.Follows.UnfavoriteTimeline(ctx, in.ActorID, t.ID)
+}
+
 type FollowUserInput struct {
 	ActorID string
 	Handle  string

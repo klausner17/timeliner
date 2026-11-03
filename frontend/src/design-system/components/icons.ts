@@ -14,6 +14,8 @@ const defs = {
   up: { viewBox: '0 0 16 16', paths: ['M4 10l4-4 4 4'] },
   down: { viewBox: '0 0 16 16', paths: ['M4 6l4 4 4-4'] },
   search: { viewBox: '0 0 18 18', paths: ['M8 14A6 6 0 1 0 8 2a6 6 0 0 0 0 12z', 'M16 16l-3.5-3.5'] },
+  star: { viewBox: '0 0 16 16', paths: ['M8 1.8l1.9 3.9 4.3.6-3.1 3 .7 4.3L8 11.6l-3.8 2 .7-4.3-3.1-3 4.3-.6z'] },
+  'star-filled': { viewBox: '0 0 16 16', fill: true, paths: ['M8 1.8l1.9 3.9 4.3.6-3.1 3 .7 4.3L8 11.6l-3.8 2 .7-4.3-3.1-3 4.3-.6z'] },
   check: { viewBox: '0 0 16 16', paths: ['M3 8.5l3.5 3.5L13 4.5'] },
   close: { viewBox: '0 0 16 16', paths: ['M4 4l8 8', 'M12 4l-8 8'] },
   edit: { viewBox: '0 0 18 18', paths: ['M12 3l3 3-8.5 8.5H3.5v-3z'] },

@@ -96,6 +96,9 @@ type TimelineFilter struct {
 	// FollowedBy restringe às timelines que esse usuário segue, as seguidas mais
 	// recentemente primeiro. Como Slugs, vale tudo que ViewerID pode abrir.
 	FollowedBy string
+	// FavoritedBy restringe às favoritas desse usuário, as favoritadas mais recentemente
+	// primeiro. Vale tudo que ViewerID pode abrir, como FollowedBy.
+	FavoritedBy string
 	// Calendar restringe a um calendário: CalendarGregorian, "escala:<escala>" para as fixas
 	// ou o ID de um calendário ficcional. Vazio não filtra.
 	Calendar string
@@ -201,6 +204,10 @@ type FollowRepository interface {
 	// FollowedUsers devolve uma página de IDs, os seguidos mais recentes primeiro, e o total.
 	// As timelines seguidas vêm de TimelineRepository.List com FollowedBy.
 	FollowedUsers(ctx context.Context, userID string, p Paging) ([]string, int, error)
+	// FavoriteTimeline e UnfavoriteTimeline marcam e desmarcam a estrela. São idempotentes.
+	// As favoritas vêm de TimelineRepository.List com FavoritedBy.
+	FavoriteTimeline(ctx context.Context, userID, timelineID string) error
+	UnfavoriteTimeline(ctx context.Context, userID, timelineID string) error
 }
 
 type ComparisonRepository interface {

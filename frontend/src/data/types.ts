@@ -167,6 +167,10 @@ export type Timeline = {
   pendingSuggestions: number
   followers: number
   following: boolean
+  /** Quantas pessoas deram estrela; ordena o "Populares". */
+  favorites: number
+  /** Se o usuário logado deu estrela (false sem login). */
+  favorited: boolean
   /** Posições de 0 a 100 dos eventos no eixo, para o TlMiniTrack. */
   points: number[]
   createdAt: string

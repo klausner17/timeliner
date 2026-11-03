@@ -35,6 +35,7 @@ import {
 } from '@/data/store'
 import { suggestionKindLabel, type Profile, type SavedComparison, type SuggestionStatus, type Timeline, type User } from '@/data/types'
 import { copyLink, monthYear, timeAgo } from '@/lib/format'
+import { useFavorite } from '@/lib/useFavorite'
 import { usePages } from '@/lib/usePaged'
 
 const route = useRoute()
@@ -52,6 +53,10 @@ const handle = () => currentUser.value?.handle ?? ''
 const mineP = usePages((page) => listTimelines({ owner: 'me', pageSize: PAGE, sort: 'recent', page }), (t) => t.slug)
 const contribP = usePages((page) => listContributions(handle(), { page, pageSize: PAGE }), (s) => s.id)
 const savedP = usePages((page) => listSavedComparisons({ page, pageSize: PAGE }), (c) => c.id)
+const favP = usePages((page) => listTimelines({ favoritedBy: handle(), pageSize: PAGE, page }), (t) => t.slug)
+const favorites = favP.items
+// Tirar a estrela aqui não some com o cartão: dá para voltar atrás.
+const { toggle: toggleFavorite, busy: favBusy } = useFavorite((msg) => (statusError.value = msg))
 const followingPage = (page: number) => listFollowing(handle(), { page, pageSize: PAGE })
 const followedTimelinesP = usePages(
   (page) => followingPage(page).then((f) => ({ items: f.timelines, total: f.timelinesTotal, page: f.page, pageSize: f.pageSize })),
@@ -91,17 +96,19 @@ watch(
     if (!handle) return
     status.value = 'loading'
     try {
-      const [p, own, contrib, saved, following] = await Promise.all([
+      const [p, own, contrib, saved, following, favs] = await Promise.all([
         getProfile(handle),
         listTimelines({ owner: 'me', pageSize: PAGE, sort: 'recent' }),
         listContributions(handle, { pageSize: PAGE }),
         listSavedComparisons({ pageSize: PAGE }),
         listFollowing(handle, { pageSize: PAGE }),
+        listTimelines({ favoritedBy: handle, pageSize: PAGE }),
       ])
       profile.value = p
       mineP.reset(own)
       contribP.reset(contrib)
       savedP.reset(saved)
+      favP.reset(favs)
       followedTimelinesP.reset({ items: following.timelines, total: following.timelinesTotal, page: 1, pageSize: PAGE })
       unfollowed.clear()
       followingNow.value = new Set()
@@ -130,7 +137,7 @@ async function timelinesFor(saved: SavedComparison[], known: Map<string, Timelin
 // As timelines das comparações salvas: as que já vieram nas outras listas, e o resto numa chamada.
 watch(comparisonsRaw, async (saved) => {
   const known = new Map(titles.value)
-  for (const t of [...mine.value, ...followedTimelines.value]) known.set(t.slug, t)
+  for (const t of [...mine.value, ...followedTimelines.value, ...favorites.value]) known.set(t.slug, t)
   titles.value = await timelinesFor(saved, known)
 })
 
@@ -138,6 +145,7 @@ const tabs = computed<Tab[]>(() => [
   { value: 'timelines', label: 'Timelines', count: mineTotal.value },
   { value: 'contribuicoes', label: 'Contribuições', count: contribP.total.value },
   { value: 'comparacoes', label: 'Comparações salvas', count: savedP.total.value },
+  { value: 'favoritas', label: 'Favoritas', count: favP.total.value },
   { value: 'seguindo', label: 'Seguindo', count: followUsersP.total.value - unfollowedCount.value + followedTimelinesP.total.value },
 ])
 const tab = computed({
@@ -370,6 +378,32 @@ async function share() {
               <TlButton :disabled="savedP.loading.value" @click="more(savedP.loadMore)">{{ savedP.loading.value ? 'Carregando…' : 'Carregar mais' }}</TlButton>
             </div>
             <TlCard v-if="!comparisons.length && !savedP.hasMore.value" tone="muted">Nenhuma comparação salva. Monte uma em Comparar e use “Salvar comparação”.</TlCard>
+          </template>
+
+          <template v-else-if="tab === 'favoritas'">
+            <div v-if="favorites.length" class="grid">
+              <TlTimelineCard
+                v-for="t in favorites"
+                :key="t.slug"
+                :to="`/t/${t.slug}`"
+                :title="t.title"
+                :color="t.color"
+                :points="t.points"
+                :range="rangeLabel(t)"
+                :events="t.eventCount"
+                :contributors="t.contributorCount"
+                :author="handleLabel(t.owner.handle)"
+                :favorites="t.favorites"
+                :favorited="t.favorited"
+                :favorite-busy="favBusy.has(t.slug)"
+                @favorite="toggleFavorite(t)"
+              />
+              <div v-if="favP.hasMore.value" class="more">
+                <span class="more__count">Mostrando {{ favorites.length }} de {{ favP.total.value }}</span>
+                <TlButton :disabled="favP.loading.value" @click="more(favP.loadMore)">{{ favP.loading.value ? 'Carregando…' : 'Carregar mais' }}</TlButton>
+              </div>
+            </div>
+            <TlCard v-else tone="muted">Nenhuma favorita ainda. Toque na estrela de uma timeline para guardá-la aqui e ajudar ela a subir em Populares.</TlCard>
           </template>
 
           <template v-else>

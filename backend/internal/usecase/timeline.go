@@ -26,8 +26,11 @@ type ListTimelinesInput struct {
 	// Calendar é o filtro de calendário (ver TimelineFilter.Calendar).
 	Calendar   string
 	WithEvents bool
-	Page       int
-	PageSize   int
+	// FavoritedBy é o handle de quem favoritou: lista as favoritas dele, as mais recentes
+	// primeiro, todas as que o viewer pode abrir.
+	FavoritedBy string
+	Page        int
+	PageSize    int
 }
 
 type TimelinePage struct {
@@ -74,6 +77,16 @@ func (uc *ListTimelines) Execute(ctx context.Context, in ListTimelinesInput) (Ti
 		OnlyOpen: in.OnlyOpen, Sort: in.Sort, Limit: in.PageSize, Offset: (in.Page - 1) * in.PageSize,
 		ViewerID: in.ActorID, IncludeMine: in.IncludeMine && in.ActorID != "", Slugs: slugs,
 		Calendar: in.Calendar, WithEvents: in.WithEvents,
+	}
+	if in.FavoritedBy != "" {
+		u, err := uc.d.Users.ByHandle(ctx, in.FavoritedBy)
+		if err != nil {
+			if errors.Is(err, domain.ErrNotFound) {
+				return TimelinePage{Items: []TimelineView{}, Page: in.Page, PageSize: in.PageSize}, nil
+			}
+			return TimelinePage{}, err
+		}
+		filter.FavoritedBy = u.ID
 	}
 	switch {
 	case in.OwnerHandle == "me":

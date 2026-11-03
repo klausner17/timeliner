@@ -278,6 +278,21 @@ func TestTimelineSuggestionCompareFlow(t *testing.T) {
 	}
 	a.want(a.do("GET", "/api/users/beto/contributions", "", nil), 200)
 
+	a.want(a.do("POST", "/api/timelines/escandalos/favorite", "", nil), 401)
+	a.want(a.do("POST", "/api/timelines/escandalos/favorite", beto, nil), 204)
+	fav := a.want(a.do("GET", "/api/timelines/escandalos", beto, nil), 200)
+	if fav.Body["favorites"] != 1.0 || fav.Body["favorited"] != true {
+		t.Fatalf("favorita = %s", fav.Raw)
+	}
+	favs := a.want(a.do("GET", "/api/timelines?favoritedBy=beto", "", nil), 200)
+	if items := favs.Body["items"].([]any); len(items) != 1 || items[0].(map[string]any)["slug"] != "escandalos" {
+		t.Fatalf("favoritas = %s", favs.Raw)
+	}
+	a.want(a.do("DELETE", "/api/timelines/escandalos/favorite", beto, nil), 204)
+	if fav = a.want(a.do("GET", "/api/timelines/escandalos", beto, nil), 200); fav.Body["favorites"] != 0.0 || fav.Body["favorited"] != false {
+		t.Fatalf("sem estrela = %s", fav.Raw)
+	}
+
 	a.want(a.do("DELETE", "/api/timelines/escandalos", beto, nil), 403)
 	a.want(a.do("DELETE", "/api/timelines/escandalos", ana, nil), 204)
 	a.want(a.do("GET", "/api/timelines/escandalos", ana, nil), 404)
@@ -438,6 +453,7 @@ func TestUnverifiedCannotCreateContent(t *testing.T) {
 	}
 	a.want(a.do("PATCH", "/api/me", token, map[string]any{"tint": "neutral"}), 200)
 	a.want(a.do("POST", "/api/timelines/escandalos/follow", token, nil), 204)
+	a.want(a.do("POST", "/api/timelines/escandalos/favorite", token, nil), 204)
 
 	a.want(a.do("POST", "/api/auth/verify-email", "", map[string]any{"token": a.box.verifyToken(t, "robo@exemplo.com")}), 200)
 	a.want(a.do("POST", "/api/timelines", token, map[string]any{"title": "Agora vai", "category": "Política"}), 201)

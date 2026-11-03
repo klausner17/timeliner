@@ -10,6 +10,7 @@ import {
   TlCompareTracks,
   TlDrawer,
   TlEventItem,
+  TlFavoriteButton,
   TlOverviewBar,
   TlSegmented,
   clampWindow,
@@ -41,6 +42,7 @@ import {
 import type { TimelineDetail, TimelineEvent, TimelinePage } from '@/data/types'
 import type { EventWindow } from '@/data/windowing'
 import { copyLink, dateLabel, detailedDateLabel, timeAgo, yearLabel } from '@/lib/format'
+import { useFavorite } from '@/lib/useFavorite'
 import { useLatest } from '@/lib/useLatest'
 import { overviewTicksFor, yearFormatOf } from '@/lib/calendar'
 import { reckoningOf, scaleName } from '@/lib/scale'
@@ -275,6 +277,11 @@ async function toggleFollow() {
   }
 }
 
+const { toggle: toggleFavorite, busy: favBusy } = useFavorite((msg) => {
+  shareMsg.value = msg
+  setTimeout(() => (shareMsg.value = ''), 2500)
+})
+
 const relatedColors = ['b', 'c', 'd'] as const
 
 // ---------- Tela cheia: usa a API do navegador e, sem ela, ocupa a janela ----------
@@ -360,6 +367,7 @@ async function share() {
             </TlButton>
             <TlButton :to="{ path: '/comparar', query: { a: timeline.slug } }" icon="compare">Comparar com…</TlButton>
             <TlButton v-if="timeline.eventCount" :to="presentLink" icon="play">Apresentar</TlButton>
+            <TlFavoriteButton :count="timeline.favorites" :on="timeline.favorited" :disabled="favBusy.has(timeline.slug)" @toggle="toggleFavorite(timeline)" />
             <TlButton v-if="!mine" :aria-pressed="following" :disabled="followBusy" @click="toggleFollow">
               {{ following ? 'Seguindo' : 'Seguir' }}
             </TlButton>

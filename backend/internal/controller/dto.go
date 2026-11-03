@@ -101,6 +101,8 @@ type timelineJSON struct {
 	PendingSuggestions int                     `json:"pendingSuggestions"`
 	Followers          int                     `json:"followers"`
 	Following          bool                    `json:"following"`
+	Favorites          int                     `json:"favorites"`
+	Favorited          bool                    `json:"favorited"`
 	Points             []float64               `json:"points"`
 	CreatedAt          time.Time               `json:"createdAt"`
 	UpdatedAt          time.Time               `json:"updatedAt"`
@@ -131,6 +133,7 @@ func toTimeline(v usecase.TimelineView) timelineJSON {
 		Eras: eras, Tags: tags, StartYear: v.Stats.StartYear, EndYear: v.Stats.EndYear,
 		EventCount: v.Stats.EventCount, ContributorCount: v.Stats.ContributorCount,
 		PendingSuggestions: v.Stats.PendingSuggestions, Followers: v.Stats.Followers, Following: v.Stats.Following,
+		Favorites: v.Stats.Favorites, Favorited: v.Stats.Favorited,
 		Points: v.Points, CreatedAt: t.CreatedAt, UpdatedAt: t.UpdatedAt,
 	}
 }

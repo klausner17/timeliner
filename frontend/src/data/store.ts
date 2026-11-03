@@ -204,6 +204,8 @@ export type TimelineQuery = {
   calendar?: string
   /** Só as que têm eventos. */
   withEvents?: boolean
+  /** Handle: só as favoritas dessa pessoa, as favoritadas por último primeiro. */
+  favoritedBy?: string
   page?: number
   pageSize?: number
 }
@@ -233,6 +235,10 @@ export const deleteTimeline = (slug: string) => del(`/timelines/${slug}`)
 
 export function followTimeline(slug: string, on: boolean) {
   return on ? post<void>(`/timelines/${slug}/follow`) : del(`/timelines/${slug}/follow`)
+}
+
+export function favoriteTimeline(slug: string, on: boolean) {
+  return on ? post<void>(`/timelines/${slug}/favorite`) : del(`/timelines/${slug}/favorite`)
 }
 
 export async function listTags(): Promise<{ tag: string; count: number }[]> {

@@ -24,6 +24,14 @@ func (r follows) UnfollowTimeline(ctx context.Context, u, t string) error {
 	return r.exec(ctx, `DELETE FROM timeline_follows WHERE user_id=$1 AND timeline_id=$2`, u, t)
 }
 
+func (r follows) FavoriteTimeline(ctx context.Context, u, t string) error {
+	return r.exec(ctx, `INSERT INTO timeline_favorites (user_id, timeline_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`, u, t)
+}
+
+func (r follows) UnfavoriteTimeline(ctx context.Context, u, t string) error {
+	return r.exec(ctx, `DELETE FROM timeline_favorites WHERE user_id=$1 AND timeline_id=$2`, u, t)
+}
+
 func (r follows) FollowUser(ctx context.Context, a, b string) error {
 	return r.exec(ctx, `INSERT INTO user_follows (follower_id, followed_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`, a, b)
 }

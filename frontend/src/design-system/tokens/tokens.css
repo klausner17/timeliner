@@ -37,6 +37,9 @@
   --tl-color-warning-strong: #9a3412;
   --tl-color-warning-soft: #fdf0e9;
   --tl-color-neutral-soft: #f1f2f5;
+  /* Estrela de favorito: âmbar, longe do azul e do laranja das trilhas. */
+  --tl-color-favorite: #d97706;
+  --tl-color-favorite-soft: #fef6e4;
   --tl-color-focus: #3b4fd8;
 
   /* ---------- Cores: trilhas de timeline ---------- */

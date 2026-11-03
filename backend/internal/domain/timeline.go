@@ -163,13 +163,16 @@ func (t *Timeline) VisibleTo(userID string) bool {
 // Listed diz se a timeline aparece no explorar para quem não é o dono.
 func (t *Timeline) Listed() bool { return !t.Draft && t.Visibility == VisibilityPublic }
 
-// TimelineStats são os números calculados a partir de eventos, sugestões e seguidores.
+// TimelineStats são os números calculados a partir de eventos, sugestões, seguidores e favoritos.
 type TimelineStats struct {
 	EventCount         int
 	ContributorCount   int
 	PendingSuggestions int
 	Followers          int
 	Following          bool
+	// Favorites é quantas pessoas deram estrela; Favorited diz se quem está vendo deu.
+	Favorites int
+	Favorited bool
 	// Positions são as posições distintas dos anos de início no eixo StartYear–EndYear,
 	// em milésimos (0 a 1000) e em ordem. Ficam no máximo 1001 valores, por maior que
 	// seja a timeline.
