@@ -68,7 +68,7 @@ Ainda sem backend: os dados vêm de `frontend/src/data/mock.ts` e ficam num stor
 | `/nova` | Cria um rascunho e abre o editor |
 | `/comparar?a=&b=&de=&ate=` | Comparar até 4 timelines no mesmo eixo |
 | `/perfil` | Perfil com timelines, contribuições, comparações salvas e quem você segue |
-| `/design-system` | Vitrine do design system |
+| `/design-system` | Vitrine do design system (só em `npm run dev`, fora do build de produção) |
 
 O usuário logado é fixo (`@klausner`) até existir login.
 
@@ -81,7 +81,7 @@ Tudo fica em `frontend/src/design-system/` e é importado por `@/design-system`:
 - `tokens/index.ts`: catálogo dos tokens e o tipo `TrackColor` (`'a' | 'b' | 'c' | 'd'`).
 - `components/`: componentes `Tl*`.
 
-A vitrine com todos os tokens e componentes está em `/design-system` (`frontend/src/views/DesignSystemView.vue`).
+A vitrine com todos os tokens e componentes está em `/design-system` (`frontend/src/views/DesignSystemView.vue`), disponível só com `npm run dev`; o build de produção não inclui essa página.
 
 ### Regras
 

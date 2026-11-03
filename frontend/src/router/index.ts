@@ -31,7 +31,10 @@ export const router = createRouter({
     { path: '/esqueci-senha', name: 'forgot-password', component: () => import('@/views/ForgotPasswordView.vue'), meta: { guest: true } },
     { path: '/redefinir-senha', name: 'reset-password', component: () => import('@/views/ResetPasswordView.vue') },
     { path: '/confirmar-email', name: 'verify-email', component: () => import('@/views/VerifyEmailView.vue') },
-    { path: '/design-system', name: 'design-system', component: () => import('@/views/DesignSystemView.vue'), meta: { bare: true } },
+    // Vitrine do design system: só no `npm run dev`, fica fora do build de produção.
+    ...(import.meta.env.DEV
+      ? [{ path: '/design-system', name: 'design-system', component: () => import('@/views/DesignSystemView.vue'), meta: { bare: true } }]
+      : []),
     { path: '/:rest(.*)*', name: 'not-found', component: () => import('@/views/NotFoundView.vue') },
   ],
   scrollBehavior(to, from, saved) {
