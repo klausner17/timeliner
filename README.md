@@ -36,7 +36,8 @@ Em desenvolvimento, o Vite repassa `/api` para `http://localhost:8080`, então o
 ### Com Docker
 
 ```bash
-docker compose up --build   # http://localhost:8000
+docker compose up --build              # http://localhost:8000
+docker compose --profile dev up --build  # idem, criando o usuário de dev
 docker compose down         # para tudo (com -v apaga também o banco)
 ```
 
@@ -44,13 +45,15 @@ O `docker-compose.yml` da raiz sobe três serviços:
 
 | Serviço | Imagem | Porta no host |
 | --- | --- | --- |
-| `postgres` | `postgres:16-alpine`, usuário, senha e banco `timeliner`, dados no volume `pgdata` | 5432 |
-| `backend` | `backend/Dockerfile`, a API em Go; roda as migrations ao subir | 8080 |
+| `postgres` | `postgres:16-alpine`, usuário, senha e banco `timeliner`, dados no volume `pgdata` | 127.0.0.1:5432 |
+| `backend` | `backend/Dockerfile`, a API em Go; roda as migrations ao subir | 127.0.0.1:8080 |
 | `frontend` | `frontend/Dockerfile`, o build do Vue servido pelo nginx, que repassa `/api` para o backend | 8000 |
 
-O serviço `seed` cria o usuário de dev `klausner` (login `klausner17@gmail.com`, senha `timeliner123`) pela API na primeira subida.
+O serviço `seed` cria o usuário de dev `klausner` (login `klausner@gmail.com`, senha `timeliner123`) pela API. Ele só sobe com `--profile dev`, para não criar em produção uma conta com senha conhecida.
 
-As portas do host mudam com `POSTGRES_PORT`, `BACKEND_PORT` e `FRONTEND_PORT`. Para rodar só o banco e usar `go run`/`npm run dev` na máquina: `docker compose up -d postgres`.
+As portas do host mudam com `POSTGRES_PORT`, `BACKEND_PORT` e `FRONTEND_PORT`. O banco e a API só aceitam conexões da própria máquina (`127.0.0.1`); `POSTGRES_BIND=0.0.0.0` ou `BACKEND_BIND=0.0.0.0` abrem para a rede. A API não deve ficar alcançável sem passar pelo nginx, porque confia no IP que ele informa.
+
+Se houver outro proxy na frente do nginx (o do domínio, por exemplo), defina `REAL_IP_FROM` no serviço `frontend` com a rede desse proxy (ex.: `172.16.0.0/12` para um proxy no host do Docker). Sem isso, todo acesso parece vir do IP do proxy e os limites por IP de cadastro, login e "esqueci a senha" valem para o site inteiro de uma vez. O nginx também manda cabeçalhos de segurança (CSP, `X-Frame-Options`, `nosniff`), em `frontend/security-headers.inc`. Para rodar só o banco e usar `go run`/`npm run dev` na máquina: `docker compose up -d postgres`.
 
 ## Telas
 

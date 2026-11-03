@@ -794,7 +794,7 @@ func (r suggestions) List(_ context.Context, f usecase.SuggestionFilter) ([]doma
 		return (f.TimelineID == "" || s.TimelineID == f.TimelineID) &&
 			(f.AuthorID == "" || s.AuthorID == f.AuthorID) &&
 			(f.Status == "" || s.Status == f.Status) &&
-			(f.ViewerID == "" || (ok && t.VisibleTo(f.ViewerID)))
+			((f.ViewerID == "" && !f.OnlyVisible) || (ok && t.VisibleTo(f.ViewerID)))
 	})
 	page, total := paginate(out, f.Paging)
 	return page, total, nil

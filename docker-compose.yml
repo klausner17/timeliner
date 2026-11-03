@@ -1,5 +1,6 @@
 # Sobe o Timeliner inteiro: Postgres, API em Go e frontend servido pelo nginx.
 # Uso: docker compose up --build  ->  http://localhost:8000
+# Usuário de dev (seed): docker compose --profile dev up --build
 services:
   postgres:
     image: postgres:16-alpine
@@ -7,8 +8,10 @@ services:
       POSTGRES_USER: timeliner
       POSTGRES_PASSWORD: timeliner
       POSTGRES_DB: timeliner
+    # Só na própria máquina: o Docker publica portas por cima do firewall, e a senha
+    # do banco aqui é a de dev. POSTGRES_BIND=0.0.0.0 abre para a rede.
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "${POSTGRES_BIND:-127.0.0.1}:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -26,8 +29,10 @@ services:
       APP_URL: ${APP_URL:-http://localhost:8000}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       EMAIL_FROM: ${EMAIL_FROM:-Timeliner <onboarding@resend.dev>}
+    # Só na própria máquina: a API confia no X-Real-IP posto pelo nginx, então quem
+    # chegasse direto nela poderia inventar o IP e passar dos limites de cadastro e login.
     ports:
-      - "${BACKEND_PORT:-8080}:8080"
+      - "${BACKEND_BIND:-127.0.0.1}:${BACKEND_PORT:-8080}:8080"
     depends_on:
       postgres:
         condition: service_healthy
@@ -49,9 +54,11 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  # Cria o usuário de dev (klausner17@gmail.com / timeliner123) pela API, uma vez.
-  # Se o usuário já existir, o cadastro falha e o serviço só avisa.
+  # Cria o usuário de dev (klausner@gmail.com / timeliner123) pela API, uma vez.
+  # Se o usuário já existir, o cadastro falha e o serviço só avisa. Só sobe com
+  # --profile dev, para nunca criar uma conta de senha conhecida em produção.
   seed:
+    profiles: ["dev"]
     image: alpine:3.22
     depends_on:
       backend:

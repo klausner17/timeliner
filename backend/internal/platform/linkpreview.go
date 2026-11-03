@@ -31,6 +31,9 @@ const (
 	previewFailTTL   = 15 * time.Minute
 	previewCacheSize = 2000
 	previewUserAgent = "Mozilla/5.0 (compatible; TimelinerBot/1.0; +prévia de links)"
+	// previewMaxFetches é quantas páginas o servidor busca ao mesmo tempo, somando todos
+	// os pedidos: quem cria eventos com muitos links diferentes não multiplica o tráfego.
+	previewMaxFetches = 8
 )
 
 var errBlockedAddress = errors.New("endereço de rede interno")
@@ -43,6 +46,7 @@ type LinkPreviews struct {
 	client  *http.Client
 	domains domainSet
 	group   singleflight.Group
+	slots   chan struct{}
 
 	mu    sync.Mutex
 	cache map[string]previewEntry
@@ -99,7 +103,7 @@ func NewLinkPreviews(domains []string, allowPrivate bool) *LinkPreviews {
 			return nil
 		},
 	}
-	return &LinkPreviews{client: client, domains: allowed, cache: map[string]previewEntry{}, now: time.Now}
+	return &LinkPreviews{client: client, domains: allowed, slots: make(chan struct{}, previewMaxFetches), cache: map[string]previewEntry{}, now: time.Now}
 }
 
 // publicAddr diz se o IP é da internet pública.
@@ -117,6 +121,13 @@ func (l *LinkPreviews) Preview(ctx context.Context, rawURL string) (domain.LinkP
 		// A busca não para se quem pediu desistir: o resultado ainda vai para o cache.
 		fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), previewTimeout)
 		defer cancel()
+		// Sem vaga dentro do prazo: desiste sem guardar, para tentar de novo depois.
+		select {
+		case l.slots <- struct{}{}:
+			defer func() { <-l.slots }()
+		case <-fctx.Done():
+			return previewEntry{err: errors.New("muitas prévias ao mesmo tempo"), exp: l.now()}, nil
+		}
 		p, err := l.fetch(fctx, rawURL)
 		ttl := previewTTL
 		if err != nil {

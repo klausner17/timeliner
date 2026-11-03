@@ -59,6 +59,9 @@ type SuggestionFilter struct {
 	Status     domain.SuggestionStatus
 	// ViewerID deixa só as sugestões em timelines que ele pode abrir.
 	ViewerID string
+	// OnlyVisible aplica o filtro de ViewerID mesmo sem login (ViewerID vazio):
+	// assim quem não entrou só conta as sugestões em timelines públicas ou de link.
+	OnlyVisible bool
 	Paging
 }
 
