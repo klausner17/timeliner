@@ -86,12 +86,19 @@ func (c *Controller) getProfile(w http.ResponseWriter, r *http.Request) {
 }
 
 func (c *Controller) listContributions(w http.ResponseWriter, r *http.Request) {
-	vs, err := c.uc.ListContributions.Execute(r.Context(), handleInput(r))
+	h := handleInput(r)
+	fields := map[string]string{}
+	in := usecase.ListContributionsInput{ActorID: h.ActorID, Handle: h.Handle, Slug: r.URL.Query().Get("timeline"), PageInput: pageInput(r, fields)}
+	if err := fieldsErr(fields); err != nil {
+		c.fail(w, r, err)
+		return
+	}
+	page, err := c.uc.ListContributions.Execute(r.Context(), in)
 	if err != nil {
 		c.fail(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, itemsJSON[suggestionJSON]{toSuggestions(vs)})
+	writeJSON(w, http.StatusOK, toPage(page, toSuggestions(page.Items)))
 }
 
 func (c *Controller) followUser(follow bool) http.HandlerFunc {
@@ -106,12 +113,22 @@ func (c *Controller) followUser(follow bool) http.HandlerFunc {
 }
 
 func (c *Controller) listFollowing(w http.ResponseWriter, r *http.Request) {
-	v, err := c.uc.ListFollowing.Execute(r.Context(), handleInput(r))
+	h := handleInput(r)
+	fields := map[string]string{}
+	in := usecase.ListFollowingInput{ActorID: h.ActorID, Handle: h.Handle, PageInput: pageInput(r, fields)}
+	if err := fieldsErr(fields); err != nil {
+		c.fail(w, r, err)
+		return
+	}
+	v, err := c.uc.ListFollowing.Execute(r.Context(), in)
 	if err != nil {
 		c.fail(w, r, err)
 		return
 	}
-	out := followingJSON{Users: make([]userSummaryJSON, len(v.Users)), Timelines: toTimelines(v.Timelines)}
+	out := followingJSON{
+		Users: make([]userSummaryJSON, len(v.Users)), Timelines: toTimelines(v.Timelines),
+		UsersTotal: v.UsersTotal, TimelinesTotal: v.TimelinesTotal, Page: v.Page, PageSize: v.PageSize,
+	}
 	for i, u := range v.Users {
 		out.Users[i] = toUserSummary(u)
 	}

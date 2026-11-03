@@ -6,6 +6,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/klausner17/timeliner/backend/internal/domain"
+	"github.com/klausner17/timeliner/backend/internal/usecase"
 )
 
 type follows struct{ *db }
@@ -13,14 +14,6 @@ type follows struct{ *db }
 func (r follows) exec(ctx context.Context, sql string, args ...any) error {
 	_, err := r.q(ctx).Exec(ctx, sql, args...)
 	return translate(err)
-}
-
-func (r follows) ids(ctx context.Context, sql, id string) ([]string, error) {
-	rows, err := r.q(ctx).Query(ctx, sql, id)
-	if err != nil {
-		return nil, err
-	}
-	return pgx.CollectRows(rows, pgx.RowTo[string])
 }
 
 func (r follows) FollowTimeline(ctx context.Context, u, t string) error {
@@ -39,12 +32,17 @@ func (r follows) UnfollowUser(ctx context.Context, a, b string) error {
 	return r.exec(ctx, `DELETE FROM user_follows WHERE follower_id=$1 AND followed_id=$2`, a, b)
 }
 
-func (r follows) FollowedTimelines(ctx context.Context, u string) ([]string, error) {
-	return r.ids(ctx, `SELECT timeline_id FROM timeline_follows WHERE user_id=$1 ORDER BY id DESC`, u)
-}
-
-func (r follows) FollowedUsers(ctx context.Context, u string) ([]string, error) {
-	return r.ids(ctx, `SELECT followed_id FROM user_follows WHERE follower_id=$1 ORDER BY id DESC`, u)
+func (r follows) FollowedUsers(ctx context.Context, u string, p usecase.Paging) ([]string, int, error) {
+	var total int
+	if err := r.q(ctx).QueryRow(ctx, `SELECT count(*) FROM user_follows WHERE follower_id=$1`, u).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	rows, err := r.q(ctx).Query(ctx, `SELECT followed_id FROM user_follows WHERE follower_id=$1 ORDER BY id DESC LIMIT $2 OFFSET $3`, u, p.Limit, p.Offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	ids, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	return ids, total, err
 }
 
 type comparisons struct{ *db }
@@ -55,16 +53,25 @@ func (r comparisons) Create(ctx context.Context, c *domain.SavedComparison) erro
 	return translate(err)
 }
 
-func (r comparisons) ListByUser(ctx context.Context, userID string) ([]domain.SavedComparison, error) {
-	rows, err := r.q(ctx).Query(ctx, `SELECT id, user_id, slugs, start_year, end_year, created_at
-		FROM saved_comparisons WHERE user_id=$1 ORDER BY created_at DESC, id DESC`, userID)
-	if err != nil {
-		return nil, err
+func (r comparisons) ListByUser(ctx context.Context, userID string, slugs []string, p usecase.Paging) ([]domain.SavedComparison, int, error) {
+	cond := `user_id=$1 AND (cardinality($2::text[]) = 0 OR slugs = $2::text[])`
+	if slugs == nil {
+		slugs = []string{}
 	}
-	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (domain.SavedComparison, error) {
+	var total int
+	if err := r.q(ctx).QueryRow(ctx, `SELECT count(*) FROM saved_comparisons WHERE `+cond, userID, slugs).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	rows, err := r.q(ctx).Query(ctx, `SELECT id, user_id, slugs, start_year, end_year, created_at
+		FROM saved_comparisons WHERE `+cond+` ORDER BY created_at DESC, id DESC LIMIT $3 OFFSET $4`, userID, slugs, p.Limit, p.Offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	cs, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (domain.SavedComparison, error) {
 		var c domain.SavedComparison
 		return c, row.Scan(&c.ID, &c.UserID, &c.Slugs, &c.Start, &c.End, &c.CreatedAt)
 	})
+	return cs, total, err
 }
 
 func (r comparisons) Delete(ctx context.Context, id, userID string) error {

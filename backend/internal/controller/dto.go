@@ -378,12 +378,28 @@ type tagJSON struct {
 }
 
 type followingJSON struct {
-	Users     []userSummaryJSON `json:"users"`
-	Timelines []timelineJSON    `json:"timelines"`
+	Users          []userSummaryJSON `json:"users"`
+	Timelines      []timelineJSON    `json:"timelines"`
+	UsersTotal     int               `json:"usersTotal"`
+	TimelinesTotal int               `json:"timelinesTotal"`
+	Page           int               `json:"page"`
+	PageSize       int               `json:"pageSize"`
 }
 
 type itemsJSON[T any] struct {
 	Items []T `json:"items"`
+}
+
+// pageJSON é uma página no formato de TimelinePage: items, page, pageSize e total.
+type pageJSON[T any] struct {
+	Items    []T `json:"items"`
+	Page     int `json:"page"`
+	PageSize int `json:"pageSize"`
+	Total    int `json:"total"`
+}
+
+func toPage[V, T any](p usecase.Page[V], items []T) pageJSON[T] {
+	return pageJSON[T]{Items: items, Page: p.Page, PageSize: p.PageSize, Total: p.Total}
 }
 
 // linkPreviewJSON é o LinkPreview do contrato; campos que a página não tem vêm vazios.

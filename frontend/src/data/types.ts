@@ -193,7 +193,9 @@ export type TimelineInput = {
 
 export type TimelinePatch = Partial<Omit<TimelineInput, 'calendarId' | 'scale'>>
 
-export type TimelinePage = { items: Timeline[]; page: number; pageSize: number; total: number }
+/** Uma página de uma lista paginada no servidor. */
+export type PageOf<T> = { items: T[]; page: number; pageSize: number; total: number }
+export type TimelinePage = PageOf<Timeline>
 
 export type SuggestionStatus = 'pendente' | 'aprovada' | 'recusada' | 'ajuste'
 export type SuggestionKind = 'new_event' | 'description_fix' | 'date_fix'

@@ -245,6 +245,7 @@ func (r timelines) List(_ context.Context, f usecase.TimelineFilter) ([]domain.T
 		switch {
 		case !f.IncludeUnlisted && !visibleInList(t, f),
 			len(f.Slugs) > 0 && !slices.Contains(f.Slugs, t.Slug),
+			f.FollowedBy != "" && r.timelineFollows[f.FollowedBy+"|"+t.ID] == 0,
 			!inCalendar(t, f.Calendar),
 			f.WithEvents && !r.hasEvents(t.ID),
 			f.OwnerID != "" && t.OwnerID != f.OwnerID,
@@ -261,6 +262,9 @@ func (r timelines) List(_ context.Context, f usecase.TimelineFilter) ([]domain.T
 		followers[k[strings.Index(k, "|")+1:]]++
 	}
 	slices.SortFunc(matched, func(a, b domain.Timeline) int {
+		if f.FollowedBy != "" {
+			return cmp.Compare(r.timelineFollows[f.FollowedBy+"|"+b.ID], r.timelineFollows[f.FollowedBy+"|"+a.ID])
+		}
 		if f.Sort == usecase.SortPopular {
 			if c := cmp.Compare(followers[b.ID], followers[a.ID]); c != 0 {
 				return c
@@ -279,7 +283,7 @@ func (r timelines) List(_ context.Context, f usecase.TimelineFilter) ([]domain.T
 
 func visibleInList(t domain.Timeline, f usecase.TimelineFilter) bool {
 	switch {
-	case len(f.Slugs) > 0:
+	case len(f.Slugs) > 0, f.FollowedBy != "":
 		return t.VisibleTo(f.ViewerID)
 	case f.IncludeMine:
 		return t.Listed() || t.OwnerID == f.ViewerID
@@ -623,7 +627,7 @@ func (r calendars) ByIDs(_ context.Context, ids []string) (map[string]domain.Cal
 	return out, nil
 }
 
-func (r calendars) Usable(_ context.Context, userID, query string) ([]domain.Calendar, error) {
+func (r calendars) Usable(_ context.Context, userID, query string, p usecase.Paging) ([]domain.Calendar, int, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	q := strings.ToLower(query)
@@ -636,7 +640,16 @@ func (r calendars) Usable(_ context.Context, userID, query string) ([]domain.Cal
 	slices.SortFunc(out, func(a, b domain.Calendar) int {
 		return cmp.Or(cmp.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name)), cmp.Compare(a.ID, b.ID))
 	})
-	return out, nil
+	page, total := paginate(out, p)
+	return page, total, nil
+}
+
+// paginate corta a página pedida e devolve o total antes do corte.
+func paginate[T any](items []T, p usecase.Paging) ([]T, int) {
+	total := len(items)
+	lo := min(p.Offset, total)
+	hi := min(lo+p.Limit, total)
+	return items[lo:hi], total
 }
 
 func (r calendars) InUse(_ context.Context, id string) (bool, error) {
@@ -720,14 +733,16 @@ func (r suggestions) list(match func(domain.Suggestion) bool) []domain.Suggestio
 	return out
 }
 
-func (r suggestions) ListByTimeline(_ context.Context, timelineID string, status domain.SuggestionStatus) ([]domain.Suggestion, error) {
-	return r.list(func(s domain.Suggestion) bool {
-		return s.TimelineID == timelineID && (status == "" || s.Status == status)
-	}), nil
-}
-
-func (r suggestions) ListByAuthor(_ context.Context, authorID string) ([]domain.Suggestion, error) {
-	return r.list(func(s domain.Suggestion) bool { return s.AuthorID == authorID }), nil
+func (r suggestions) List(_ context.Context, f usecase.SuggestionFilter) ([]domain.Suggestion, int, error) {
+	out := r.list(func(s domain.Suggestion) bool {
+		t, ok := r.timelines[s.TimelineID]
+		return (f.TimelineID == "" || s.TimelineID == f.TimelineID) &&
+			(f.AuthorID == "" || s.AuthorID == f.AuthorID) &&
+			(f.Status == "" || s.Status == f.Status) &&
+			(f.ViewerID == "" || (ok && t.VisibleTo(f.ViewerID)))
+	})
+	page, total := paginate(out, f.Paging)
+	return page, total, nil
 }
 
 // Follows
@@ -782,11 +797,9 @@ func (r follows) FollowUser(_ context.Context, a, b string) error { return r.add
 func (r follows) UnfollowUser(_ context.Context, a, b string) error {
 	return r.remove(r.userFollows, a, b)
 }
-func (r follows) FollowedTimelines(_ context.Context, u string) ([]string, error) {
-	return r.followed(r.timelineFollows, u), nil
-}
-func (r follows) FollowedUsers(_ context.Context, u string) ([]string, error) {
-	return r.followed(r.userFollows, u), nil
+func (r follows) FollowedUsers(_ context.Context, u string, p usecase.Paging) ([]string, int, error) {
+	page, total := paginate(r.followed(r.userFollows, u), p)
+	return page, total, nil
 }
 
 // Comparisons
@@ -800,19 +813,20 @@ func (r comparisons) Create(_ context.Context, c *domain.SavedComparison) error 
 	return nil
 }
 
-func (r comparisons) ListByUser(_ context.Context, userID string) ([]domain.SavedComparison, error) {
+func (r comparisons) ListByUser(_ context.Context, userID string, slugs []string, p usecase.Paging) ([]domain.SavedComparison, int, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	out := []domain.SavedComparison{}
 	for _, c := range r.comparisons {
-		if c.UserID == userID {
+		if c.UserID == userID && (len(slugs) == 0 || slices.Equal(c.Slugs, slugs)) {
 			out = append(out, c)
 		}
 	}
 	slices.SortFunc(out, func(a, b domain.SavedComparison) int {
 		return cmp.Or(b.CreatedAt.Compare(a.CreatedAt), cmp.Compare(b.ID, a.ID))
 	})
-	return out, nil
+	page, total := paginate(out, p)
+	return page, total, nil
 }
 
 func (r comparisons) Delete(_ context.Context, id, userID string) error {

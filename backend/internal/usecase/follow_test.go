@@ -28,8 +28,8 @@ func TestFollow(t *testing.T) {
 	if tl.Stats.Followers != 1 || !tl.Stats.Following {
 		t.Fatalf("timeline = %+v", tl.Stats)
 	}
-	following := must[usecase.FollowingView](t)(usecase.NewListFollowing(d).Execute(ctx, usecase.HandleInput{Handle: "beto"}))
-	if len(following.Users) != 1 || len(following.Timelines) != 1 {
+	following := must[usecase.FollowingView](t)(usecase.NewListFollowing(d).Execute(ctx, usecase.ListFollowingInput{Handle: "beto"}))
+	if len(following.Users) != 1 || len(following.Timelines) != 1 || following.UsersTotal != 1 || following.TimelinesTotal != 1 {
 		t.Fatalf("seguindo = %+v", following)
 	}
 

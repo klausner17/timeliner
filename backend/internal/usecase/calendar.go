@@ -130,6 +130,7 @@ func (uc *CreateCalendar) Execute(ctx context.Context, in CreateCalendarInput) (
 type ListCalendarsInput struct {
 	ActorID string
 	Query   string
+	PageInput
 }
 
 // ListCalendars devolve os calendários que o usuário pode usar: os dele e os compartilhados.
@@ -137,12 +138,18 @@ type ListCalendars struct{ d *Deps }
 
 func NewListCalendars(d *Deps) *ListCalendars { return &ListCalendars{d} }
 
-func (uc *ListCalendars) Execute(ctx context.Context, in ListCalendarsInput) ([]CalendarView, error) {
-	cs, err := uc.d.Calendars.Usable(ctx, in.ActorID, strings.TrimSpace(in.Query))
-	if err != nil {
-		return nil, err
+func (uc *ListCalendars) Execute(ctx context.Context, in ListCalendarsInput) (Page[CalendarView], error) {
+	f := fieldErrors{}
+	in.normalize(f, 50, 100)
+	if err := f.err(); err != nil {
+		return Page[CalendarView]{}, err
 	}
-	return calendarViews(ctx, uc.d, cs)
+	cs, total, err := uc.d.Calendars.Usable(ctx, in.ActorID, strings.TrimSpace(in.Query), in.paging())
+	if err != nil {
+		return Page[CalendarView]{}, err
+	}
+	vs, err := calendarViews(ctx, uc.d, cs)
+	return pageOf(vs, in.PageInput, total), err
 }
 
 type CalendarRefInput struct {

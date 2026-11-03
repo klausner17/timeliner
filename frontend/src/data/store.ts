@@ -10,10 +10,12 @@ import type {
   EventInput,
   EventPatch,
   LinkPreview,
+  PageOf,
   Profile,
   SavedComparison,
   Suggestion,
   SuggestionKind,
+  SuggestionStatus,
   Timeline,
   TimelineDetail,
   TimelineEvent,
@@ -201,16 +203,6 @@ export async function loadEvents(slug: string, opts: { from?: number; to?: numbe
 }
 
 /** Todos os eventos, página a página (editor). */
-export async function loadAllEvents(slug: string): Promise<TimelineEvent[]> {
-  const out: TimelineEvent[] = []
-  let cursor: string | null = null
-  do {
-    const page: EventPage = await loadEvents(slug, { cursor, limit: 500 })
-    out.push(...page.items)
-    cursor = page.nextCursor
-  } while (cursor)
-  return out
-}
 
 /** GET /timelines/{slug}/summary: os eventos do trecho, ou faixas de anos se forem muitos. */
 export async function loadSummary(slug: string, opts: WindowOptions & { from?: number; to?: number } = {}): Promise<EventWindow> {
@@ -250,8 +242,9 @@ export async function loadComparison(slugs: string[], start: number, end: number
   return { ...c, lanes: c.lanes.map((l) => ({ ...cleanWindow(l), id: l.id, name: l.name, color: l.color, timeline: cleanTimeline(l.timeline) })) }
 }
 
-export async function listSavedComparisons(): Promise<SavedComparison[]> {
-  return (await get<{ items: SavedComparison[] }>('/me/comparisons')).items
+/** Comparações salvas, as mais recentes primeiro. timelines procura só a dessas timelines, nessa ordem. */
+export function listSavedComparisons(opts: { timelines?: string[]; page?: number; pageSize?: number } = {}): Promise<PageOf<SavedComparison>> {
+  return get<PageOf<SavedComparison>>('/me/comparisons', { timelines: opts.timelines?.join(','), page: opts.page, pageSize: opts.pageSize })
 }
 
 export const saveComparison = (timelines: string[], start: number, end: number) => post<SavedComparison>('/me/comparisons', { timelines, start, end })
@@ -260,8 +253,9 @@ export const deleteSavedComparison = (id: string) => del(`/me/comparisons/${id}`
 // ---------- Calendários ----------
 
 /** Os calendários do usuário e os compartilhados, por nome. */
-export async function listCalendars(q?: string): Promise<Calendar[]> {
-  return (await get<Calendar[]>('/calendars', { q })).map(cleanCalendar)
+export async function listCalendars(opts: { q?: string; page?: number; pageSize?: number } = {}): Promise<PageOf<Calendar>> {
+  const page = await get<PageOf<Calendar>>('/calendars', opts)
+  return { ...page, items: page.items.map(cleanCalendar) }
 }
 
 export const getCalendar = async (id: string) => cleanCalendar(await get<Calendar>(`/calendars/${encodeURIComponent(id)}`))
@@ -271,8 +265,9 @@ export const deleteCalendar = (id: string) => del(`/calendars/${encodeURICompone
 
 // ---------- Sugestões ----------
 
-export async function listSuggestions(slug: string): Promise<Suggestion[]> {
-  return (await get<{ items: Nullable<Suggestion>[] }>(`/timelines/${slug}/suggestions`)).items.map(cleanSuggestion)
+export async function listSuggestions(slug: string, opts: { status?: SuggestionStatus; page?: number; pageSize?: number } = {}): Promise<PageOf<Suggestion>> {
+  const page = await get<PageOf<Nullable<Suggestion>>>(`/timelines/${slug}/suggestions`, opts)
+  return { ...page, items: page.items.map(cleanSuggestion) }
 }
 
 export async function suggest(slug: string, input: { kind: SuggestionKind; event: EventInput; eventId?: string; note?: string }): Promise<Suggestion> {
@@ -292,13 +287,18 @@ export async function reopenSuggestion(id: string): Promise<Suggestion> {
 
 export const getProfile = (handle: string) => get<Profile>(`/users/${handle}`)
 
-export async function listFollowing(handle: string): Promise<{ users: UserSummary[]; timelines: Timeline[] }> {
-  const out = await get<{ users: UserSummary[]; timelines: Timeline[] }>(`/users/${handle}/following`)
-  return { users: out.users, timelines: out.timelines.map(cleanTimeline) }
+export type Following = { users: UserSummary[]; timelines: Timeline[]; usersTotal: number; timelinesTotal: number; page: number; pageSize: number }
+
+/** O que a pessoa segue; a mesma página vale para as pessoas e as timelines. */
+export async function listFollowing(handle: string, opts: { page?: number; pageSize?: number } = {}): Promise<Following> {
+  const out = await get<Following>(`/users/${handle}/following`, opts)
+  return { ...out, timelines: out.timelines.map(cleanTimeline) }
 }
 
-export async function listContributions(handle: string): Promise<Suggestion[]> {
-  return (await get<{ items: Nullable<Suggestion>[] }>(`/users/${handle}/contributions`)).items.map(cleanSuggestion)
+/** Sugestões enviadas pela pessoa; timeline (slug) deixa só as de uma timeline. */
+export async function listContributions(handle: string, opts: { timeline?: string; page?: number; pageSize?: number } = {}): Promise<PageOf<Suggestion>> {
+  const page = await get<PageOf<Nullable<Suggestion>>>(`/users/${handle}/contributions`, opts)
+  return { ...page, items: page.items.map(cleanSuggestion) }
 }
 
 export function followUser(handle: string, on: boolean) {

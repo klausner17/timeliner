@@ -70,16 +70,22 @@ func TestCalendarSharing(t *testing.T) {
 	private := createCalendar(t, d, ana.ID, false)
 	shared := createCalendar(t, d, ana.ID, true)
 
-	list := must[[]usecase.CalendarView](t)(usecase.NewListCalendars(d).Execute(ctx, usecase.ListCalendarsInput{ActorID: bia.ID}))
+	list := must[usecase.Page[usecase.CalendarView]](t)(usecase.NewListCalendars(d).Execute(ctx, usecase.ListCalendarsInput{ActorID: bia.ID})).Items
 	if len(list) != 1 || list[0].Calendar.ID != shared.Calendar.ID {
 		t.Fatalf("bia vê %v", list)
 	}
-	if list := must[[]usecase.CalendarView](t)(usecase.NewListCalendars(d).Execute(ctx, usecase.ListCalendarsInput{ActorID: ana.ID})); len(list) != 2 {
-		t.Fatalf("ana vê %d", len(list))
+	if p := must[usecase.Page[usecase.CalendarView]](t)(usecase.NewListCalendars(d).Execute(ctx, usecase.ListCalendarsInput{ActorID: ana.ID})); len(p.Items) != 2 || p.Total != 2 {
+		t.Fatalf("ana vê %d", len(p.Items))
 	}
+	p := must[usecase.Page[usecase.CalendarView]](t)(usecase.NewListCalendars(d).Execute(ctx, usecase.ListCalendarsInput{ActorID: ana.ID, PageInput: usecase.PageInput{Page: 2, PageSize: 1}}))
+	if len(p.Items) != 1 || p.Total != 2 || p.Page != 2 {
+		t.Fatalf("página 2 = %+v", p)
+	}
+	_, err := usecase.NewListCalendars(d).Execute(ctx, usecase.ListCalendarsInput{ActorID: ana.ID, PageInput: usecase.PageInput{PageSize: 500}})
+	wantKind(t, err, domain.KindValidation)
 
 	// Calendário privado de outra pessoa não serve para criar timeline.
-	_, err := createFictional(t, d, bia.ID, "Gondor", private.Calendar.ID)
+	_, err = createFictional(t, d, bia.ID, "Gondor", private.Calendar.ID)
 	wantKind(t, err, domain.KindValidation)
 	tl := must[usecase.TimelineDetailView](t)(createFictional(t, d, bia.ID, "Gondor", shared.Calendar.ID))
 	if tl.Calendar == nil || tl.Calendar.ID != shared.Calendar.ID {
@@ -170,7 +176,7 @@ func TestCalendarChangeMovesContent(t *testing.T) {
 	if p := tlAfter.Timeline.Eras[0]; p.Start != newTA-1 || *p.End != newTA {
 		t.Errorf("período = %d–%d", p.Start, *p.End)
 	}
-	ss := must[[]usecase.SuggestionView](t)(usecase.NewListSuggestions(d).Execute(ctx, usecase.ListSuggestionsInput{ActorID: bia.ID, Slug: "anel"}))
+	ss := must[usecase.Page[usecase.SuggestionView]](t)(usecase.NewListSuggestions(d).Execute(ctx, usecase.ListSuggestionsInput{ActorID: bia.ID, Slug: "anel"})).Items
 	if ss[0].Suggestion.Proposed.Year != newTA {
 		t.Errorf("sugestão = %d", ss[0].Suggestion.Proposed.Year)
 	}

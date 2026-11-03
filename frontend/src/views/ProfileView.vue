@@ -31,8 +31,9 @@ import {
   rangeLabel,
   updateMe,
 } from '@/data/store'
-import { suggestionKindLabel, type Profile, type SavedComparison, type Suggestion, type SuggestionStatus, type Timeline, type User, type UserSummary } from '@/data/types'
+import { suggestionKindLabel, type Profile, type SavedComparison, type SuggestionStatus, type Timeline, type User } from '@/data/types'
 import { copyLink, monthYear, timeAgo } from '@/lib/format'
+import { usePages } from '@/lib/usePaged'
 
 const route = useRoute()
 const router = useRouter()
@@ -43,18 +44,44 @@ const me = computed(() => currentUser.value as User)
 const status = ref<'loading' | 'ok' | 'error'>('loading')
 const statusError = ref('')
 const profile = shallowRef<Profile>()
-const mine = shallowRef<Timeline[]>([])
-const mineTotal = ref(0)
-const minePage = ref(1)
-const mineLoading = ref(false)
-const MINE_PAGE = 24
-const contributions = shallowRef<Suggestion[]>([])
-const comparisonsRaw = shallowRef<SavedComparison[]>([])
+// Cada aba vem do servidor uma página por vez, com "Carregar mais".
+const PAGE = 24
+const handle = () => currentUser.value?.handle ?? ''
+const mineP = usePages((page) => listTimelines({ owner: 'me', pageSize: PAGE, sort: 'recent', page }), (t) => t.slug)
+const contribP = usePages((page) => listContributions(handle(), { page, pageSize: PAGE }), (s) => s.id)
+const savedP = usePages((page) => listSavedComparisons({ page, pageSize: PAGE }), (c) => c.id)
+const followingPage = (page: number) => listFollowing(handle(), { page, pageSize: PAGE })
+const followedTimelinesP = usePages(
+  (page) => followingPage(page).then((f) => ({ items: f.timelines, total: f.timelinesTotal, page: f.page, pageSize: f.pageSize })),
+  (t) => t.slug,
+)
+const followUsersP = usePages(
+  (page) => followingPage(page).then((f) => ({ items: f.users, total: f.usersTotal, page: f.page, pageSize: f.pageSize })),
+  (u) => u.handle,
+)
+const mine = mineP.items
+const mineTotal = mineP.total
+const contributions = contribP.items
+const comparisonsRaw = savedP.items
 const titles = shallowRef(new Map<string, Timeline>())
-const followedTimelines = shallowRef<Timeline[]>([])
+const followedTimelines = followedTimelinesP.items
 // Quem a pessoa segue, mais quem ela deixou de seguir nesta visita (para poder voltar atrás).
-const followList = ref<UserSummary[]>([])
+const followList = followUsersP.items
 const followingNow = ref(new Set<string>())
+watch(followList, (us) => {
+  const next = new Set(followingNow.value)
+  for (const u of us) if (!unfollowed.has(u.handle)) next.add(u.handle)
+  followingNow.value = next
+})
+const unfollowed = new Set<string>()
+
+async function more(load: () => Promise<void>) {
+  try {
+    await load()
+  } catch (e) {
+    statusError.value = errorMessage(e, 'Não deu para carregar mais.')
+  }
+}
 
 watch(
   () => currentUser.value?.handle,
@@ -64,22 +91,20 @@ watch(
     try {
       const [p, own, contrib, saved, following] = await Promise.all([
         getProfile(handle),
-        listTimelines({ owner: 'me', pageSize: MINE_PAGE, sort: 'recent' }),
-        listContributions(handle),
-        listSavedComparisons(),
-        listFollowing(handle),
+        listTimelines({ owner: 'me', pageSize: PAGE, sort: 'recent' }),
+        listContributions(handle, { pageSize: PAGE }),
+        listSavedComparisons({ pageSize: PAGE }),
+        listFollowing(handle, { pageSize: PAGE }),
       ])
       profile.value = p
-      mine.value = own.items
-      mineTotal.value = own.total
-      minePage.value = 1
-      contributions.value = contrib
-      comparisonsRaw.value = saved
-      followedTimelines.value = following.timelines
-      followList.value = following.users
-      followingNow.value = new Set(following.users.map((u) => u.handle))
+      mineP.reset(own)
+      contribP.reset(contrib)
+      savedP.reset(saved)
+      followedTimelinesP.reset({ items: following.timelines, total: following.timelinesTotal, page: 1, pageSize: PAGE })
+      unfollowed.clear()
+      followingNow.value = new Set()
+      followUsersP.reset({ items: following.users, total: following.usersTotal, page: 1, pageSize: PAGE })
       status.value = 'ok'
-      titles.value = await timelinesFor(saved, [...own.items, ...following.timelines])
     } catch (e) {
       statusError.value = errorMessage(e, 'Não deu para carregar o perfil.')
       status.value = 'error'
@@ -88,25 +113,9 @@ watch(
   { immediate: true },
 )
 
-async function loadMoreMine() {
-  if (mineLoading.value || mine.value.length >= mineTotal.value) return
-  mineLoading.value = true
-  try {
-    const next = await listTimelines({ owner: 'me', pageSize: MINE_PAGE, sort: 'recent', page: minePage.value + 1 })
-    const seen = new Set(mine.value.map((t) => t.slug))
-    mine.value = [...mine.value, ...next.items.filter((t) => !seen.has(t.slug))]
-    mineTotal.value = next.total
-    minePage.value++
-  } catch (e) {
-    statusError.value = errorMessage(e, 'Não deu para carregar mais timelines.')
-  } finally {
-    mineLoading.value = false
-  }
-}
-
 /** Busca, de uma vez só, as timelines das comparações salvas que ainda não vieram nas listas. */
-async function timelinesFor(saved: SavedComparison[], known: Timeline[]) {
-  const out = new Map(known.map((t) => [t.slug, t]))
+async function timelinesFor(saved: SavedComparison[], known: Map<string, Timeline>) {
+  const out = new Map(known)
   const missing = [...new Set(saved.flatMap((c) => c.timelines))].filter((s) => !out.has(s))
   for (let i = 0; i < missing.length; i += 20) {
     const chunk = missing.slice(i, i + 20)
@@ -116,11 +125,18 @@ async function timelinesFor(saved: SavedComparison[], known: Timeline[]) {
   return out
 }
 
+// As timelines das comparações salvas: as que já vieram nas outras listas, e o resto numa chamada.
+watch(comparisonsRaw, async (saved) => {
+  const known = new Map(titles.value)
+  for (const t of [...mine.value, ...followedTimelines.value]) known.set(t.slug, t)
+  titles.value = await timelinesFor(saved, known)
+})
+
 const tabs = computed<Tab[]>(() => [
   { value: 'timelines', label: 'Timelines', count: mineTotal.value },
-  { value: 'contribuicoes', label: 'Contribuições', count: contributions.value.length },
-  { value: 'comparacoes', label: 'Comparações salvas', count: comparisonsRaw.value.length },
-  { value: 'seguindo', label: 'Seguindo', count: followingNow.value.size + followedTimelines.value.length },
+  { value: 'contribuicoes', label: 'Contribuições', count: contribP.total.value },
+  { value: 'comparacoes', label: 'Comparações salvas', count: savedP.total.value },
+  { value: 'seguindo', label: 'Seguindo', count: followUsersP.total.value - unfollowedCount.value + followedTimelinesP.total.value },
 ])
 const tab = computed({
   get: () => (tabs.value.some((t) => t.value === route.query.aba) ? String(route.query.aba) : 'timelines'),
@@ -149,6 +165,7 @@ const compareLink = (c: { timelines: string[]; start: number; end: number }) => 
   query: { ...Object.fromEntries(c.timelines.map((s, i) => ['abcd'[i], s])), de: String(c.start), ate: String(c.end) },
 })
 
+const unfollowedCount = ref(0)
 async function toggleFollowUser(handle: string) {
   const on = !followingNow.value.has(handle)
   try {
@@ -157,6 +174,9 @@ async function toggleFollowUser(handle: string) {
     if (on) next.add(handle)
     else next.delete(handle)
     followingNow.value = next
+    if (on) unfollowed.delete(handle)
+    else unfollowed.add(handle)
+    unfollowedCount.value = unfollowed.size
   } catch (e) {
     shareMsg.value = errorMessage(e)
   }
@@ -262,9 +282,9 @@ async function share() {
               <TlIcon name="plus" :size="24" />
               Nova timeline
             </TlCard>
-            <div v-if="mine.length < mineTotal" class="more">
+            <div v-if="mineP.hasMore.value" class="more">
               <span class="more__count">Mostrando {{ mine.length }} de {{ mineTotal }}</span>
-              <TlButton :disabled="mineLoading" @click="loadMoreMine">{{ mineLoading ? 'Carregando…' : 'Carregar mais' }}</TlButton>
+              <TlButton :disabled="mineP.loading.value" @click="more(mineP.loadMore)">{{ mineP.loading.value ? 'Carregando…' : 'Carregar mais' }}</TlButton>
             </div>
           </div>
 
@@ -281,7 +301,11 @@ async function share() {
                 <TlBadge size="md" :tone="statusBadge[c.status].tone">{{ statusBadge[c.status].label }}</TlBadge>
               </div>
             </TlCard>
-            <TlCard v-else tone="muted">Você ainda não sugeriu eventos. Abra uma timeline aberta a contribuições e use “Sugerir evento”.</TlCard>
+            <div v-if="contribP.hasMore.value" class="more">
+              <span class="more__count">Mostrando {{ contributions.length }} de {{ contribP.total.value }}</span>
+              <TlButton :disabled="contribP.loading.value" @click="more(contribP.loadMore)">{{ contribP.loading.value ? 'Carregando…' : 'Carregar mais' }}</TlButton>
+            </div>
+            <TlCard v-if="!contributions.length" tone="muted">Você ainda não sugeriu eventos. Abra uma timeline aberta a contribuições e use “Sugerir evento”.</TlCard>
           </template>
 
           <template v-else-if="tab === 'comparacoes'">
@@ -291,7 +315,11 @@ async function share() {
                 <span class="cmp__meta">{{ c.start }}–{{ c.end }} · salva {{ timeAgo(c.createdAt) }}</span>
               </TlCard>
             </div>
-            <TlCard v-else tone="muted">Nenhuma comparação salva. Monte uma em Comparar e use “Salvar comparação”.</TlCard>
+            <div v-if="savedP.hasMore.value" class="more">
+              <span class="more__count">Mostrando {{ comparisonsRaw.length }} de {{ savedP.total.value }}</span>
+              <TlButton :disabled="savedP.loading.value" @click="more(savedP.loadMore)">{{ savedP.loading.value ? 'Carregando…' : 'Carregar mais' }}</TlButton>
+            </div>
+            <TlCard v-if="!comparisons.length && !savedP.hasMore.value" tone="muted">Nenhuma comparação salva. Monte uma em Comparar e use “Salvar comparação”.</TlCard>
           </template>
 
           <template v-else>
@@ -307,6 +335,10 @@ async function share() {
                 :events="t.eventCount"
                 :contributors="t.contributorCount"
               />
+              <div v-if="followedTimelinesP.hasMore.value" class="more">
+                <span class="more__count">Mostrando {{ followedTimelines.length }} de {{ followedTimelinesP.total.value }} timelines</span>
+                <TlButton :disabled="followedTimelinesP.loading.value" @click="more(followedTimelinesP.loadMore)">Carregar mais timelines</TlButton>
+              </div>
             </div>
             <div v-if="followList.length" class="grid grid--people">
               <TlCard v-for="u in followList" :key="u.handle" padding="sm" class="person">
@@ -324,6 +356,10 @@ async function share() {
                   {{ followingNow.has(u.handle) ? 'Seguindo' : 'Seguir' }}
                 </TlButton>
               </TlCard>
+              <div v-if="followUsersP.hasMore.value" class="more">
+                <span class="more__count">Mostrando {{ followList.length }} de {{ followUsersP.total.value }} pessoas</span>
+                <TlButton :disabled="followUsersP.loading.value" @click="more(followUsersP.loadMore)">Carregar mais pessoas</TlButton>
+              </div>
             </div>
             <TlCard v-if="!followedTimelines.length && !followList.length" tone="muted">Você ainda não segue ninguém nem nenhuma timeline.</TlCard>
           </template>

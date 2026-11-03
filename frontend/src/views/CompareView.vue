@@ -269,11 +269,13 @@ const overviewWindow = computed<[number, number] | undefined>({ get: () => view.
 
 // ---------- Salvar e compartilhar ----------
 
+// Só as comparações salvas destas timelines (o servidor filtra), para saber se esta já foi salva.
 const savedList = ref<SavedComparison[]>([])
 watch(
-  () => currentUser.value?.handle,
-  async (me) => {
-    savedList.value = me ? await listSavedComparisons().catch(() => []) : []
+  () => [currentUser.value?.handle, slugs.value.join(',')] as const,
+  async ([me, key]) => {
+    const list = me && key ? await listSavedComparisons({ timelines: key.split(','), pageSize: 100 }).then((p) => p.items).catch(() => []) : []
+    if (key === slugs.value.join(',')) savedList.value = list
   },
   { immediate: true },
 )

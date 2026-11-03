@@ -27,6 +27,22 @@ type SessionRepository interface {
 	UserID(ctx context.Context, tokenHash string, now time.Time) (string, error)
 }
 
+// Paging é a página pedida a um repository.
+type Paging struct {
+	Limit  int
+	Offset int
+}
+
+// SuggestionFilter escolhe as sugestões listadas. Os campos vazios não filtram.
+type SuggestionFilter struct {
+	TimelineID string
+	AuthorID   string
+	Status     domain.SuggestionStatus
+	// ViewerID deixa só as sugestões em timelines que ele pode abrir.
+	ViewerID string
+	Paging
+}
+
 type TimelineSort string
 
 const (
@@ -55,6 +71,9 @@ type TimelineFilter struct {
 	IncludeMine bool
 	// Slugs restringe às timelines com esses slugs (ex.: as já escolhidas no comparar).
 	Slugs []string
+	// FollowedBy restringe às timelines que esse usuário segue, as seguidas mais
+	// recentemente primeiro. Como Slugs, vale tudo que ViewerID pode abrir.
+	FollowedBy string
 	// Calendar restringe a um calendário: CalendarGregorian, "escala:<escala>" para as fixas
 	// ou o ID de um calendário ficcional. Vazio não filtra.
 	Calendar string
@@ -89,8 +108,9 @@ type CalendarRepository interface {
 	ByID(ctx context.Context, id string) (*domain.Calendar, error)
 	// ByIDs devolve os calendários encontrados, indexados por ID.
 	ByIDs(ctx context.Context, ids []string) (map[string]domain.Calendar, error)
-	// Usable devolve os calendários do usuário e os compartilhados, por nome; query filtra pelo nome.
-	Usable(ctx context.Context, userID, query string) ([]domain.Calendar, error)
+	// Usable devolve uma página dos calendários do usuário e dos compartilhados, por nome
+	// (query filtra pelo nome), e o total.
+	Usable(ctx context.Context, userID, query string, p Paging) ([]domain.Calendar, int, error)
 	// InUse diz se alguma timeline usa o calendário.
 	InUse(ctx context.Context, id string) (bool, error)
 }
@@ -145,9 +165,8 @@ type SuggestionRepository interface {
 	Create(ctx context.Context, s *domain.Suggestion) error
 	Update(ctx context.Context, s *domain.Suggestion) error
 	ByID(ctx context.Context, id string) (*domain.Suggestion, error)
-	// ListByTimeline devolve as mais recentes primeiro; status vazio traz todas.
-	ListByTimeline(ctx context.Context, timelineID string, status domain.SuggestionStatus) ([]domain.Suggestion, error)
-	ListByAuthor(ctx context.Context, authorID string) ([]domain.Suggestion, error)
+	// List devolve uma página, as mais recentes primeiro, e o total que bate com o filtro.
+	List(ctx context.Context, f SuggestionFilter) ([]domain.Suggestion, int, error)
 	// ShiftYears desloca os anos dos eventos propostos e anteriores (domain.ShiftYear).
 	ShiftYears(ctx context.Context, timelineIDs []string, shifts []domain.YearShift) error
 }
@@ -157,15 +176,16 @@ type FollowRepository interface {
 	UnfollowTimeline(ctx context.Context, userID, timelineID string) error
 	FollowUser(ctx context.Context, followerID, followedID string) error
 	UnfollowUser(ctx context.Context, followerID, followedID string) error
-	// FollowedTimelines e FollowedUsers devolvem IDs, os mais recentes primeiro.
-	FollowedTimelines(ctx context.Context, userID string) ([]string, error)
-	FollowedUsers(ctx context.Context, userID string) ([]string, error)
+	// FollowedUsers devolve uma página de IDs, os seguidos mais recentes primeiro, e o total.
+	// As timelines seguidas vêm de TimelineRepository.List com FollowedBy.
+	FollowedUsers(ctx context.Context, userID string, p Paging) ([]string, int, error)
 }
 
 type ComparisonRepository interface {
 	Create(ctx context.Context, c *domain.SavedComparison) error
-	// ListByUser devolve as mais recentes primeiro.
-	ListByUser(ctx context.Context, userID string) ([]domain.SavedComparison, error)
+	// ListByUser devolve uma página, as mais recentes primeiro, e o total. Com slugs, só a
+	// comparação dessas timelines, nessa ordem.
+	ListByUser(ctx context.Context, userID string, slugs []string, p Paging) ([]domain.SavedComparison, int, error)
 	// Delete só apaga se a comparação for do usuário; senão devolve ErrNotFound.
 	Delete(ctx context.Context, id, userID string) error
 }

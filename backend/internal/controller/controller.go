@@ -20,9 +20,9 @@ type UseCases struct {
 	GetMe             usecase.UseCase[usecase.ActorInput, domain.User]
 	UpdateProfile     usecase.UseCase[usecase.UpdateProfileInput, domain.User]
 	GetProfile        usecase.UseCase[usecase.HandleInput, usecase.UserView]
-	ListContributions usecase.UseCase[usecase.HandleInput, []usecase.SuggestionView]
+	ListContributions usecase.UseCase[usecase.ListContributionsInput, usecase.Page[usecase.SuggestionView]]
 	FollowUser        usecase.UseCase[usecase.FollowUserInput, usecase.Empty]
-	ListFollowing     usecase.UseCase[usecase.HandleInput, usecase.FollowingView]
+	ListFollowing     usecase.UseCase[usecase.ListFollowingInput, usecase.FollowingView]
 
 	ListTimelines  usecase.UseCase[usecase.ListTimelinesInput, usecase.TimelinePage]
 	CreateTimeline usecase.UseCase[usecase.CreateTimelineInput, usecase.TimelineDetailView]
@@ -32,7 +32,7 @@ type UseCases struct {
 	FollowTimeline usecase.UseCase[usecase.FollowTimelineInput, usecase.Empty]
 	ListTags       usecase.UseCase[usecase.Empty, []domain.TagCount]
 
-	ListCalendars  usecase.UseCase[usecase.ListCalendarsInput, []usecase.CalendarView]
+	ListCalendars  usecase.UseCase[usecase.ListCalendarsInput, usecase.Page[usecase.CalendarView]]
 	CreateCalendar usecase.UseCase[usecase.CreateCalendarInput, usecase.CalendarView]
 	GetCalendar    usecase.UseCase[usecase.CalendarRefInput, usecase.CalendarView]
 	UpdateCalendar usecase.UseCase[usecase.UpdateCalendarInput, usecase.CalendarView]
@@ -45,7 +45,7 @@ type UseCases struct {
 	DeleteEvent     usecase.UseCase[usecase.EventRefInput, usecase.Empty]
 	PreviewLinks    usecase.UseCase[usecase.EventRefInput, []domain.LinkPreview]
 
-	ListSuggestions    usecase.UseCase[usecase.ListSuggestionsInput, []usecase.SuggestionView]
+	ListSuggestions    usecase.UseCase[usecase.ListSuggestionsInput, usecase.Page[usecase.SuggestionView]]
 	CreateSuggestion   usecase.UseCase[usecase.CreateSuggestionInput, usecase.SuggestionView]
 	ResubmitSuggestion usecase.UseCase[usecase.ResubmitSuggestionInput, usecase.SuggestionView]
 	ReviewSuggestion   usecase.UseCase[usecase.ReviewSuggestionInput, usecase.SuggestionView]
@@ -53,7 +53,7 @@ type UseCases struct {
 
 	Compare               usecase.UseCase[usecase.CompareInput, usecase.ComparisonView]
 	SaveComparison        usecase.UseCase[usecase.SaveComparisonInput, domain.SavedComparison]
-	ListSavedComparisons  usecase.UseCase[usecase.ActorInput, []domain.SavedComparison]
+	ListSavedComparisons  usecase.UseCase[usecase.ListSavedComparisonsInput, usecase.Page[domain.SavedComparison]]
 	DeleteSavedComparison usecase.UseCase[usecase.DeleteSavedComparisonInput, usecase.Empty]
 }
 

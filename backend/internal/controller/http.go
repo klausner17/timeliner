@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/klausner17/timeliner/backend/internal/domain"
+	"github.com/klausner17/timeliner/backend/internal/usecase"
 )
 
 const maxBody = 1 << 20
@@ -102,6 +103,18 @@ func queryInt(r *http.Request, name string, fields map[string]string) *int {
 		return nil
 	}
 	return &n
+}
+
+// pageInput lê page e pageSize da query string.
+func pageInput(r *http.Request, fields map[string]string) usecase.PageInput {
+	var p usecase.PageInput
+	if n := queryInt(r, "page", fields); n != nil {
+		p.Page = *n
+	}
+	if n := queryInt(r, "pageSize", fields); n != nil {
+		p.PageSize = *n
+	}
+	return p
 }
 
 func queryBool(r *http.Request, name string, fields map[string]string) bool {
