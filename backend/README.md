@@ -84,11 +84,34 @@ Toda resposta de erro tem o formato `{"error": {"code", "message", "fields?"}}`:
 | `DATABASE_URL` | `postgres://timeliner:timeliner@localhost:5432/timeliner?sslmode=disable` |
 | `MIGRATE` | as migrations rodam na subida; `false` pula essa etapa |
 | `SIGNUP` | aberto; `closed` faz o `POST /auth/register` responder 403 |
+| `APP_URL` | `http://localhost:8000`; endereço público do site, base dos links mandados por e-mail |
+| `RESEND_API_KEY` | vazio: os e-mails não saem, o texto (com o link) vai para o log. Com a chave, manda pelo [Resend](https://resend.com) |
+| `EMAIL_FROM` | `Timeliner <onboarding@resend.dev>`; remetente, num domínio verificado no Resend |
+| `CLIENT_IP_HEADER` | `X-Real-IP` (posto pelo nginx do frontend); cabeçalho com o IP do cliente, usado nos limites de cadastro e login. `none` usa o endereço da conexão. Atrás de Cloudflare, use `CF-Connecting-IP` |
+
+### Cadastro aberto
+
+Qualquer pessoa cria conta pelo site (`/cadastrar`). Contra abuso: no máximo 10 contas por hora
+por IP, 50 senhas erradas por IP e 10 por e-mail a cada 15 minutos (respostas 429/401) e um
+campo-isca que só robô preenche. Os limites ficam na memória do processo. Como o IP vem de
+`CLIENT_IP_HEADER`, a API só deve ser alcançável pelo proxy; quem chegasse direto poderia
+inventar o cabeçalho.
+
+O cadastro manda um link de confirmação do e-mail (vale 7 dias) e "Esqueci minha senha" manda
+um link de uso único (vale 1 hora). Para ligar o envio de verdade: crie uma conta no Resend,
+verifique o domínio do remetente, gere uma chave e configure `RESEND_API_KEY`, `EMAIL_FROM` e `APP_URL`.
+Contas criadas pelo `create-user` já nascem confirmadas.
 
 Com o cadastro fechado, a conta é criada pelo próprio binário. A senha vem da primeira linha da entrada padrão:
 
 ```sh
 printf '%s\n' "$SENHA" | api create-user -handle klausner -name Klausner -email voce@exemplo.com
+```
+
+Para trocar a senha de alguém sem o e-mail (encerra todas as sessões da conta):
+
+```sh
+printf '%s\n' "$SENHA" | api reset-password -email voce@exemplo.com
 ```
 
 As migrations ficam em `internal/repository/postgres/migrations/`, embutidas no binário.

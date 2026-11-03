@@ -89,9 +89,54 @@ export async function login(email: string, password: string) {
   session.user = out.user
 }
 
-export function logout() {
+export type SignupInput = { handle: string; name: string; email: string; password: string; website?: string }
+
+export async function register(input: SignupInput) {
+  const out = await post<{ token: string; user: User }>('/auth/register', input)
+  setToken(out.token)
+  session.user = out.user
+}
+
+/** O cadastro está aberto? Na dúvida (API fora do ar), mostra o link. */
+export async function signupOpen(): Promise<boolean> {
+  try {
+    return (await get<{ open: boolean }>('/auth/signup')).open
+  } catch {
+    return true
+  }
+}
+
+/** Sai da conta: a sessão é apagada no servidor, não só neste navegador. */
+export async function logout() {
+  if (getToken()) await post('/auth/logout').catch(() => undefined)
   setToken(null)
   session.user = null
+}
+
+export function changePassword(currentPassword: string, newPassword: string) {
+  return post<void>('/me/password', { currentPassword, newPassword })
+}
+
+export function resendVerification() {
+  return post<void>('/me/verification')
+}
+
+/** Confirma o e-mail pelo link; se for a conta logada, atualiza a sessão. */
+export async function verifyEmail(token: string) {
+  const user = await post<User>('/auth/verify-email', { token })
+  if (session.user?.handle === user.handle) session.user = user
+  return user
+}
+
+export function requestPasswordReset(email: string) {
+  return post<void>('/auth/password-reset', { email })
+}
+
+/** Troca a senha pelo link do e-mail e já entra na conta. */
+export async function confirmPasswordReset(token: string, password: string) {
+  const out = await post<{ token: string; user: User }>('/auth/password-reset/confirm', { token, password })
+  setToken(out.token)
+  session.user = out.user
 }
 
 export async function updateMe(input: { name?: string; bio?: string; tint?: User['tint'] }) {

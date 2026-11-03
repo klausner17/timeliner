@@ -8,6 +8,7 @@ import {
   TlCard,
   TlField,
   TlIcon,
+  TlInput,
   TlStat,
   TlTabs,
   TlTextarea,
@@ -17,8 +18,9 @@ import {
   type BadgeTone,
   type Tab,
 } from '@/design-system'
-import { errorMessage } from '@/data/api'
+import { ApiError, errorMessage } from '@/data/api'
 import {
+  changePassword,
   currentUser,
   followUser,
   getProfile,
@@ -205,8 +207,42 @@ async function saveBio() {
   }
 }
 
-function signOut() {
-  logout()
+// ---------- Senha ----------
+
+const editingPassword = ref(false)
+const pw = ref({ current: '', next: '' })
+const pwFields = ref<Record<string, string>>({})
+const pwError = ref('')
+const savingPassword = ref(false)
+function editPassword() {
+  pw.value = { current: '', next: '' }
+  pwFields.value = {}
+  pwError.value = ''
+  editingBio.value = false
+  editingPassword.value = true
+}
+async function savePassword() {
+  pwError.value = ''
+  pwFields.value = {}
+  if (!pw.value.current) pwFields.value.currentPassword = 'Informe a senha atual.'
+  if (pw.value.next.length < 8) pwFields.value.newPassword = 'A senha precisa ter pelo menos 8 caracteres.'
+  if (Object.keys(pwFields.value).length) return
+  savingPassword.value = true
+  try {
+    await changePassword(pw.value.current, pw.value.next)
+    editingPassword.value = false
+    shareMsg.value = 'Senha trocada. As outras sessões foram encerradas.'
+    setTimeout(() => (shareMsg.value = ''), 4000)
+  } catch (e) {
+    pwError.value = errorMessage(e, 'Não deu para trocar a senha.')
+    if (e instanceof ApiError) pwFields.value = e.fields
+  } finally {
+    savingPassword.value = false
+  }
+}
+
+async function signOut() {
+  await logout()
   router.replace('/')
 }
 
@@ -239,10 +275,24 @@ async function share() {
                 <TlButton size="sm" type="submit" variant="primary" :disabled="savingBio">Salvar</TlButton>
               </div>
             </form>
+            <form v-else-if="editingPassword" class="bio" novalidate @submit.prevent="savePassword">
+              <TlField v-slot="{ id, describedby, invalid }" label="Senha atual" :error="pwFields.currentPassword">
+                <TlInput :id="id" v-model="pw.current" type="password" autocomplete="current-password" :aria-describedby="describedby" :invalid="invalid" />
+              </TlField>
+              <TlField v-slot="{ id, describedby, invalid }" label="Senha nova" hint="Pelo menos 8 caracteres. As outras sessões abertas serão encerradas." :error="pwFields.newPassword">
+                <TlInput :id="id" v-model="pw.next" type="password" autocomplete="new-password" :aria-describedby="describedby" :invalid="invalid" />
+              </TlField>
+              <p v-if="pwError" class="who__error" role="alert">{{ pwError }}</p>
+              <div class="bio__actions">
+                <TlButton size="sm" variant="ghost" @click="editingPassword = false">Cancelar</TlButton>
+                <TlButton size="sm" type="submit" variant="primary" :disabled="savingPassword">Trocar senha</TlButton>
+              </div>
+            </form>
             <p v-else class="who__bio" :class="{ 'who__bio--empty': !me.bio }">{{ me.bio || 'Conte do que você gosta de fazer timelines.' }}</p>
           </div>
           <div class="who__actions">
-            <TlButton v-if="!editingBio" @click="editBio">Editar perfil</TlButton>
+            <TlButton v-if="!editingBio && !editingPassword" @click="editBio">Editar perfil</TlButton>
+            <TlButton v-if="!editingBio && !editingPassword" variant="ghost" @click="editPassword">Trocar senha</TlButton>
             <TlButton icon="share" icon-only label="Compartilhar perfil" @click="share" />
             <TlButton variant="ghost" @click="signOut">Sair</TlButton>
             <span class="who__toast" role="status">{{ shareMsg }}</span>
