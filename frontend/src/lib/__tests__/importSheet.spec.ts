@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseLine, parseSheet, parseWhen } from '../importSheet'
+import { parseLine, parseLinks, parseSheet, parseWhen } from '../importSheet'
 
 describe('parseWhen', () => {
   it('aceita só o ano', () => {
@@ -69,5 +69,24 @@ describe('parseSheet', () => {
       [1822, 9, 7],
       [1889, undefined, undefined],
     ])
+  })
+})
+
+describe('coluna de links', () => {
+  it('lê vários links com nome opcional, separados por |', () => {
+    expect(parseLinks(' https://a.org | Arquivo Nacional https://b.gov.br/x || ')).toEqual([
+      { url: 'https://a.org' },
+      { url: 'https://b.gov.br/x', label: 'Arquivo Nacional' },
+    ])
+  })
+
+  it('a quinta coluna vira os links do evento', () => {
+    expect(parseLine('1888;Lei Áurea;Fim da escravidão;https://w.org;Câmara https://c.leg.br | https://bbc.com/y')).toEqual({
+      year: 1888,
+      title: 'Lei Áurea',
+      description: 'Fim da escravidão',
+      sourceUrl: 'https://w.org',
+      links: [{ url: 'https://c.leg.br', label: 'Câmara' }, { url: 'https://bbc.com/y' }],
+    })
   })
 })

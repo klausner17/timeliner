@@ -5,7 +5,10 @@
 //
 //	timelines.csv            slug,titulo,descricao,categoria,cor,tags,visibilidade,contribuicoes[,escala,ciclica]
 //	periodos/<slug>.csv      nome,inicio,fim,cor                       (opcional)
-//	eventos/<slug>.csv       data,ano_fim,hora,titulo,descricao,periodo,fonte
+//	eventos/<slug>.csv       data,ano_fim,hora,titulo,descricao,periodo,fonte[,links]
+//
+// A coluna links (opcional) tem links a mais além da fonte, separados por "|". Cada um é
+// só o endereço ou um nome seguido do endereço: "Arquivo Nacional https://...".
 //
 // Datas são AAAA, AAAA-MM ou AAAA-MM-DD (ano negativo para antes de Cristo). Tags vão
 // separadas por "|". Um período sem fim continua até hoje. Numa timeline fixa (coluna
@@ -174,9 +177,25 @@ func loadEvents(path string) ([]domain.EventData, error) {
 		e.Title, e.Description = r["titulo"], r["descricao"]
 		e.Era = optional(r["periodo"])
 		e.SourceURL = optional(r["fonte"])
+		e.Links = ParseLinks(r["links"])
 		events[i] = e
 	}
 	return events, nil
+}
+
+// ParseLinks lê a coluna links: entradas separadas por "|", cada uma com o endereço por
+// último e um nome opcional antes ("Arquivo Nacional https://..."). Vazia devolve nil.
+func ParseLinks(cell string) []domain.EventLink {
+	var out []domain.EventLink
+	for _, part := range strings.Split(cell, "|") {
+		fields := strings.Fields(part)
+		if len(fields) == 0 {
+			continue
+		}
+		last := len(fields) - 1
+		out = append(out, domain.EventLink{URL: fields[last], Label: strings.Join(fields[:last], " ")})
+	}
+	return out
 }
 
 var dateRe = regexp.MustCompile(`^(-?\d{1,6})(?:-(\d{1,2})(?:-(\d{1,2}))?)?$`)

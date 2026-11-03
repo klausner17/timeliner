@@ -94,7 +94,7 @@ nome,inicio,fim,cor
 
 Cabeçalho:
 
-data,ano_fim,hora,titulo,descricao,periodo,fonte
+data,ano_fim,hora,titulo,descricao,periodo,fonte,links
 
 - data: na timeline real, AAAA, AAAA-MM ou AAAA-MM-DD, com o mês e o dia com dois dígitos. Antes de
   Cristo, use ano negativo (-44 para 44 a.C.). Anos entre -100000 e 3000. O dia precisa existir no
@@ -104,11 +104,19 @@ data,ano_fim,hora,titulo,descricao,periodo,fonte
 - hora: HH:MM em 24 horas, só se a hora for conhecida e o dia estiver preenchido. Quase sempre vazio.
   Sempre vazio na fixa.
 - titulo: de 1 a 160 caracteres, curto e direto (ex.: "Lei Áurea", "Eclosão dos ovos").
-- descricao: até 4000 caracteres. Uma a três frases com o que aconteceu e por que importa.
+- descricao: até 10000 caracteres. Uma a três frases com o que aconteceu e por que importa. Nos
+  eventos mais importantes pode ser mais longa, com parágrafos separados por uma linha em branco
+  dentro das aspas. A lista mostra só o começo e o resto aparece ao abrir o evento.
 - periodo: vazio ou o nome exato de um período do arquivo de períodos que contenha a data do
   evento.
 - fonte: o link completo da página da Wikipédia usada, começando com https://. Prefira a página
   específica do evento; se ela não existir, use a página do tema principal.
+- links: opcional, até 10 links a mais além da fonte (outras páginas da Wikipédia, documentos
+  oficiais, reportagens, vídeos). Separe-os com "|". Cada um é só o endereço completo, ou um nome
+  curto seguido de espaço e do endereço (ex.: "Câmara dos Deputados https://www.camara.leg.br/...").
+  Só use links que você tem certeza de que existem; na dúvida, deixe vazio. O site mostra a
+  miniatura e o título só de sites conhecidos (Wikipédia, gov.br, leg.br, jus.br, grandes jornais,
+  YouTube); os outros aparecem só como endereço.
 
 ## Conteúdo
 
@@ -135,10 +143,12 @@ Segundo Reinado,1840-07-23,1889-11-15,roxo
 
 eventos/abolicao-da-escravidao-no-brasil.csv
 ```csv
-data,ano_fim,hora,titulo,descricao,periodo,fonte
-1850-09-04,,,Lei Eusébio de Queirós,"A lei proíbe o tráfico de africanos escravizados para o Brasil.",Segundo Reinado,https://pt.wikipedia.org/wiki/Lei_Eusébio_de_Queirós
-1871-09-28,,,Lei do Ventre Livre,"Filhos de mulheres escravizadas nascidos a partir da lei passam a ser considerados livres.",Segundo Reinado,https://pt.wikipedia.org/wiki/Lei_do_Ventre_Livre
-1888-05-13,,,Lei Áurea,"A princesa Isabel assina a lei que extingue a escravidão no Brasil.",Segundo Reinado,https://pt.wikipedia.org/wiki/Lei_Áurea
+data,ano_fim,hora,titulo,descricao,periodo,fonte,links
+1850-09-04,,,Lei Eusébio de Queirós,"A lei proíbe o tráfico de africanos escravizados para o Brasil.",Segundo Reinado,https://pt.wikipedia.org/wiki/Lei_Eusébio_de_Queirós,
+1871-09-28,,,Lei do Ventre Livre,"Filhos de mulheres escravizadas nascidos a partir da lei passam a ser considerados livres.",Segundo Reinado,https://pt.wikipedia.org/wiki/Lei_do_Ventre_Livre,
+1888-05-13,,,Lei Áurea,"A princesa Isabel assina a lei que extingue a escravidão no Brasil.
+
+A lei tinha só dois artigos e não previa indenização nem políticas para os libertos.",Segundo Reinado,https://pt.wikipedia.org/wiki/Lei_Áurea,Abolicionismo no Brasil https://pt.wikipedia.org/wiki/Abolicionismo_no_Brasil|Princesa Isabel https://pt.wikipedia.org/wiki/Isabel_do_Brasil
 ```
 
 ## Exemplo de timeline fixa
@@ -157,10 +167,10 @@ Girino,7,60,verde
 
 eventos/ciclo-de-vida-do-sapo.csv
 ```csv
-data,ano_fim,hora,titulo,descricao,periodo,fonte
-0,,,Postura dos ovos,"A fêmea deposita os ovos na água, em cordões ou massas gelatinosas.",,https://pt.wikipedia.org/wiki/Sapo
-7,,,Eclosão,"Saem dos ovos os girinos, que respiram por brânquias.",Girino,https://pt.wikipedia.org/wiki/Girino
-60,,,Metamorfose completa,"O girino perde a cauda, desenvolve pulmões e patas e sai da água.",Girino,https://pt.wikipedia.org/wiki/Metamorfose
+data,ano_fim,hora,titulo,descricao,periodo,fonte,links
+0,,,Postura dos ovos,"A fêmea deposita os ovos na água, em cordões ou massas gelatinosas.",,https://pt.wikipedia.org/wiki/Sapo,
+7,,,Eclosão,"Saem dos ovos os girinos, que respiram por brânquias.",Girino,https://pt.wikipedia.org/wiki/Girino,
+60,,,Metamorfose completa,"O girino perde a cauda, desenvolve pulmões e patas e sai da água.",Girino,https://pt.wikipedia.org/wiki/Metamorfose,
 ```
 
 Antes de responder, confira: o slug bate com o título; todos os eventos têm fonte; todo período

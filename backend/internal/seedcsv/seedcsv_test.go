@@ -99,3 +99,27 @@ func TestTimelineFixa(t *testing.T) {
 		t.Errorf("esperava timeline fixa em dias e cíclica, veio %+v %v", tl, err)
 	}
 }
+
+func TestColunaLinks(t *testing.T) {
+	got := seedcsv.ParseLinks(" https://a.org/x | Arquivo Nacional https://b.gov.br/y || ")
+	want := []domain.EventLink{{URL: "https://a.org/x"}, {URL: "https://b.gov.br/y", Label: "Arquivo Nacional"}}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Fatalf("links = %+v", got)
+	}
+	if seedcsv.ParseLinks("") != nil {
+		t.Fatal("vazia devia dar nil")
+	}
+
+	dir := t.TempDir()
+	os.Mkdir(dir+"/eventos", 0o755)
+	write(t, dir+"/timelines.csv", "slug,titulo,descricao,categoria,cor,tags,visibilidade,contribuicoes\nabolicao,Abolição,,História,a,,,\n")
+	write(t, dir+"/eventos/abolicao.csv", "data,ano_fim,hora,titulo,descricao,periodo,fonte,links\n"+
+		"1888-05-13,,,Lei Áurea,,,https://pt.wikipedia.org/wiki/Lei_Áurea,Câmara https://www.camara.leg.br/x|https://www.bbc.com/y\n")
+	seeds, err := seedcsv.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ls := seeds[0].Events[0].Links; len(ls) != 2 || ls[0].Label != "Câmara" || ls[1].URL != "https://www.bbc.com/y" {
+		t.Fatalf("links = %+v", ls)
+	}
+}

@@ -47,10 +47,11 @@ Tudo em UTF-8, com vírgula como separador e aspas em textos que têm vírgula.
 `AAAA-MM-DD`; fim vazio continua até hoje. Cor: azul, laranja, verde, roxo, amarelo, vermelho ou
 cinza. Períodos podem se sobrepor (o Estado Novo fica dentro da Era Vargas).
 
-**`eventos/<slug>.csv`**: `data,ano_fim,hora,titulo,descricao,periodo,fonte`. A `data` usa o
+**`eventos/<slug>.csv`**: `data,ano_fim,hora,titulo,descricao,periodo,fonte[,links]`. A `data` usa o
 mesmo formato dos períodos; `ano_fim` marca eventos que duram anos (guerras, revoltas); `hora`
 é `HH:MM` e pede o dia; `periodo` precisa ser o nome de um período do arquivo de períodos; `fonte`
-é um link.
+é um link. A coluna `links` é opcional: links a mais separados por `|`, cada um só o endereço
+ou um nome seguido do endereço (`Arquivo Nacional https://...`).
 
 ## Gerando timelines novas com outra LLM
 

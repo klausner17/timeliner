@@ -1,9 +1,9 @@
-import type { Scale, TimelineCalendar, TimelineEvent } from '@/data/types'
+import type { EventLink, Scale, TimelineCalendar, TimelineEvent } from '@/data/types'
 import { parseEraYear } from './calendar'
 import { isScale, parseScalePos, type Reckoning } from './scale'
 import { daysInMonth, timePattern } from './format'
 
-export type ImportedEvent = Pick<TimelineEvent, 'year' | 'month' | 'day' | 'time' | 'title' | 'description' | 'sourceUrl'>
+export type ImportedEvent = Pick<TimelineEvent, 'year' | 'month' | 'day' | 'time' | 'title' | 'description' | 'sourceUrl' | 'links'>
 
 type When = Pick<TimelineEvent, 'year' | 'month' | 'day' | 'time'>
 
@@ -47,11 +47,28 @@ function parseScaleWhen(cell: string, cal: Scale): When | undefined {
   return year === undefined ? undefined : { year }
 }
 
+/**
+ * Coluna de links a mais: entradas separadas por "|", cada uma com o endereço por último e
+ * um nome opcional antes ("Arquivo Nacional https://..."). Igual ao importar-csv do backend.
+ */
+export function parseLinks(cell: string): EventLink[] {
+  return cell
+    .split('|')
+    .map((part) => part.trim().split(/\s+/).filter(Boolean))
+    .filter((words) => words.length)
+    .map((words) => {
+      const url = words[words.length - 1]
+      const label = words.slice(0, -1).join(' ')
+      return label ? { url, label } : { url }
+    })
+}
+
 export function parseLine(line: string, cal?: Reckoning): ImportedEvent | undefined {
-  const [when, title, description = '', source = ''] = line.split(separatorOf(line)).map((c) => c.trim().replace(/^"|"$/g, ''))
+  const [when, title, description = '', source = '', links = ''] = line.split(separatorOf(line)).map((c) => c.trim().replace(/^"|"$/g, ''))
   const parsed = isScale(cal) ? parseScaleWhen(when, cal) : cal ? parseEraWhen(when, cal) : parseWhen(when)
   if (!parsed || !title) return undefined
-  return { ...parsed, title, description, sourceUrl: source || undefined }
+  const extra = parseLinks(links)
+  return { ...parsed, title, description, sourceUrl: source || undefined, ...(extra.length ? { links: extra } : {}) }
 }
 
 export function parseSheet(text: string, cal?: Reckoning): ImportedEvent[] {

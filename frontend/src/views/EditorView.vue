@@ -426,7 +426,7 @@ async function remove(e: TimelineEvent) {
   }
 }
 
-// ---------- Importar planilha (CSV: ano ou data; título; descrição; fonte) ----------
+// ---------- Importar planilha (CSV: ano ou data; título; descrição; fonte; links) ----------
 
 const importInput = ref<HTMLInputElement>()
 const importMsg = ref('')
@@ -441,10 +441,10 @@ async function importFile(ev: Event) {
   const rows = parseSheet(await file.text(), reckoningOf(t))
   if (!rows.length) {
     importMsg.value = t.scale
-      ? `Nenhuma linha válida. Use: ${scaleName(t.scale)} desde o início (ex.: 60); título; descrição; fonte.`
+      ? `Nenhuma linha válida. Use: ${scaleName(t.scale)} desde o início (ex.: 60); título; descrição; fonte; links.`
       : t.calendar
-      ? `Nenhuma linha válida. Use: era e ano (ex.: ${t.calendar.eras[0]?.abbr ?? ''} 10); título; descrição; fonte.`
-      : 'Nenhuma linha válida. Use: ano ou data; título; descrição; fonte.'
+      ? `Nenhuma linha válida. Use: era e ano (ex.: ${t.calendar.eras[0]?.abbr ?? ''} 10); título; descrição; fonte; links.`
+      : 'Nenhuma linha válida. Use: ano ou data; título; descrição; fonte; links.'
     return
   }
   importing.value = true
@@ -723,9 +723,9 @@ async function destroy() {
         </TlCard>
         <TlCard v-else-if="!formOpen" tone="dashed" class="empty">
           <p v-if="scale">
-            Comece pelo primeiro evento, no {{ posLabel.toLowerCase() }} 0. Você pode importar uma planilha com as colunas {{ scaleName(scale) }} desde o início; título; descrição; fonte.
+            Comece pelo primeiro evento, no {{ posLabel.toLowerCase() }} 0. Você pode importar uma planilha com as colunas {{ scaleName(scale) }} desde o início; título; descrição; fonte; links.
           </p>
-          <p v-else>Comece pelo primeiro evento. Você pode importar uma planilha com as colunas ano ou data; título; descrição; fonte. A data pode ser 13/05/1888, 05/1888 ou 1888-05-13, com hora opcional, como 13/05/1888 14:30.</p>
+          <p v-else>Comece pelo primeiro evento. Você pode importar uma planilha com as colunas ano ou data; título; descrição; fonte; links. A data pode ser 13/05/1888, 05/1888 ou 1888-05-13, com hora opcional, como 13/05/1888 14:30. Na coluna links (opcional), separe vários com |, com um nome antes do endereço se quiser.</p>
           <TlButton variant="dark" icon="plus" @click="openNew">Novo evento</TlButton>
         </TlCard>
         <p class="main__note">Os eventos são ordenados pela data automaticamente.</p>
