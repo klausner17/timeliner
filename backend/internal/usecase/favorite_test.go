@@ -88,7 +88,7 @@ func TestRecordView(t *testing.T) {
 		view("", "10.0.0.2", "brasil")
 	}
 	view(ana.ID, "10.0.0.3", "brasil") // a dona não conta
-	view("", "", "brasil")              // sem IP nem login não conta
+	view("", "", "brasil")             // sem IP nem login não conta
 	if got := views("brasil"); got != 2 {
 		t.Fatalf("views = %d, quero 2", got)
 	}
