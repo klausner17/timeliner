@@ -243,7 +243,10 @@ func (r timelines) List(_ context.Context, f usecase.TimelineFilter) ([]domain.T
 	matched := []domain.Timeline{}
 	for _, t := range r.timelines {
 		switch {
-		case !f.IncludeUnlisted && !t.Listed(),
+		case !f.IncludeUnlisted && !visibleInList(t, f),
+			len(f.Slugs) > 0 && !slices.Contains(f.Slugs, t.Slug),
+			!inCalendar(t, f.Calendar),
+			f.WithEvents && !r.hasEvents(t.ID),
 			f.OwnerID != "" && t.OwnerID != f.OwnerID,
 			f.Category != "" && t.Category != f.Category,
 			f.Tag != "" && !slices.Contains(t.Tags, f.Tag),
@@ -272,6 +275,38 @@ func (r timelines) List(_ context.Context, f usecase.TimelineFilter) ([]domain.T
 	lo := min(f.Offset, total)
 	hi := min(lo+f.Limit, total)
 	return matched[lo:hi], total, nil
+}
+
+func visibleInList(t domain.Timeline, f usecase.TimelineFilter) bool {
+	switch {
+	case len(f.Slugs) > 0:
+		return t.VisibleTo(f.ViewerID)
+	case f.IncludeMine:
+		return t.Listed() || t.OwnerID == f.ViewerID
+	}
+	return t.Listed()
+}
+
+func inCalendar(t domain.Timeline, c string) bool {
+	switch scale, fixed := strings.CutPrefix(c, "escala:"); {
+	case c == "":
+		return true
+	case c == usecase.CalendarGregorian:
+		return t.CalendarID == nil && t.Scale == nil
+	case fixed:
+		return t.Scale != nil && string(*t.Scale) == scale
+	}
+	return t.CalendarID != nil && *t.CalendarID == c
+}
+
+// hasEvents é chamado com o lock de leitura já pego.
+func (r timelines) hasEvents(id string) bool {
+	for _, e := range r.events {
+		if e.TimelineID == id {
+			return true
+		}
+	}
+	return false
 }
 
 func (r timelines) Stats(_ context.Context, ids []string, viewerID string) (map[string]domain.TimelineStats, error) {

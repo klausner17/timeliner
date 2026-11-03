@@ -104,8 +104,30 @@ func (r timelines) List(ctx context.Context, f usecase.TimelineFilter) ([]domain
 		args = append(args, v)
 		return fmt.Sprintf("$%d", len(args))
 	}
-	if !f.IncludeUnlisted {
+	switch {
+	case f.IncludeUnlisted:
+	case len(f.Slugs) > 0:
+		// Pedindo pelo slug, vale o mesmo que abrir a timeline: as de link também aparecem.
+		where = append(where, "((NOT t.draft AND t.visibility<>'privada') OR t.owner_id="+arg(f.ViewerID)+")")
+	case f.IncludeMine:
+		where = append(where, "((t.visibility='publica' AND NOT t.draft) OR t.owner_id="+arg(f.ViewerID)+")")
+	default:
 		where = append(where, "t.visibility='publica' AND NOT t.draft")
+	}
+	if len(f.Slugs) > 0 {
+		where = append(where, "t.slug = ANY("+arg(f.Slugs)+")")
+	}
+	switch scale, fixed := strings.CutPrefix(f.Calendar, "escala:"); {
+	case f.Calendar == "":
+	case f.Calendar == usecase.CalendarGregorian:
+		where = append(where, "t.calendar_id IS NULL AND t.scale IS NULL")
+	case fixed:
+		where = append(where, "t.scale="+arg(scale))
+	default:
+		where = append(where, "t.calendar_id="+arg(f.Calendar))
+	}
+	if f.WithEvents {
+		where = append(where, "EXISTS (SELECT 1 FROM events e WHERE e.timeline_id=t.id)")
 	}
 	if f.OwnerID != "" {
 		where = append(where, "t.owner_id="+arg(f.OwnerID))

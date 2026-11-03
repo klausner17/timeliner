@@ -19,8 +19,15 @@ type ListTimelinesInput struct {
 	OwnerHandle string
 	OnlyOpen    bool
 	Sort        TimelineSort
-	Page        int
-	PageSize    int
+	// IncludeMine soma às públicas as do próprio usuário (rascunhos, privadas, de link).
+	IncludeMine bool
+	// Slugs busca timelines específicas, as que o usuário pode abrir (inclusive as de link).
+	Slugs []string
+	// Calendar é o filtro de calendário (ver TimelineFilter.Calendar).
+	Calendar   string
+	WithEvents bool
+	Page       int
+	PageSize   int
 }
 
 type TimelinePage struct {
@@ -51,12 +58,22 @@ func (uc *ListTimelines) Execute(ctx context.Context, in ListTimelinesInput) (Ti
 	f.check(in.PageSize >= 1 && in.PageSize <= 100, "pageSize", "Use de 1 a 100.")
 	f.check(in.Sort == SortPopular || in.Sort == SortRecent, "sort", "Use popular ou recent.")
 	f.check(in.Category == "" || domain.ValidCategory(in.Category), "cat", "Categoria inválida.")
+	f.check(validCalendarFilter(in.Calendar), "calendar", "Use gregoriano, escala:<escala> ou o ID de um calendário.")
+	slugs := []string{}
+	for _, s := range in.Slugs {
+		if s = strings.TrimSpace(s); s != "" && !slices.Contains(slugs, s) {
+			slugs = append(slugs, s)
+		}
+	}
+	f.check(len(slugs) <= MaxListSlugs, "slugs", fmt.Sprintf("Peça no máximo %d timelines de uma vez.", MaxListSlugs))
 	if err := f.err(); err != nil {
 		return TimelinePage{}, err
 	}
 	filter := TimelineFilter{
 		Query: strings.TrimSpace(in.Query), Category: in.Category, Tag: strings.ToLower(strings.TrimSpace(in.Tag)),
 		OnlyOpen: in.OnlyOpen, Sort: in.Sort, Limit: in.PageSize, Offset: (in.Page - 1) * in.PageSize,
+		ViewerID: in.ActorID, IncludeMine: in.IncludeMine && in.ActorID != "", Slugs: slugs,
+		Calendar: in.Calendar, WithEvents: in.WithEvents,
 	}
 	switch {
 	case in.OwnerHandle == "me":
@@ -84,6 +101,13 @@ func (uc *ListTimelines) Execute(ctx context.Context, in ListTimelinesInput) (Ti
 		return TimelinePage{}, err
 	}
 	return TimelinePage{Items: items, Page: in.Page, PageSize: in.PageSize, Total: total}, nil
+}
+
+func validCalendarFilter(c string) bool {
+	if scale, ok := strings.CutPrefix(c, "escala:"); ok {
+		return domain.Scale(scale).Valid()
+	}
+	return true
 }
 
 type TimelineFields struct {

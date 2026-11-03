@@ -22,7 +22,6 @@ import {
   currentUser,
   followUser,
   getProfile,
-  getTimeline,
   handleLabel,
   listContributions,
   listFollowing,
@@ -45,6 +44,10 @@ const status = ref<'loading' | 'ok' | 'error'>('loading')
 const statusError = ref('')
 const profile = shallowRef<Profile>()
 const mine = shallowRef<Timeline[]>([])
+const mineTotal = ref(0)
+const minePage = ref(1)
+const mineLoading = ref(false)
+const MINE_PAGE = 24
 const contributions = shallowRef<Suggestion[]>([])
 const comparisonsRaw = shallowRef<SavedComparison[]>([])
 const titles = shallowRef(new Map<string, Timeline>())
@@ -61,13 +64,15 @@ watch(
     try {
       const [p, own, contrib, saved, following] = await Promise.all([
         getProfile(handle),
-        listTimelines({ owner: 'me', pageSize: 100, sort: 'recent' }),
+        listTimelines({ owner: 'me', pageSize: MINE_PAGE, sort: 'recent' }),
         listContributions(handle),
         listSavedComparisons(),
         listFollowing(handle),
       ])
       profile.value = p
       mine.value = own.items
+      mineTotal.value = own.total
+      minePage.value = 1
       contributions.value = contrib
       comparisonsRaw.value = saved
       followedTimelines.value = following.timelines
@@ -83,17 +88,36 @@ watch(
   { immediate: true },
 )
 
-/** Busca as timelines das comparações salvas que ainda não vieram nas listas. */
+async function loadMoreMine() {
+  if (mineLoading.value || mine.value.length >= mineTotal.value) return
+  mineLoading.value = true
+  try {
+    const next = await listTimelines({ owner: 'me', pageSize: MINE_PAGE, sort: 'recent', page: minePage.value + 1 })
+    const seen = new Set(mine.value.map((t) => t.slug))
+    mine.value = [...mine.value, ...next.items.filter((t) => !seen.has(t.slug))]
+    mineTotal.value = next.total
+    minePage.value++
+  } catch (e) {
+    statusError.value = errorMessage(e, 'Não deu para carregar mais timelines.')
+  } finally {
+    mineLoading.value = false
+  }
+}
+
+/** Busca, de uma vez só, as timelines das comparações salvas que ainda não vieram nas listas. */
 async function timelinesFor(saved: SavedComparison[], known: Timeline[]) {
   const out = new Map(known.map((t) => [t.slug, t]))
   const missing = [...new Set(saved.flatMap((c) => c.timelines))].filter((s) => !out.has(s))
-  const found = await Promise.all(missing.map((s) => getTimeline(s).catch(() => undefined)))
-  for (const t of found) if (t) out.set(t.slug, t)
+  for (let i = 0; i < missing.length; i += 20) {
+    const chunk = missing.slice(i, i + 20)
+    const page = await listTimelines({ slugs: chunk.join(','), pageSize: chunk.length }).catch(() => undefined)
+    for (const t of page?.items ?? []) out.set(t.slug, t)
+  }
   return out
 }
 
 const tabs = computed<Tab[]>(() => [
-  { value: 'timelines', label: 'Timelines', count: mine.value.length },
+  { value: 'timelines', label: 'Timelines', count: mineTotal.value },
   { value: 'contribuicoes', label: 'Contribuições', count: contributions.value.length },
   { value: 'comparacoes', label: 'Comparações salvas', count: comparisonsRaw.value.length },
   { value: 'seguindo', label: 'Seguindo', count: followingNow.value.size + followedTimelines.value.length },
@@ -206,7 +230,7 @@ async function share() {
         </div>
 
         <dl class="stats">
-          <TlStat label="Timelines" :value="mine.length" />
+          <TlStat label="Timelines" :value="mineTotal" />
           <TlStat label="Eventos criados" :value="profile?.stats.events ?? 0" />
           <TlStat label="Contribuições aprovadas" :value="profile?.stats.approvedContributions ?? 0" />
           <TlStat label="Seguidores" :value="profile?.stats.followers ?? 0" />
@@ -238,6 +262,10 @@ async function share() {
               <TlIcon name="plus" :size="24" />
               Nova timeline
             </TlCard>
+            <div v-if="mine.length < mineTotal" class="more">
+              <span class="more__count">Mostrando {{ mine.length }} de {{ mineTotal }}</span>
+              <TlButton :disabled="mineLoading" @click="loadMoreMine">{{ mineLoading ? 'Carregando…' : 'Carregar mais' }}</TlButton>
+            </div>
           </div>
 
           <template v-else-if="tab === 'contribuicoes'">
@@ -389,6 +417,17 @@ async function share() {
 }
 .panel {
   padding-top: var(--tl-space-6);
+}
+.more {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--tl-space-3);
+}
+.more__count {
+  font-size: var(--tl-text-md);
+  color: var(--tl-color-text-muted);
 }
 .grid {
   display: grid;

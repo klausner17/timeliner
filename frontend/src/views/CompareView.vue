@@ -9,7 +9,6 @@ import {
   TlInput,
   TlOverviewBar,
   TlSegmented,
-  TlSelect,
   TlTrackLabel,
   provideYearFormat,
   trackColors,
@@ -20,9 +19,10 @@ import {
   type TrackPeriod,
 } from '@/design-system'
 import EventDetail from '@/components/EventDetail.vue'
+import TimelinePicker from '@/components/TimelinePicker.vue'
 import { errorMessage } from '@/data/api'
-import { currentUser, listSavedComparisons, listTimelines, loadComparison, loadSummary, sameCalendar, saveComparison, yearRange, type Comparison } from '@/data/store'
-import type { SavedComparison, Timeline, TimelineEvent } from '@/data/types'
+import { calendarKey, currentUser, listSavedComparisons, listTimelines, loadComparison, loadSummary, sameCalendar, saveComparison, yearRange, type Comparison } from '@/data/store'
+import type { SavedComparison, Timeline, TimelineEvent, TimelinePage } from '@/data/types'
 import { extent, type EventWindow } from '@/data/windowing'
 import { copyLink, dateLabel } from '@/lib/format'
 import { useLatest } from '@/lib/useLatest'
@@ -34,41 +34,51 @@ const router = useRouter()
 
 const KEYS = ['a', 'b', 'c', 'd'] as const
 
-// Timelines que aparecem nos seletores: as públicas e as do usuário.
-const { data: choiceData, error: choiceError } = useLatest(
-  () => {
-    const me = currentUser.value?.handle
-    return Promise.all([listTimelines({ pageSize: 100 }), me ? listTimelines({ owner: 'me', pageSize: 100 }) : undefined]).then(([pub, own]) => ({ pub: pub.items, own: own?.items ?? [] }))
-  },
-  undefined as { pub: Timeline[]; own: Timeline[] } | undefined,
-)
-const choices = computed(() => {
-  if (!choiceData.value) return []
-  const { pub, own } = choiceData.value
-  return [...pub, ...own.filter((t) => t.eventCount && !pub.some((p) => p.slug === t.slug))]
-})
-const findTimeline = (slug: string) => choices.value.find((t) => t.slug === slug)
-/** A primeira trilha escolhe qualquer timeline; as outras, só as do mesmo calendário. */
-const optionLabel = (t: Timeline) => (t.calendar ? `${t.title} (${t.calendar.name})` : t.scale ? `${t.title} (fixa, em ${scaleName(t.scale)})` : t.title)
-const optionsFor = (i: number) => {
-  const first = i === 0 ? undefined : selected.value[0]
-  return choices.value.filter((t) => !first || sameCalendar(t, first)).map((t) => ({ value: t.slug, label: optionLabel(t) }))
-}
+// Só as escolhidas vêm do servidor (pelos slugs da URL); os seletores buscam o resto sob
+// demanda, então a página não carrega todas as timelines.
+const routeSlugs = computed(() => KEYS.map((k) => route.query[k]).filter((v): v is string => typeof v === 'string' && !!v))
 
-const slugs = computed<string[]>(() => {
-  const picked = KEYS.map((k) => route.query[k]).filter((v): v is string => typeof v === 'string' && !!findTimeline(v))
+/** Quanto a busca de complemento pede: o bastante para completar duas trilhas. */
+const FILL = 6
+
+async function resolveSelection(want: string[], loggedIn: boolean): Promise<Timeline[]> {
+  const found = want.length ? (await listTimelines({ slugs: want.join(','), pageSize: want.length })).items : []
+  const bySlug = new Map(found.map((t) => [t.slug, t]))
+  const picked = want.map((s) => bySlug.get(s)).filter((t): t is Timeline => !!t)
   // Só se compara no mesmo calendário: vale o da primeira trilha.
-  const first = picked.length ? findTimeline(picked[0]) : undefined
-  const out = first ? picked.filter((s) => sameCalendar(findTimeline(s)!, first)) : []
-  // Sempre pelo menos duas: completa com as primeiras do mesmo calendário que ainda não estão na comparação.
-  for (const t of choices.value) {
-    if (out.length >= 2) break
-    const base = out.length ? findTimeline(out[0]) : undefined
-    if (!out.includes(t.slug) && (!base || sameCalendar(t, base))) out.push(t.slug)
+  const out = picked.length ? picked.filter((t) => sameCalendar(t, picked[0])) : []
+  // Sempre pelo menos duas: completa com as primeiras do mesmo calendário (ou do gregoriano).
+  if (out.length < 2) {
+    const fill = await listTimelines({ calendar: out[0] ? calendarKey(out[0]) : 'gregoriano', withEvents: true, includeMine: loggedIn || undefined, pageSize: FILL })
+    for (const t of fill.items) {
+      if (out.length >= 2) break
+      if (!out.some((o) => o.slug === t.slug)) out.push(t)
+    }
+    // Nem duas no gregoriano: tenta qualquer calendário que tenha.
+    if (!out.length) {
+      const any = await listTimelines({ withEvents: true, includeMine: loggedIn || undefined, pageSize: 1 })
+      if (any.items[0]) return resolveSelection([any.items[0].slug], loggedIn)
+    }
   }
   return out
-})
-const selected = computed(() => slugs.value.map((s) => findTimeline(s)).filter((t): t is Timeline => !!t))
+}
+
+const { data: selection, error: choiceError } = useLatest(
+  () => resolveSelection(routeSlugs.value, !!currentUser.value),
+  undefined as Timeline[] | undefined,
+)
+const selected = computed(() => selection.value ?? [])
+const slugs = computed(() => selected.value.map((t) => t.slug))
+const findTimeline = (slug: string) => selected.value.find((t) => t.slug === slug)
+
+/** Quantas timelines usam o calendário da primeira trilha (para saber se dá para somar mais uma). */
+const { data: sameCal } = useLatest(
+  () => {
+    const first = selection.value?.[0]
+    return first ? listTimelines({ calendar: calendarKey(first), withEvents: true, includeMine: !!currentUser.value || undefined, pageSize: 5 }) : undefined
+  },
+  undefined as TimelinePage | undefined,
+)
 /** Timelines de um calendário sozinho não têm com o que comparar. */
 const alone = computed(() => selected.value.length < 2)
 const cal = computed(() => selected.value[0]?.calendar)
@@ -83,10 +93,10 @@ function setSlugs(next: string[], extra: Record<string, string | undefined> = {}
   router.replace({ query: q })
 }
 
-function pick(i: number, slug: string) {
-  const picked = findTimeline(slug)
+function pick(i: number, picked: Timeline) {
+  const slug = picked.slug
   // Trocar a primeira por uma de outro calendário recomeça as outras trilhas.
-  if (i === 0 && picked && selected.value[1] && !sameCalendar(picked, selected.value[1])) return setSlugs([slug])
+  if (i === 0 && selected.value[1] && !sameCalendar(picked, selected.value[1])) return setSlugs([slug])
   const next = [...slugs.value]
   const other = next.indexOf(slug)
   if (other !== -1 && other !== i) next[other] = next[i] // escolher uma que já está troca as duas de lugar
@@ -94,9 +104,10 @@ function pick(i: number, slug: string) {
   setSlugs(next)
 }
 const swap = () => setSlugs([slugs.value[1], slugs.value[0], ...slugs.value.slice(2)])
+const canAddLane = computed(() => selected.value.length < 4 && (sameCal.value?.total ?? 0) > selected.value.length)
 function addLane() {
-  const first = selected.value[0]
-  const free = choices.value.find((t) => !slugs.value.includes(t.slug) && (!first || sameCalendar(t, first)))
+  // Com 5 por página e no máximo 4 escolhidas, sempre sobra uma livre quando o total é maior.
+  const free = sameCal.value?.items.find((t) => !slugs.value.includes(t.slug))
   if (free) setSlugs([...slugs.value, free.slug])
 }
 const removeLane = (i: number) => setSlugs(slugs.value.filter((_, j) => j !== i))
@@ -299,8 +310,8 @@ async function share() {
     </div>
 
     <p v-if="choiceError" class="page__lead" role="alert">{{ choiceError }}</p>
-    <div v-else-if="!choiceData" aria-busy="true"></div>
-    <TlCard v-else-if="choices.length < 2" tone="muted" padding="lg">Ainda não há timelines suficientes para comparar. Volte quando houver pelo menos duas publicadas.</TlCard>
+    <div v-else-if="!selection" aria-busy="true"></div>
+    <TlCard v-else-if="!selected.length" tone="muted" padding="lg">Ainda não há timelines suficientes para comparar. Volte quando houver pelo menos duas publicadas.</TlCard>
     <template v-else>
 
     <div class="pickers">
@@ -309,13 +320,13 @@ async function share() {
           <label :for="`tl-${i}`" class="picker__label">Timeline {{ KEYS[i].toUpperCase() }}</label>
           <div class="picker__box">
             <span class="picker__dot" aria-hidden="true"></span>
-            <TlSelect :id="`tl-${i}`" :model-value="t.slug" :options="optionsFor(i)" class="picker__select" @update:model-value="(v) => v && pick(i, v)" />
+            <TimelinePicker :id="`tl-${i}`" :value="t" :calendar="i === 0 ? undefined : calendarKey(selected[0])" :taken="slugs" @pick="(v) => pick(i, v)" />
             <TlButton v-if="i > 1" icon="close" icon-only size="sm" variant="ghost" :label="`Remover timeline ${KEYS[i].toUpperCase()}`" @click="removeLane(i)" />
           </div>
         </div>
         <TlButton v-if="i === 0" icon="swap" icon-only size="lg" label="Trocar A e B" class="pickers__swap" @click="swap" />
       </template>
-      <TlButton v-if="selected.length < 4 && optionsFor(1).length > selected.length" variant="dashed" shape="rounded" size="lg" @click="addLane">+ Adicionar timeline</TlButton>
+      <TlButton v-if="canAddLane" variant="dashed" shape="rounded" size="lg" @click="addLane">+ Adicionar timeline</TlButton>
     </div>
 
     <TlCard v-if="alone" tone="muted" padding="lg">
@@ -468,15 +479,6 @@ async function share() {
   height: 12px;
   border-radius: var(--tl-radius-pill);
   background: var(--track);
-}
-.picker__select {
-  flex: 1;
-  min-width: 0;
-  border: 0;
-  background-color: transparent;
-  font-size: 16px;
-  font-weight: var(--tl-weight-semibold);
-  padding-left: 0;
 }
 .controls {
   display: flex;

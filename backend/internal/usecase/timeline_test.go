@@ -121,3 +121,52 @@ func TestListTimelines(t *testing.T) {
 	_, err := list.Execute(ctx, usecase.ListTimelinesInput{PageSize: 500})
 	wantKind(t, err, domain.KindValidation)
 }
+
+// O seletor do comparar busca no servidor: as escolhidas pelo slug, as do usuário junto
+// com as públicas, só do mesmo calendário e só as que têm eventos.
+func TestListTimelinesForCompare(t *testing.T) {
+	d := newDeps()
+	ana, beto := register(t, d, "ana"), register(t, d, "beto")
+	createTimeline(t, d, ana.ID, "Brasil", ev(1822, "Independência"))
+	createTimeline(t, d, ana.ID, "Vazia")
+	privada := createTimeline(t, d, beto.ID, "Diário", ev(2001, "Começo"))
+	link := createTimeline(t, d, ana.ID, "Por link", ev(1950, "x"))
+	must[usecase.TimelineDetailView](t)(createFixed(t, d, ana.ID, "Lagarto", domain.ScaleDays, ev(0, "Ovo")))
+	must[usecase.TimelineDetailView](t)(usecase.NewUpdateTimeline(d).Execute(ctx, usecase.UpdateTimelineInput{
+		ActorID: beto.ID, Slug: privada.Timeline.Slug, TimelineFields: usecase.TimelineFields{Visibility: ptr(domain.VisibilityPrivate)},
+	}))
+	must[usecase.TimelineDetailView](t)(usecase.NewUpdateTimeline(d).Execute(ctx, usecase.UpdateTimelineInput{
+		ActorID: ana.ID, Slug: link.Timeline.Slug, TimelineFields: usecase.TimelineFields{Visibility: ptr(domain.VisibilityLink)},
+	}))
+
+	list := usecase.NewListTimelines(d)
+	slugs := func(in usecase.ListTimelinesInput) []string {
+		t.Helper()
+		in.Sort = usecase.SortRecent
+		page := must[usecase.TimelinePage](t)(list.Execute(ctx, in))
+		out := []string{}
+		for _, v := range page.Items {
+			out = append(out, v.Timeline.Slug)
+		}
+		slices.Sort(out)
+		return out
+	}
+	if got := slugs(usecase.ListTimelinesInput{ActorID: beto.ID, IncludeMine: true, WithEvents: true, Calendar: usecase.CalendarGregorian}); !slices.Equal(got, []string{"brasil", "diario"}) {
+		t.Errorf("beto, gregoriano com eventos = %v", got)
+	}
+	if got := slugs(usecase.ListTimelinesInput{ActorID: ana.ID, IncludeMine: true, WithEvents: true, Calendar: usecase.CalendarGregorian}); !slices.Equal(got, []string{"brasil", "por-link"}) {
+		t.Errorf("ana, gregoriano com eventos = %v", got)
+	}
+	if got := slugs(usecase.ListTimelinesInput{Calendar: "escala:dias"}); !slices.Equal(got, []string{"lagarto"}) {
+		t.Errorf("fixas em dias = %v", got)
+	}
+	// Pelo slug vem quem o usuário pode abrir: a de link sim, a privada de outro não.
+	if got := slugs(usecase.ListTimelinesInput{ActorID: ana.ID, Slugs: []string{"por-link", "diario", "brasil", "nao-existe"}}); !slices.Equal(got, []string{"brasil", "por-link"}) {
+		t.Errorf("pelos slugs = %v", got)
+	}
+	if got := slugs(usecase.ListTimelinesInput{Slugs: []string{"por-link"}}); !slices.Equal(got, []string{"por-link"}) {
+		t.Errorf("de link sem login = %v", got)
+	}
+	_, err := list.Execute(ctx, usecase.ListTimelinesInput{Calendar: "escala:seculos"})
+	wantKind(t, err, domain.KindValidation)
+}
