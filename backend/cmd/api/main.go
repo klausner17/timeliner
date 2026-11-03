@@ -81,7 +81,8 @@ func run(log *slog.Logger) error {
 func newDeps(pool *pgxpool.Pool) *usecase.Deps {
 	deps := postgres.New(pool)
 	deps.Hasher, deps.Clock, deps.IDs = platform.Bcrypt{}, platform.SystemClock{}, platform.RandomIDs{}
-	deps.Previews = platform.NewLinkPreviews(false)
+	// Prévia de links só dos sites conhecidos; LINK_PREVIEW_EXTRA_DOMAINS soma outros.
+	deps.Previews = platform.NewLinkPreviews(platform.PreviewDomains(os.Getenv("LINK_PREVIEW_EXTRA_DOMAINS")), false)
 	// SIGNUP=closed: ninguém se cadastra pela API; contas só com create-user.
 	deps.SignupClosed = os.Getenv("SIGNUP") == "closed"
 	return deps

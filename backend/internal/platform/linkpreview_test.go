@@ -39,7 +39,7 @@ func TestLinkPreview(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	l := NewLinkPreviews(true)
+	l := NewLinkPreviews(nil, true)
 	ctx := context.Background()
 
 	p, err := l.Preview(ctx, srv.URL+"/volta")
@@ -77,11 +77,44 @@ func TestLinkPreviewBlocksInternalNetwork(t *testing.T) {
 		_, _ = w.Write([]byte("<title>segredo</title>"))
 	}))
 	defer srv.Close()
-	l := NewLinkPreviews(false)
+	l := NewLinkPreviews(nil, false)
 	if p, err := l.Preview(context.Background(), srv.URL); err == nil {
 		t.Fatalf("buscou a rede interna: %+v", p)
 	}
 	if p, err := l.Preview(context.Background(), strings.Replace(srv.URL, "127.0.0.1", "localhost", 1)); err == nil {
 		t.Fatalf("buscou localhost: %+v", p)
+	}
+}
+
+func TestLinkPreviewDomains(t *testing.T) {
+	set := newDomainSet(PreviewDomains(" Exemplo.org. , "))
+	for host, want := range map[string]bool{
+		"pt.wikipedia.org": true, "wikipedia.org": true, "www.ibge.gov.br": true, "exemplo.org": true,
+		"a.exemplo.org": true, "notwikipedia.org": false, "wikipedia.org.evil.com": false, "gov.br.evil.com": false, "": false,
+	} {
+		if got := set.allows(host); got != want {
+			t.Errorf("allows(%q) = %v, queria %v", host, got, want)
+		}
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`<head><title>Ok</title><meta property="og:image" content="https://cdn.fora.com/a.jpg"></head>`))
+	})
+	mux.Handle("/sai", http.RedirectHandler("http://localhost.fora/x", http.StatusFound))
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	ctx := context.Background()
+
+	if _, err := NewLinkPreviews([]string{"exemplo.org"}, true).Preview(ctx, srv.URL); err == nil {
+		t.Fatal("buscou site fora da lista")
+	}
+	l := NewLinkPreviews([]string{"127.0.0.1"}, true)
+	p, err := l.Preview(ctx, srv.URL)
+	if err != nil || p.Title != "Ok" || p.Image != "" {
+		t.Fatalf("miniatura de fora da lista devia sumir: %+v, %v", p, err)
+	}
+	if _, err := l.Preview(ctx, srv.URL+"/sai"); err == nil {
+		t.Fatal("seguiu redirect para fora da lista")
 	}
 }

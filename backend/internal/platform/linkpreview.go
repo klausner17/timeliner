@@ -40,8 +40,9 @@ var errBlockedAddress = errors.New("endereço de rede interno")
 // Só lê o começo da página, guarda o resultado em memória por algumas horas e recusa
 // endereços da rede interna (localhost, 10.x, 192.168.x...), mesmo depois de redirect.
 type LinkPreviews struct {
-	client *http.Client
-	group  singleflight.Group
+	client  *http.Client
+	domains domainSet
+	group   singleflight.Group
 
 	mu    sync.Mutex
 	cache map[string]previewEntry
@@ -54,8 +55,11 @@ type previewEntry struct {
 	exp time.Time
 }
 
-// NewLinkPreviews monta o buscador. allowPrivate libera a rede interna; é só para testes.
-func NewLinkPreviews(allowPrivate bool) *LinkPreviews {
+// NewLinkPreviews monta o buscador. Só busca páginas (e só aceita miniaturas) dos
+// domínios da lista, ou de qualquer um com domains nil. allowPrivate libera a rede
+// interna; é só para testes.
+func NewLinkPreviews(domains []string, allowPrivate bool) *LinkPreviews {
+	allowed := newDomainSet(domains)
 	dialer := &net.Dialer{Timeout: previewTimeout}
 	if !allowPrivate {
 		dialer.Control = func(_, address string, _ syscall.RawConn) error {
@@ -89,10 +93,13 @@ func NewLinkPreviews(allowPrivate bool) *LinkPreviews {
 			if req.URL.Scheme != "http" && req.URL.Scheme != "https" {
 				return errors.New("redirecionamento para fora da web")
 			}
+			if !allowed.allows(req.URL.Hostname()) {
+				return errors.New("redirecionamento para site fora da lista")
+			}
 			return nil
 		},
 	}
-	return &LinkPreviews{client: client, cache: map[string]previewEntry{}, now: time.Now}
+	return &LinkPreviews{client: client, domains: allowed, cache: map[string]previewEntry{}, now: time.Now}
 }
 
 // publicAddr diz se o IP é da internet pública.
@@ -159,6 +166,9 @@ func (l *LinkPreviews) fetch(ctx context.Context, rawURL string) (domain.LinkPre
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 		return domain.LinkPreview{}, errors.New("link inválido")
 	}
+	if !l.domains.allows(u.Hostname()) {
+		return domain.LinkPreview{}, errors.New("site fora da lista de prévias")
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return domain.LinkPreview{}, err
@@ -190,6 +200,10 @@ func (l *LinkPreviews) fetch(ctx context.Context, rawURL string) (domain.LinkPre
 	}
 	p := parseMeta(body, final)
 	p.URL = rawURL
+	// A miniatura carrega no navegador de quem lê: só de sites da lista.
+	if iu, err := url.Parse(p.Image); p.Image != "" && (err != nil || !l.domains.allows(iu.Hostname())) {
+		p.Image = ""
+	}
 	return p, nil
 }
 

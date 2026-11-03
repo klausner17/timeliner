@@ -319,7 +319,9 @@ paths:
         A fonte primeiro, depois os links a mais. O servidor lê as metatags Open Graph de
         cada página (com cache de algumas horas); a miniatura é o endereço da imagem no site
         de origem, nada é guardado. Página fora do ar ou que não é HTML vem só com a url.
-        Só endereços que já estão no evento são buscados.
+        Só endereços que já estão no evento são buscados, e só de sites conhecidos
+        (Wikipédia, gov.br, grandes jornais...; lista em backend/internal/platform/previewdomains.go,
+        ampliável com LINK_PREVIEW_EXTRA_DOMAINS). Os outros vêm só com a url.
       responses:
         '200':
           description: OK
