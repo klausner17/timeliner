@@ -17,6 +17,7 @@ export const router = createRouter({
   routes: [
     { path: '/', name: 'home', component: () => import('@/views/HomeView.vue'), meta: { nav: 'explorar' } },
     { path: '/t/:slug', name: 'timeline', component: () => import('@/views/TimelineView.vue'), meta: { nav: 'explorar' } },
+    { path: '/t/:slug/apresentar', name: 'present', component: () => import('@/views/PresentView.vue'), meta: { bare: true } },
     { path: '/t/:slug/contribuir', name: 'contribute', component: () => import('@/views/ContributeView.vue'), meta: { nav: 'explorar' } },
     { path: '/t/:slug/editar', name: 'editor', component: () => import('@/views/EditorView.vue'), meta: { nav: 'minhas', auth: true } },
     { path: '/nova', name: 'new', component: () => import('@/views/NewTimelineView.vue'), meta: { nav: 'minhas', auth: true } },
