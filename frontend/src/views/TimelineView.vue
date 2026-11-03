@@ -10,6 +10,7 @@ import {
   TlCompareTracks,
   TlDrawer,
   TlEventItem,
+  TlFavoriteButton,
   TlOverviewBar,
   TlSegmented,
   clampWindow,
@@ -27,6 +28,7 @@ import { errorMessage } from '@/data/api'
 import {
   canEdit,
   followTimeline,
+  recordView,
   getTimeline,
   handleLabel,
   calendarKey,
@@ -41,6 +43,7 @@ import {
 import type { TimelineDetail, TimelineEvent, TimelinePage } from '@/data/types'
 import type { EventWindow } from '@/data/windowing'
 import { copyLink, dateLabel, detailedDateLabel, timeAgo, yearLabel } from '@/lib/format'
+import { useFavorite } from '@/lib/useFavorite'
 import { useLatest } from '@/lib/useLatest'
 import { overviewTicksFor, yearFormatOf } from '@/lib/calendar'
 import { reckoningOf, scaleName } from '@/lib/scale'
@@ -65,6 +68,7 @@ watch(
       if (id !== timelineSeq) return
       timeline.value = t
       status.value = t ? 'ok' : 'missing'
+      if (t) recordView(t.slug)
     } catch (e) {
       if (id !== timelineSeq) return
       statusError.value = errorMessage(e, 'Não deu para carregar a timeline.')
@@ -275,6 +279,11 @@ async function toggleFollow() {
   }
 }
 
+const { toggle: toggleFavorite, busy: favBusy } = useFavorite((msg) => {
+  shareMsg.value = msg
+  setTimeout(() => (shareMsg.value = ''), 2500)
+})
+
 const relatedColors = ['b', 'c', 'd'] as const
 
 // ---------- Tela cheia: usa a API do navegador e, sem ela, ocupa a janela ----------
@@ -347,6 +356,7 @@ async function share() {
               <TlBadge v-if="timeline.cyclic" tone="info" title="Depois do fim, o ciclo recomeça">Cíclica</TlBadge>
               <span>{{ timeline.eventCount.toLocaleString('pt-BR') }} eventos</span>
               <span>{{ timeline.contributorCount }} {{ timeline.contributorCount === 1 ? 'contribuidor' : 'contribuidores' }}</span>
+              <span>{{ timeline.views.toLocaleString('pt-BR') }} {{ timeline.views === 1 ? 'visualização' : 'visualizações' }}</span>
               <span>Atualizada {{ timeAgo(timeline.updatedAt) }}</span>
               <TlBadge v-if="timeline.draft" tone="warning">Rascunho</TlBadge>
               <TlBadge v-else-if="timeline.visibility === 'privada'" tone="neutral">Privada</TlBadge>
@@ -360,6 +370,7 @@ async function share() {
             </TlButton>
             <TlButton :to="{ path: '/comparar', query: { a: timeline.slug } }" icon="compare">Comparar com…</TlButton>
             <TlButton v-if="timeline.eventCount" :to="presentLink" icon="play">Apresentar</TlButton>
+            <TlFavoriteButton :count="timeline.favorites" :on="timeline.favorited" :disabled="favBusy.has(timeline.slug)" @toggle="toggleFavorite(timeline)" />
             <TlButton v-if="!mine" :aria-pressed="following" :disabled="followBusy" @click="toggleFollow">
               {{ following ? 'Seguindo' : 'Seguir' }}
             </TlButton>

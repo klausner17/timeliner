@@ -27,9 +27,13 @@ type db struct {
 	// follows de timeline e de usuário: chave seguidor+"|"+seguido, valor a ordem.
 	timelineFollows map[string]int
 	userFollows     map[string]int
-	comparisons     map[string]domain.SavedComparison
-	calendars       map[string]domain.Calendar
-	seq             int
+	// favoritos: chave usuário+"|"+timeline, valor a ordem.
+	timelineFavorites map[string]int
+	// visualizações: chave timeline+"|"+dia+"|"+viewer.
+	timelineViews map[string]bool
+	comparisons   map[string]domain.SavedComparison
+	calendars     map[string]domain.Calendar
+	seq           int
 }
 
 // New devolve os repositories ligados a um mesmo banco em memória.
@@ -37,7 +41,7 @@ func New() *usecase.Deps {
 	d := &db{
 		users: map[string]domain.User{}, sessions: map[string]domain.Session{}, authTokens: map[string]domain.AuthToken{},
 		timelines: map[string]domain.Timeline{}, events: map[string]domain.Event{},
-		suggestions: map[string]domain.Suggestion{}, timelineFollows: map[string]int{},
+		suggestions: map[string]domain.Suggestion{}, timelineFollows: map[string]int{}, timelineFavorites: map[string]int{}, timelineViews: map[string]bool{},
 		userFollows: map[string]int{}, comparisons: map[string]domain.SavedComparison{},
 		calendars: map[string]domain.Calendar{},
 	}
@@ -260,9 +264,16 @@ func (r timelines) Delete(_ context.Context, id string) error {
 			delete(r.suggestions, k)
 		}
 	}
-	for k := range r.timelineFollows {
-		if strings.HasSuffix(k, "|"+id) {
-			delete(r.timelineFollows, k)
+	for k := range r.timelineViews {
+		if strings.HasPrefix(k, id+"|") {
+			delete(r.timelineViews, k)
+		}
+	}
+	for _, m := range []map[string]int{r.timelineFollows, r.timelineFavorites} {
+		for k := range m {
+			if strings.HasSuffix(k, "|"+id) {
+				delete(m, k)
+			}
 		}
 	}
 	return nil
@@ -301,6 +312,7 @@ func (r timelines) List(_ context.Context, f usecase.TimelineFilter) ([]domain.T
 		case !f.IncludeUnlisted && !visibleInList(t, f),
 			len(f.Slugs) > 0 && !slices.Contains(f.Slugs, t.Slug),
 			f.FollowedBy != "" && r.timelineFollows[f.FollowedBy+"|"+t.ID] == 0,
+			f.FavoritedBy != "" && r.timelineFavorites[f.FavoritedBy+"|"+t.ID] == 0,
 			!inCalendar(t, f.Calendar),
 			f.WithEvents && !r.hasEvents(t.ID),
 			f.OwnerID != "" && t.OwnerID != f.OwnerID,
@@ -312,15 +324,24 @@ func (r timelines) List(_ context.Context, f usecase.TimelineFilter) ([]domain.T
 		}
 		matched = append(matched, clone(t))
 	}
-	followers := map[string]int{}
+	followers, favorites := map[string]int{}, map[string]int{}
 	for k := range r.timelineFollows {
 		followers[k[strings.Index(k, "|")+1:]]++
+	}
+	for k := range r.timelineFavorites {
+		favorites[k[strings.Index(k, "|")+1:]]++
 	}
 	slices.SortFunc(matched, func(a, b domain.Timeline) int {
 		if f.FollowedBy != "" {
 			return cmp.Compare(r.timelineFollows[f.FollowedBy+"|"+b.ID], r.timelineFollows[f.FollowedBy+"|"+a.ID])
 		}
+		if f.FavoritedBy != "" {
+			return cmp.Compare(r.timelineFavorites[f.FavoritedBy+"|"+b.ID], r.timelineFavorites[f.FavoritedBy+"|"+a.ID])
+		}
 		if f.Sort == usecase.SortPopular {
+			if c := cmp.Compare(favorites[b.ID], favorites[a.ID]); c != 0 {
+				return c
+			}
 			if c := cmp.Compare(followers[b.ID], followers[a.ID]); c != 0 {
 				return c
 			}
@@ -338,7 +359,7 @@ func (r timelines) List(_ context.Context, f usecase.TimelineFilter) ([]domain.T
 
 func visibleInList(t domain.Timeline, f usecase.TimelineFilter) bool {
 	switch {
-	case len(f.Slugs) > 0, f.FollowedBy != "":
+	case len(f.Slugs) > 0, f.FollowedBy != "", f.FavoritedBy != "":
 		return t.VisibleTo(f.ViewerID)
 	case f.IncludeMine:
 		return t.Listed() || t.OwnerID == f.ViewerID
@@ -419,9 +440,27 @@ func (r timelines) Stats(_ context.Context, ids []string, viewerID string) (map[
 			}
 		}
 		_, s.Following = r.timelineFollows[viewerID+"|"+id]
+		for k := range r.timelineFavorites {
+			if strings.HasSuffix(k, "|"+id) {
+				s.Favorites++
+			}
+		}
+		_, s.Favorited = r.timelineFavorites[viewerID+"|"+id]
+		for k := range r.timelineViews {
+			if strings.HasPrefix(k, id+"|") {
+				s.Views++
+			}
+		}
 		out[id] = s
 	}
 	return out, nil
+}
+
+func (r timelines) RecordView(_ context.Context, timelineID, viewer, day string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.timelineViews[timelineID+"|"+day+"|"+viewer] = true
+	return nil
 }
 
 func (r timelines) Tags(_ context.Context, limit int) ([]domain.TagCount, error) {
@@ -847,6 +886,12 @@ func (r follows) FollowTimeline(_ context.Context, u, t string) error {
 }
 func (r follows) UnfollowTimeline(_ context.Context, u, t string) error {
 	return r.remove(r.timelineFollows, u, t)
+}
+func (r follows) FavoriteTimeline(_ context.Context, u, t string) error {
+	return r.add(r.timelineFavorites, u, t)
+}
+func (r follows) UnfavoriteTimeline(_ context.Context, u, t string) error {
+	return r.remove(r.timelineFavorites, u, t)
 }
 func (r follows) FollowUser(_ context.Context, a, b string) error { return r.add(r.userFollows, a, b) }
 func (r follows) UnfollowUser(_ context.Context, a, b string) error {

@@ -62,6 +62,7 @@ func (c *Controller) listTimelines(w http.ResponseWriter, r *http.Request) {
 		ActorID: actor(r), Query: q.Get("q"), Category: q.Get("cat"), Tag: q.Get("tag"), OwnerHandle: q.Get("owner"),
 		OnlyOpen: queryBool(r, "openToContributions", fields), Sort: usecase.TimelineSort(q.Get("sort")),
 		IncludeMine: queryBool(r, "includeMine", fields), Calendar: q.Get("calendar"), WithEvents: queryBool(r, "withEvents", fields),
+		FavoritedBy: q.Get("favoritedBy"),
 	}
 	if s := q.Get("slugs"); s != "" {
 		in.Slugs = strings.Split(s, ",")
@@ -154,6 +155,26 @@ func (c *Controller) followTimeline(follow bool) http.HandlerFunc {
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}
+}
+
+func (c *Controller) favoriteTimeline(on bool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		in := slugInput(r)
+		if _, err := c.uc.FavoriteTimeline.Execute(r.Context(), usecase.FavoriteTimelineInput{ActorID: in.ActorID, Slug: in.Slug, Favorite: on}); err != nil {
+			c.fail(w, r, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+func (c *Controller) recordView(w http.ResponseWriter, r *http.Request) {
+	in := slugInput(r)
+	if _, err := c.uc.RecordView.Execute(r.Context(), usecase.RecordViewInput{ActorID: in.ActorID, ClientIP: c.clientIP(r), Slug: in.Slug}); err != nil {
+		c.fail(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (c *Controller) listTags(w http.ResponseWriter, r *http.Request) {

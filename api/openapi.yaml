@@ -259,9 +259,14 @@ paths:
           schema: { type: string }
           description: 'Só um calendário: gregoriano, escala:<dias|semanas|meses|anos> para as fixas, ou o ID de um calendário ficcional'
         - { name: withEvents, in: query, schema: { type: boolean }, description: 'true = só as que têm pelo menos um evento' }
+        - name: favoritedBy
+          in: query
+          schema: { type: string }
+          description: 'Handle: só as favoritas dessa pessoa, as favoritadas por último primeiro (ignora sort). Traz as que o usuário pode abrir, inclusive as de link.'
         - name: sort
           in: query
           schema: { type: string, enum: [popular, recent], default: popular }
+          description: 'popular = mais favoritos, depois mais seguidores, depois as mais novas'
         - { $ref: '#/components/parameters/Page' }
         - { $ref: '#/components/parameters/PageSize' }
       responses:
@@ -344,6 +349,34 @@ paths:
       responses:
         '204': { description: OK }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /timelines/{slug}/favorite:
+    parameters:
+      - { $ref: '#/components/parameters/Slug' }
+    post:
+      tags: [timelines]
+      summary: Dá estrela na timeline (idempotente). Não pede e-mail confirmado.
+      responses:
+        '204': { description: OK }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [timelines]
+      summary: Tira a estrela (idempotente)
+      responses:
+        '204': { description: OK }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /timelines/{slug}/view:
+    parameters:
+      - { $ref: '#/components/parameters/Slug' }
+    post:
+      tags: [timelines]
+      summary: Conta uma visualização (uma por pessoa por dia; a do dono não conta). Sem login, conta pelo IP, guardado só como hash com o dia.
+      responses:
+        '204': { description: OK }
         '404': { $ref: '#/components/responses/NotFound' }
 
   /timelines/{slug}/events:
@@ -1067,7 +1100,7 @@ components:
       required:
         [slug, title, description, category, color, owner, visibility, contributions, draft, eras, tags,
          calendar, scale, cyclic, startYear, endYear, eventCount, contributorCount, pendingSuggestions, followers, following,
-         points, createdAt, updatedAt]
+         favorites, favorited, views, points, createdAt, updatedAt]
       properties:
         slug: { type: string, example: historia-do-brasil }
         title: { type: string, example: História do Brasil }
@@ -1105,6 +1138,9 @@ components:
         pendingSuggestions: { type: integer }
         followers: { type: integer }
         following: { type: boolean, description: Se o usuário logado segue (false sem login) }
+        favorites: { type: integer, description: Quantas pessoas deram estrela }
+        favorited: { type: boolean, description: Se o usuário logado deu estrela (false sem login) }
+        views: { type: integer, description: 'Visualizações: uma por pessoa por dia. Só mostradas, não mudam a ordem.' }
         points:
           type: array
           description: Posições de 0 a 100 dos eventos no eixo, para o TlMiniTrack (até 24 pontos)

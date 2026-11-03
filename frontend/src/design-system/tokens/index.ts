@@ -44,6 +44,8 @@ export const colorGroups: TokenGroup[] = [
       { name: '--tl-color-success-soft', use: 'Selo "Aprovada", "Pública"' },
       { name: '--tl-color-warning', use: 'Alerta' },
       { name: '--tl-color-warning-soft', use: 'Selo "Rascunho"' },
+      { name: '--tl-color-favorite', use: 'Estrela de favorito marcada' },
+      { name: '--tl-color-favorite-soft', use: 'Fundo do botão de favorito marcado' },
       { name: '--tl-color-neutral-soft', use: 'Chips e selos neutros' },
     ],
   },

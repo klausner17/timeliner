@@ -1,7 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { TlButton, TlCompareTracks, TlDrawer, TlField, TlInput, TlLinkPreview, TlOverviewBar, TlSegmented, TlTabs, type CompareLane } from '..'
+import { TlButton, TlCompareTracks, TlDrawer, TlFavoriteButton, TlField, TlInput, TlLinkPreview, TlOverviewBar, TlSegmented, TlTabs, TlTimelineCard, type CompareLane } from '..'
 
 const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: { template: '<div />' } }] })
 
@@ -25,6 +25,36 @@ describe('TlButton', () => {
     const w = mount(TlButton, { props: { icon: 'share', iconOnly: true, label: 'Compartilhar' } })
     expect(w.attributes('aria-label')).toBe('Compartilhar')
     expect(w.text()).toBe('')
+  })
+})
+
+describe('TlFavoriteButton', () => {
+  it('mostra o total, diz se está marcado e avisa no clique', async () => {
+    const w = mount(TlFavoriteButton, { props: { count: 1234, on: true, subject: 'Escândalos' } })
+    expect(w.text()).toBe('1.234')
+    expect(w.attributes('aria-pressed')).toBe('true')
+    expect(w.attributes('aria-label')).toBe('Tirar Escândalos dos favoritos (1234 favoritos)')
+    await w.trigger('click')
+    expect(w.emitted('toggle')).toHaveLength(1)
+  })
+})
+
+describe('TlTimelineCard', () => {
+  const base = { title: 'Brasil', color: 'a' as const, points: [], range: '1500–2024', events: 3, to: '/' }
+
+  it('deixa a estrela fora do link do cartão', async () => {
+    const w = mount(TlTimelineCard, { props: { ...base, favorites: 2 }, global: { plugins: [router] } })
+    await router.isReady()
+    const fav = w.find('button.tl-fav')
+    expect(fav.exists()).toBe(true)
+    expect(fav.element.closest('a')).toBeNull()
+    await fav.trigger('click')
+    expect(w.emitted('favorite')).toHaveLength(1)
+  })
+
+  it('sem favorites não mostra a estrela', () => {
+    const w = mount(TlTimelineCard, { props: base, global: { plugins: [router] } })
+    expect(w.find('.tl-fav').exists()).toBe(false)
   })
 })
 

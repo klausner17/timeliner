@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { TlButton, TlCard, TlChip, TlIcon, TlInput, TlSegmented, TlTimelineCard } from '@/design-system'
 import { handleLabel, listTimelines, rangeLabel, type TimelineQuery } from '@/data/store'
 import { categories } from '@/data/types'
+import { useFavorite } from '@/lib/useFavorite'
 import { usePaged } from '@/lib/usePaged'
 
 const route = useRoute()
@@ -43,6 +44,12 @@ const {
   (t) => t.slug,
 )
 const results = computed(() => page.value ?? [])
+
+const favError = ref('')
+const { toggle: toggleFavorite, busy: favBusy } = useFavorite((msg) => {
+  favError.value = msg
+  setTimeout(() => (favError.value = ''), 3000)
+})
 
 const filtering = computed(() => !!(query.value || category.value))
 
@@ -114,6 +121,7 @@ const heroB = [17, 47, 62, 84]
           </div>
         </div>
         <p v-if="error" class="home__error" role="alert">{{ error }}</p>
+        <p v-if="favError" class="home__error" role="alert">{{ favError }}</p>
         <div v-if="!page" class="home__grid" aria-busy="true"></div>
         <div v-else-if="results.length" class="home__grid">
           <TlTimelineCard
@@ -128,6 +136,11 @@ const heroB = [17, 47, 62, 84]
             :events="t.eventCount"
             :contributors="t.contributorCount"
             :author="handleLabel(t.owner.handle)"
+            :views="t.views"
+            :favorites="t.favorites"
+            :favorited="t.favorited"
+            :favorite-busy="favBusy.has(t.slug)"
+            @favorite="toggleFavorite(t)"
           />
         </div>
         <div v-if="hasMore" class="home__more">
