@@ -8,6 +8,7 @@ import {
   TlCard,
   TlChip,
   TlCompareTracks,
+  TlDrawer,
   TlEventItem,
   TlOverviewBar,
   TlSegmented,
@@ -21,6 +22,7 @@ import {
   type CompareLane,
   type PeriodColor,
 } from '@/design-system'
+import EventDetail from '@/components/EventDetail.vue'
 import { errorMessage } from '@/data/api'
 import {
   canEdit,
@@ -77,11 +79,23 @@ const era = ref(ALL)
 const mode = ref('vertical')
 const selected = ref<string>()
 const shareMsg = ref('')
+/** Evento aberto no painel de detalhes (modo vertical). */
+const opened = shallowRef<TimelineEvent>()
+const drawerOpen = computed({
+  get: () => !!opened.value,
+  set: (v: boolean) => {
+    if (!v) opened.value = undefined
+  },
+})
+/** O cartão da lista não mostra tudo: links a mais ou descrição longa pedem o detalhe. */
+const linkCount = (e: TimelineEvent) => (e.sourceUrl ? 1 : 0) + (e.links?.length ?? 0)
+const hasMore = (e: TimelineEvent) => linkCount(e) > 0 || e.description.length > 280 || e.description.includes('\n')
 watch(
   () => route.params.slug,
   () => {
     era.value = ALL
     selected.value = undefined
+    opened.value = undefined
   },
 )
 
@@ -416,8 +430,15 @@ async function share() {
               :source-url="e.sourceUrl"
               :by="e.by"
               :color="timeline.color"
+              clamp
               class="body__event"
-            />
+            >
+              <template v-if="hasMore(e)" #actions>
+                <button type="button" class="body__more" @click="opened = e">
+                  {{ linkCount(e) > 1 ? `Ver detalhes e ${linkCount(e)} links` : 'Ver detalhes' }}
+                </button>
+              </template>
+            </TlEventItem>
           </section>
           <p v-if="!loaded.length && !loading" class="body__note">Nenhum evento neste período.</p>
           <p v-if="loadError" class="body__note" role="alert">{{ loadError }}</p>
@@ -433,13 +454,7 @@ async function share() {
             {{ grouped.total.toLocaleString('pt-BR') }} eventos neste trecho, agrupados por período. Clique num grupo ou aproxime para ver cada evento.
           </p>
           <TlCard v-if="selectedEvent" padding="lg" class="detail">
-            <span class="detail__date">{{ dateLabel(selectedEvent, reck) }}</span>
-            <h2 class="detail__title">{{ selectedEvent.title }}</h2>
-            <p>{{ selectedEvent.description }}</p>
-            <span class="detail__by">
-              <a v-if="selectedEvent.sourceUrl" :href="selectedEvent.sourceUrl" target="_blank" rel="noopener">Fonte</a>
-              adicionado por {{ selectedEvent.by }}
-            </span>
+            <EventDetail :slug="timeline.slug" :event="selectedEvent" :date="dateLabel(selectedEvent, reck)" />
           </TlCard>
         </template>
       </main>
@@ -477,6 +492,10 @@ async function share() {
         </TlCard>
       </aside>
     </div>
+
+    <TlDrawer v-model:open="drawerOpen" :label="opened ? opened.title : 'Detalhes do evento'">
+      <EventDetail v-if="opened" :slug="timeline.slug" :event="opened" :date="dateLabel(opened, reck)" />
+    </TlDrawer>
   </div>
 </template>
 
@@ -707,17 +726,17 @@ async function share() {
   flex-direction: column;
   gap: 10px;
 }
-.detail__date,
-.detail__by {
-  font-size: var(--tl-text-sm);
-  color: var(--tl-color-text-muted);
+.body__more {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-weight: var(--tl-weight-semibold);
+  color: var(--tl-color-primary);
+  cursor: pointer;
 }
-.detail__by {
-  display: flex;
-  gap: var(--tl-space-4);
-}
-.detail__title {
-  font-size: var(--tl-text-2xl);
+.body__more:hover {
+  text-decoration: underline;
 }
 .side {
   display: flex;

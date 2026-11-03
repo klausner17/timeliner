@@ -14,6 +14,15 @@ type EventData struct {
 	Description string
 	SourceURL   *string
 	Era         *string
+	// Links são fontes e leituras além do SourceURL.
+	Links []EventLink
+}
+
+// EventLink é um link a mais de um evento. Label é o texto que aparece; sem ele, a tela
+// mostra o endereço.
+type EventLink struct {
+	URL   string
+	Label string
 }
 
 type Event struct {

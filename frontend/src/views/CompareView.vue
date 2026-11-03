@@ -19,6 +19,7 @@ import {
   type TrackColor,
   type TrackPeriod,
 } from '@/design-system'
+import EventDetail from '@/components/EventDetail.vue'
 import { errorMessage } from '@/data/api'
 import { currentUser, listSavedComparisons, listTimelines, loadComparison, loadSummary, sameCalendar, saveComparison, yearRange, type Comparison } from '@/data/store'
 import type { SavedComparison, Timeline, TimelineEvent } from '@/data/types'
@@ -388,10 +389,14 @@ async function share() {
 
     <div class="bottom">
       <TlCard v-if="current" class="detail" padding="lg">
-        <TlTrackLabel :color="current.color" size="sm" class="detail__meta">{{ current.timeline.title }} · {{ dateLabel(current, reck) }}</TlTrackLabel>
-        <h2 class="detail__title">{{ current.title }}</h2>
-        <p class="detail__desc">{{ current.description }}</p>
-        <RouterLink :to="`/t/${current.timeline.slug}`" class="detail__link">Abrir na timeline</RouterLink>
+        <EventDetail :slug="current.timeline.slug" :event="current" :date="dateLabel(current, reck)" compact>
+          <template #meta>
+            <TlTrackLabel :color="current.color" size="sm" class="detail__meta">{{ current.timeline.title }} · {{ dateLabel(current, reck) }}</TlTrackLabel>
+          </template>
+          <template #actions>
+            <RouterLink :to="`/t/${current.timeline.slug}`" class="detail__link">Abrir na timeline</RouterLink>
+          </template>
+        </EventDetail>
       </TlCard>
       <TlCard tone="inverse" padding="lg" class="match">
         <h2 class="match__label">Coincidência destacada</h2>
@@ -566,12 +571,6 @@ async function share() {
 .detail__meta {
   font-size: var(--tl-text-sm);
   color: var(--tl-color-text-muted);
-}
-.detail__title {
-  font-size: var(--tl-text-2xl);
-}
-.detail__desc {
-  color: var(--tl-color-text-body);
 }
 .detail__link {
   width: fit-content;

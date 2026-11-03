@@ -18,6 +18,7 @@ import {
   periodRange,
   type PeriodColor,
 } from '@/design-system'
+import LinksEditor, { type LinkRow } from '@/components/LinksEditor.vue'
 import { errorMessage } from '@/data/api'
 import { canEdit, createEvent, deleteEvent, deleteTimeline, getTimeline, loadAllEvents, updateEvent, updateTimeline } from '@/data/store'
 import { categories, type Era, type EraInput, type EventInput, type Timeline, type TimelineEvent, type TimelinePatch } from '@/data/types'
@@ -309,8 +310,18 @@ async function removePeriod(p: Era) {
 
 // ---------- Formulário de evento ----------
 
-type Form = { year: string; month: string; day: string; time: string; endYear: string; era: string; title: string; description: string; source: string }
-const blank = (): Form => ({ year: '', month: '', day: '', time: '', endYear: '', era: '', title: '', description: '', source: '' })
+type Form = { year: string; month: string; day: string; time: string; endYear: string; era: string; title: string; description: string; source: string; links: LinkRow[] }
+const blank = (): Form => ({ year: '', month: '', day: '', time: '', endYear: '', era: '', title: '', description: '', source: '', links: [] })
+const linkErrors = ref<Record<number, string>>({})
+
+/** Diz se o texto é um endereço http(s) completo. */
+function isWebUrl(s: string) {
+  try {
+    return /^https?:$/.test(new URL(s).protocol)
+  } catch {
+    return false
+  }
+}
 const form = reactive<Form>(blank())
 const formOpen = ref(false)
 const editing = ref<string>()
@@ -324,6 +335,7 @@ function openNew() {
   Object.assign(form, blank())
   editing.value = undefined
   errors.value = {}
+  linkErrors.value = {}
   formError.value = ''
   formOpen.value = true
 }
@@ -337,9 +349,11 @@ function openEdit(e: TimelineEvent) {
     title: e.title,
     description: e.description,
     source: e.sourceUrl ?? '',
+    links: (e.links ?? []).map((l) => ({ url: l.url, label: l.label ?? '' })),
   })
   editing.value = e.id
   errors.value = {}
+  linkErrors.value = {}
   formError.value = ''
   formOpen.value = true
 }
@@ -364,9 +378,16 @@ async function submit() {
   else if (scale.value && year < 0) e.year = 'A contagem começa do 0.'
   if (endYear !== undefined && (!Number.isInteger(endYear) || endYear < year)) e.endYear = 'O fim precisa ser depois do começo.'
   if (!form.title.trim()) e.title = 'Dê um título ao evento.'
+  if (form.source.trim() && !isWebUrl(form.source.trim())) e.source = 'Use um link completo, começando com https://'
+  const links = form.links.map((l) => ({ url: l.url.trim(), label: l.label.trim() })).filter((l) => l.url)
+  const le: Record<number, string> = {}
+  form.links.forEach((l, i) => {
+    if (l.url.trim() && !isWebUrl(l.url.trim())) le[i] = 'Use um link completo, começando com https://'
+  })
   errors.value = e
+  linkErrors.value = le
   formError.value = ''
-  if (Object.keys(e).length) return
+  if (Object.keys(e).length || Object.keys(le).length) return
 
   const data: EventInput = {
     year,
@@ -376,6 +397,7 @@ async function submit() {
     title: form.title.trim(),
     description: form.description.trim(),
     sourceUrl: form.source.trim() || undefined,
+    links: links.map((l) => (l.label ? l : { url: l.url })),
   }
   sending.value = true
   try {
@@ -672,8 +694,13 @@ async function destroy() {
           <TlField v-slot="{ id, describedby, invalid }" label="Título" :error="errors.title">
             <TlInput :id="id" v-model="form.title" :aria-describedby="describedby" :invalid="invalid" />
           </TlField>
-          <TlField v-slot="{ id }" label="Descrição"><TlTextarea :id="id" v-model="form.description" :rows="2" /></TlField>
-          <TlField v-slot="{ id }" label="Fonte"><TlInput :id="id" v-model="form.source" type="url" :placeholder="urlPlaceholder" /></TlField>
+          <TlField v-slot="{ id, describedby }" label="Descrição" hint="Pode ser longa: a lista mostra o começo e o resto aparece ao abrir o evento. Linha em branco separa parágrafos.">
+            <TlTextarea :id="id" v-model="form.description" :rows="4" :maxlength="10000" :aria-describedby="describedby" />
+          </TlField>
+          <TlField v-slot="{ id, describedby, invalid }" label="Fonte" :error="errors.source">
+            <TlInput :id="id" v-model="form.source" type="url" :placeholder="urlPlaceholder" :aria-describedby="describedby" :invalid="invalid" />
+          </TlField>
+          <LinksEditor v-model="form.links" :errors="linkErrors" />
           <p v-if="formError" class="form__error" role="alert">{{ formError }}</p>
           <div class="form__actions">
             <TlButton variant="ghost" @click="closeForm">Cancelar</TlButton>

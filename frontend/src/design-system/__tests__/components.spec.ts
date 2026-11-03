@@ -1,7 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { TlButton, TlCompareTracks, TlField, TlInput, TlOverviewBar, TlSegmented, TlTabs, type CompareLane } from '..'
+import { TlButton, TlCompareTracks, TlDrawer, TlField, TlInput, TlLinkPreview, TlOverviewBar, TlSegmented, TlTabs, type CompareLane } from '..'
 
 const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: { template: '<div />' } }] })
 
@@ -181,5 +181,44 @@ describe('TlOverviewBar', () => {
     const w = mount(TlOverviewBar, { props: { start: 0, end: 100, years: [10, 20], window: [10, 30], interactive: true } })
     await w.find('[role="slider"]').trigger('keydown', { key: 'ArrowRight' })
     expect(w.emitted('update:window')?.[0]).toEqual([[12, 32]])
+  })
+})
+
+describe('TlLinkPreview', () => {
+  it('mostra o título da página, o site e a miniatura', () => {
+    const w = mount(TlLinkPreview, {
+      props: { url: 'https://pt.wikipedia.org/wiki/Lei', title: 'Lei Áurea', siteName: 'Wikipédia', image: 'https://img.org/a.jpg', description: 'Resumo' },
+    })
+    expect(w.attributes('href')).toBe('https://pt.wikipedia.org/wiki/Lei')
+    expect(w.attributes('rel')).toContain('noopener')
+    expect(w.text()).toContain('Lei Áurea')
+    expect(w.text()).toContain('Wikipédia')
+    expect(w.find('img').attributes('src')).toBe('https://img.org/a.jpg')
+  })
+
+  it('sem prévia, mostra o endereço curto; imagem quebrada some', async () => {
+    const w = mount(TlLinkPreview, { props: { url: 'https://www.exemplo.com/a/b/', image: 'https://img.org/x.jpg' } })
+    expect(w.text()).toContain('exemplo.com/a/b')
+    await w.find('img').trigger('error')
+    expect(w.find('img').exists()).toBe(false)
+  })
+
+  it('o nome dado ao link vence o título da página, que vira o resumo', () => {
+    const w = mount(TlLinkPreview, { props: { url: 'https://x.org', label: 'Arquivo', title: 'Página do arquivo', description: 'nunca' } })
+    expect(w.find('.tl-link__title').text()).toBe('Arquivo')
+    expect(w.find('.tl-link__desc').text()).toBe('Página do arquivo')
+  })
+})
+
+describe('TlDrawer', () => {
+  it('só mostra o conteúdo aberto e fecha pelo botão', async () => {
+    const w = mount(TlDrawer, { props: { open: false, label: 'Evento' }, slots: { default: '<p class="x">Oi</p>' }, attachTo: document.body })
+    expect(w.find('.x').exists()).toBe(false)
+    await w.setProps({ open: true })
+    expect(w.find('.x').exists()).toBe(true)
+    expect(w.find('dialog').attributes('aria-label')).toBe('Evento')
+    await w.find('button[aria-label="Fechar"]').trigger('click')
+    expect(w.emitted('update:open')?.[0]).toEqual([false])
+    w.unmount()
   })
 })

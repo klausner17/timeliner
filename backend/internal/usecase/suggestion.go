@@ -242,6 +242,10 @@ func apply(ctx context.Context, d *Deps, s *domain.Suggestion, t *domain.Timelin
 	previous := *e
 	s.Previous = &previous
 	e.EventData = s.Proposed
+	// Correção que não fala de links mantém os do evento.
+	if s.Proposed.Links == nil {
+		e.Links = previous.Links
+	}
 	if err := d.Events.Update(ctx, e); err != nil {
 		return err
 	}
