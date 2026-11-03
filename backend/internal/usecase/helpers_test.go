@@ -57,9 +57,11 @@ func wantKind(t *testing.T, err error, kind domain.Kind) {
 	}
 }
 
+// register cria uma conta já com o e-mail confirmado (como o create-user), que
+// pode criar conteúdo. Para a conta recém-cadastrada pelo site, use NewRegister.
 func register(t *testing.T, d *usecase.Deps, handle string) domain.User {
 	t.Helper()
-	out := must[usecase.AuthOutput](t)(usecase.NewRegister(d).Execute(ctx, usecase.RegisterInput{
+	out := must[usecase.AuthOutput](t)(usecase.NewAdminRegister(d).Execute(ctx, usecase.RegisterInput{
 		Handle: handle, Name: handle, Email: handle + "@exemplo.com", Password: "senha-forte",
 	}))
 	return out.User

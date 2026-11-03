@@ -113,7 +113,7 @@ type CreateCalendar struct{ d *Deps }
 func NewCreateCalendar(d *Deps) *CreateCalendar { return &CreateCalendar{d} }
 
 func (uc *CreateCalendar) Execute(ctx context.Context, in CreateCalendarInput) (CalendarView, error) {
-	if err := requireActor(in.ActorID); err != nil {
+	if err := requireVerified(ctx, uc.d, in.ActorID); err != nil {
 		return CalendarView{}, err
 	}
 	now := uc.d.Clock.Now()

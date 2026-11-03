@@ -44,6 +44,11 @@ func (uc *UpdateProfile) Execute(ctx context.Context, in UpdateProfileInput) (do
 	if err != nil {
 		return domain.User{}, notFound(err, "Usuário não encontrado.")
 	}
+	// Nome e bio aparecem no perfil público: só com o e-mail confirmado. A cor pode.
+	if (in.Name != nil || in.Bio != nil) && u.EmailVerifiedAt == nil {
+		return domain.User{}, &domain.Error{Kind: domain.KindEmailUnverified,
+			Message: "Confirme seu e-mail para mudar o nome e a bio. Abra o link que mandamos para " + u.Email + " ou peça outro."}
+	}
 	f := fieldErrors{}
 	if in.Name != nil {
 		u.Name = strings.TrimSpace(*in.Name)

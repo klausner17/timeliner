@@ -29,12 +29,13 @@ type errorJSON struct {
 }
 
 var statusOf = map[domain.Kind]int{
-	domain.KindValidation:   http.StatusBadRequest,
-	domain.KindUnauthorized: http.StatusUnauthorized,
-	domain.KindForbidden:    http.StatusForbidden,
-	domain.KindNotFound:     http.StatusNotFound,
-	domain.KindConflict:     http.StatusConflict,
-	domain.KindTooMany:      http.StatusTooManyRequests,
+	domain.KindValidation:      http.StatusBadRequest,
+	domain.KindUnauthorized:    http.StatusUnauthorized,
+	domain.KindForbidden:       http.StatusForbidden,
+	domain.KindNotFound:        http.StatusNotFound,
+	domain.KindConflict:        http.StatusConflict,
+	domain.KindTooMany:         http.StatusTooManyRequests,
+	domain.KindEmailUnverified: http.StatusForbidden,
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {

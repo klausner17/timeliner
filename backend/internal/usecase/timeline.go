@@ -274,7 +274,7 @@ type CreateTimeline struct{ d *Deps }
 func NewCreateTimeline(d *Deps) *CreateTimeline { return &CreateTimeline{d} }
 
 func (uc *CreateTimeline) Execute(ctx context.Context, in CreateTimelineInput) (TimelineDetailView, error) {
-	if err := requireActor(in.ActorID); err != nil {
+	if err := requireVerified(ctx, uc.d, in.ActorID); err != nil {
 		return TimelineDetailView{}, err
 	}
 	now := uc.d.Clock.Now()

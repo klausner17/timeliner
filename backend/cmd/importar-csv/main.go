@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -55,7 +56,8 @@ func run(dir, owner, only string, replace, dry bool) error {
 	var d *usecase.Deps
 	if dry {
 		d = memory.New()
-		u := &domain.User{ID: "us_teste", Handle: owner, Name: owner, Email: owner + "@exemplo.com", Tint: domain.TintNeutral}
+		now := time.Now()
+		u := &domain.User{ID: "us_teste", Handle: owner, Name: owner, Email: owner + "@exemplo.com", Tint: domain.TintNeutral, EmailVerifiedAt: &now}
 		if err := d.Users.Create(ctx, u); err != nil {
 			return err
 		}

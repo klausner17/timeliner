@@ -222,6 +222,25 @@ func requireActor(actorID string) error {
 	return nil
 }
 
+// requireVerified é requireActor mais o e-mail confirmado. Vale para tudo que
+// cria conteúdo que outras pessoas veem (timelines, sugestões, calendários, bio):
+// conta feita em massa com e-mail falso não chega a publicar nada. Editar eventos
+// não precisa: só o dono de uma timeline edita, e para ter uma ele já confirmou.
+func requireVerified(ctx context.Context, d *Deps, actorID string) error {
+	if err := requireActor(actorID); err != nil {
+		return err
+	}
+	u, err := d.Users.ByID(ctx, actorID)
+	if err != nil {
+		return notFound(err, "Usuário não encontrado.")
+	}
+	if u.EmailVerifiedAt == nil {
+		return &domain.Error{Kind: domain.KindEmailUnverified,
+			Message: "Confirme seu e-mail para criar conteúdo. Abra o link que mandamos para " + u.Email + " ou peça outro."}
+	}
+	return nil
+}
+
 // notFound troca o ErrNotFound do repository pelo erro de negócio com a mensagem dada.
 func notFound(err error, msg string) error {
 	if errors.Is(err, domain.ErrNotFound) {

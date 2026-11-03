@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/klausner17/timeliner/backend/internal/domain"
 	"github.com/klausner17/timeliner/backend/internal/platform"
@@ -32,7 +33,7 @@ func TestDadosBrasil(t *testing.T) {
 	ctx := context.Background()
 	d := memory.New()
 	d.Clock, d.IDs = platform.SystemClock{}, platform.RandomIDs{}
-	u := &domain.User{ID: "us_1", Handle: "dono", Name: "Dono", Email: "dono@exemplo.com", Tint: domain.TintNeutral}
+	u := &domain.User{ID: "us_1", Handle: "dono", Name: "Dono", Email: "dono@exemplo.com", Tint: domain.TintNeutral, EmailVerifiedAt: ptrNow()}
 	if err := d.Users.Create(ctx, u); err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +88,7 @@ func TestTimelineFixa(t *testing.T) {
 	ctx := context.Background()
 	d := memory.New()
 	d.Clock, d.IDs = platform.SystemClock{}, platform.RandomIDs{}
-	u := &domain.User{ID: "us_1", Handle: "dono", Name: "Dono", Email: "dono@exemplo.com", Tint: domain.TintNeutral}
+	u := &domain.User{ID: "us_1", Handle: "dono", Name: "Dono", Email: "dono@exemplo.com", Tint: domain.TintNeutral, EmailVerifiedAt: ptrNow()}
 	if err := d.Users.Create(ctx, u); err != nil {
 		t.Fatal(err)
 	}
@@ -122,4 +123,9 @@ func TestColunaLinks(t *testing.T) {
 	if ls := seeds[0].Events[0].Links; len(ls) != 2 || ls[0].Label != "Câmara" || ls[1].URL != "https://www.bbc.com/y" {
 		t.Fatalf("links = %+v", ls)
 	}
+}
+
+func ptrNow() *time.Time {
+	now := time.Now()
+	return &now
 }

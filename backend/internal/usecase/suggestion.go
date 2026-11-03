@@ -52,7 +52,7 @@ type CreateSuggestion struct{ d *Deps }
 func NewCreateSuggestion(d *Deps) *CreateSuggestion { return &CreateSuggestion{d} }
 
 func (uc *CreateSuggestion) Execute(ctx context.Context, in CreateSuggestionInput) (SuggestionView, error) {
-	if err := requireActor(in.ActorID); err != nil {
+	if err := requireVerified(ctx, uc.d, in.ActorID); err != nil {
 		return SuggestionView{}, err
 	}
 	t, err := visibleTimeline(ctx, uc.d, in.Slug, in.ActorID)
