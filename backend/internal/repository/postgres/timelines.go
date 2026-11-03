@@ -143,7 +143,8 @@ func (r timelines) List(ctx context.Context, f usecase.TimelineFilter) ([]domain
 	}
 	if f.Query != "" {
 		p := arg("%" + escapeLike(f.Query) + "%")
-		where = append(where, fmt.Sprintf("(t.title ILIKE %[1]s OR t.description ILIKE %[1]s OR array_to_string(t.tags, ' ') ILIKE %[1]s)", p))
+		// Mesma expressão do índice timelines_search_idx (trigramas).
+		where = append(where, "timeline_search_text(t.title, t.description, t.tags) ILIKE "+p)
 	}
 	cond := strings.Join(where, " AND ")
 
@@ -153,7 +154,7 @@ func (r timelines) List(ctx context.Context, f usecase.TimelineFilter) ([]domain
 	}
 	order := "t.created_at DESC, t.id"
 	if f.Sort == usecase.SortPopular {
-		order = "(SELECT count(*) FROM timeline_follows tf WHERE tf.timeline_id=t.id) DESC, " + order
+		order = "t.followers_count DESC, " + order
 	}
 	rows, err := r.q(ctx).Query(ctx, `SELECT `+timelineCols+` FROM timelines t WHERE `+cond+
 		` ORDER BY `+order+` LIMIT `+arg(f.Limit)+` OFFSET `+arg(f.Offset), args...)
