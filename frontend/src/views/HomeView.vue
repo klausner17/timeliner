@@ -143,14 +143,6 @@ const heroB = [17, 47, 62, 84]
           </div>
         </TlCard>
       </section>
-
-      <TlCard tone="inverse" padding="lg" class="cta">
-        <div class="cta__text">
-          <h2 class="home__h2">Tem uma história para contar?</h2>
-          <p>Comece com poucos eventos. Você decide se a timeline aceita contribuições e quem aprova.</p>
-        </div>
-        <TlButton to="/nova" variant="inverse" size="lg">Criar minha timeline</TlButton>
-      </TlCard>
     </div>
   </main>
 </template>
@@ -332,23 +324,6 @@ const heroB = [17, 47, 62, 84]
   display: flex;
   flex-wrap: wrap;
   gap: var(--tl-space-2);
-}
-.cta {
-  display: flex;
-  flex-direction: row;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--tl-space-6);
-}
-.cta__text {
-  flex: 1 1 420px;
-  display: flex;
-  flex-direction: column;
-  gap: var(--tl-space-2);
-}
-.cta__text p {
-  color: var(--tl-color-text-inverse-muted);
 }
 
 @media (max-width: 640px) {
