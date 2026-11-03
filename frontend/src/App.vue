@@ -38,7 +38,6 @@ const isAuthPage = computed(() => route.meta.guest === true)
           <RouterLink to="/">Sobre</RouterLink>
           <RouterLink to="/">Regras de contribuição</RouterLink>
           <RouterLink to="/">Privacidade</RouterLink>
-          <RouterLink to="/design-system">Design system</RouterLink>
         </nav>
       </div>
     </footer>
