@@ -214,7 +214,7 @@ func (r timelines) Stats(ctx context.Context, ids []string, viewerID string) (ma
 		(SELECT count(*) FROM suggestions s WHERE s.timeline_id=t.id AND s.status='pendente'),
 		(SELECT count(*) FROM timeline_follows f WHERE f.timeline_id=t.id),
 		EXISTS (SELECT 1 FROM timeline_follows f WHERE f.timeline_id=t.id AND f.user_id=$2),
-		t.favorites_count,
+		t.favorites_count, t.views_count,
 		EXISTS (SELECT 1 FROM timeline_favorites v WHERE v.timeline_id=t.id AND v.user_id=$2),
 		COALESCE((SELECT array_agg(p ORDER BY p) FROM (
 			SELECT DISTINCT CASE WHEN r.hi = r.lo THEN 500 ELSE round((e.year - r.lo) * 1000.0 / (r.hi - r.lo))::int END AS p
@@ -232,7 +232,7 @@ func (r timelines) Stats(ctx context.Context, ids []string, viewerID string) (ma
 		var id string
 		var s domain.TimelineStats
 		if err := rows.Scan(&id, &s.EventCount, &s.ContributorCount, &s.PendingSuggestions, &s.Followers,
-			&s.Following, &s.Favorites, &s.Favorited, &s.Positions, &s.StartYear, &s.EndYear); err != nil {
+			&s.Following, &s.Favorites, &s.Views, &s.Favorited, &s.Positions, &s.StartYear, &s.EndYear); err != nil {
 			return nil, err
 		}
 		out[id] = s
@@ -250,4 +250,9 @@ func (r timelines) Tags(ctx context.Context, limit int) ([]domain.TagCount, erro
 		var t domain.TagCount
 		return t, row.Scan(&t.Tag, &t.Count)
 	})
+}
+
+func (r timelines) RecordView(ctx context.Context, timelineID, viewer, day string) error {
+	_, err := r.q(ctx).Exec(ctx, `INSERT INTO timeline_views (timeline_id, viewer, day) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING`, timelineID, viewer, day)
+	return translate(err)
 }

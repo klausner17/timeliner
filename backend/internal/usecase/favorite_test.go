@@ -3,6 +3,7 @@ package usecase_test
 import (
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/klausner17/timeliner/backend/internal/domain"
 	"github.com/klausner17/timeliner/backend/internal/usecase"
@@ -66,4 +67,42 @@ func TestFavoriteTimeline(t *testing.T) {
 	if tl.Stats.Favorites != 0 || tl.Stats.Favorited {
 		t.Fatalf("sem estrela = %+v", tl.Stats)
 	}
+}
+
+func TestRecordView(t *testing.T) {
+	d := newDeps()
+	ana, beto := register(t, d, "ana"), register(t, d, "beto")
+	createTimeline(t, d, ana.ID, "Brasil")
+	createTimeline(t, d, ana.ID, "Escândalos")
+	rv := usecase.NewRecordView(d)
+	view := func(actor, ip, slug string) {
+		t.Helper()
+		must[usecase.Empty](t)(rv.Execute(ctx, usecase.RecordViewInput{ActorID: actor, ClientIP: ip, Slug: slug}))
+	}
+	views := func(slug string) int {
+		t.Helper()
+		return must[usecase.TimelineDetailView](t)(usecase.NewGetTimeline(d).Execute(ctx, usecase.SlugInput{Slug: slug})).Stats.Views
+	}
+	for range 3 { // mesma pessoa no mesmo dia conta uma vez
+		view(beto.ID, "10.0.0.1", "brasil")
+		view("", "10.0.0.2", "brasil")
+	}
+	view(ana.ID, "10.0.0.3", "brasil") // a dona não conta
+	view("", "", "brasil")              // sem IP nem login não conta
+	if got := views("brasil"); got != 2 {
+		t.Fatalf("views = %d, quero 2", got)
+	}
+	d.Clock.(*fakeClock).t = d.Clock.Now().Add(24 * time.Hour)
+	view(beto.ID, "10.0.0.1", "brasil")
+	if got := views("brasil"); got != 3 {
+		t.Fatalf("views no dia seguinte = %d, quero 3", got)
+	}
+	// Views só aparecem: não mudam o Populares.
+	view("", "10.0.0.9", "escandalos")
+	page := must[usecase.TimelinePage](t)(usecase.NewListTimelines(d).Execute(ctx, usecase.ListTimelinesInput{}))
+	if page.Items[0].Timeline.Slug != "escandalos" {
+		t.Fatalf("popular = %s primeiro, quero a mais nova", page.Items[0].Timeline.Slug)
+	}
+	_, err := rv.Execute(ctx, usecase.RecordViewInput{ClientIP: "1.1.1.1", Slug: "nao-existe"})
+	wantKind(t, err, domain.KindNotFound)
 }

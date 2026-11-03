@@ -28,6 +28,7 @@ import { errorMessage } from '@/data/api'
 import {
   canEdit,
   followTimeline,
+  recordView,
   getTimeline,
   handleLabel,
   calendarKey,
@@ -67,6 +68,7 @@ watch(
       if (id !== timelineSeq) return
       timeline.value = t
       status.value = t ? 'ok' : 'missing'
+      if (t) recordView(t.slug)
     } catch (e) {
       if (id !== timelineSeq) return
       statusError.value = errorMessage(e, 'Não deu para carregar a timeline.')
@@ -354,6 +356,7 @@ async function share() {
               <TlBadge v-if="timeline.cyclic" tone="info" title="Depois do fim, o ciclo recomeça">Cíclica</TlBadge>
               <span>{{ timeline.eventCount.toLocaleString('pt-BR') }} eventos</span>
               <span>{{ timeline.contributorCount }} {{ timeline.contributorCount === 1 ? 'contribuidor' : 'contribuidores' }}</span>
+              <span>{{ timeline.views.toLocaleString('pt-BR') }} {{ timeline.views === 1 ? 'visualização' : 'visualizações' }}</span>
               <span>Atualizada {{ timeAgo(timeline.updatedAt) }}</span>
               <TlBadge v-if="timeline.draft" tone="warning">Rascunho</TlBadge>
               <TlBadge v-else-if="timeline.visibility === 'privada'" tone="neutral">Privada</TlBadge>

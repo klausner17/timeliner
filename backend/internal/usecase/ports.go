@@ -122,6 +122,9 @@ type TimelineRepository interface {
 	Stats(ctx context.Context, ids []string, viewerID string) (map[string]domain.TimelineStats, error)
 	// Tags devolve as tags mais usadas nas timelines listadas.
 	Tags(ctx context.Context, limit int) ([]domain.TagCount, error)
+	// RecordView conta uma visualização de viewer no dia (AAAA-MM-DD). Repetir no mesmo
+	// dia não conta de novo.
+	RecordView(ctx context.Context, timelineID, viewer, day string) error
 	// ByCalendar devolve todas as timelines que usam o calendário, de qualquer dono.
 	ByCalendar(ctx context.Context, calendarID string) ([]domain.Timeline, error)
 }

@@ -36,7 +36,7 @@ func repositories() *usecase.Deps {
 		return memory.New()
 	}
 	_, err := pool.Exec(context.Background(), `TRUNCATE users, sessions, timelines, events, suggestions,
-		timeline_follows, timeline_favorites, user_follows, saved_comparisons, calendars CASCADE`)
+		timeline_follows, timeline_favorites, timeline_views, user_follows, saved_comparisons, calendars CASCADE`)
 	if err != nil {
 		panic(err)
 	}

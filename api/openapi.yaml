@@ -369,6 +369,16 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /timelines/{slug}/view:
+    parameters:
+      - { $ref: '#/components/parameters/Slug' }
+    post:
+      tags: [timelines]
+      summary: Conta uma visualização (uma por pessoa por dia; a do dono não conta). Sem login, conta pelo IP, guardado só como hash com o dia.
+      responses:
+        '204': { description: OK }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /timelines/{slug}/events:
     parameters:
       - { $ref: '#/components/parameters/Slug' }
@@ -1090,7 +1100,7 @@ components:
       required:
         [slug, title, description, category, color, owner, visibility, contributions, draft, eras, tags,
          calendar, scale, cyclic, startYear, endYear, eventCount, contributorCount, pendingSuggestions, followers, following,
-         favorites, favorited, points, createdAt, updatedAt]
+         favorites, favorited, views, points, createdAt, updatedAt]
       properties:
         slug: { type: string, example: historia-do-brasil }
         title: { type: string, example: História do Brasil }
@@ -1130,6 +1140,7 @@ components:
         following: { type: boolean, description: Se o usuário logado segue (false sem login) }
         favorites: { type: integer, description: Quantas pessoas deram estrela }
         favorited: { type: boolean, description: Se o usuário logado deu estrela (false sem login) }
+        views: { type: integer, description: 'Visualizações: uma por pessoa por dia. Só mostradas, não mudam a ordem.' }
         points:
           type: array
           description: Posições de 0 a 100 dos eventos no eixo, para o TlMiniTrack (até 24 pontos)

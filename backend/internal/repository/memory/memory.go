@@ -29,9 +29,11 @@ type db struct {
 	userFollows     map[string]int
 	// favoritos: chave usuário+"|"+timeline, valor a ordem.
 	timelineFavorites map[string]int
-	comparisons       map[string]domain.SavedComparison
-	calendars         map[string]domain.Calendar
-	seq               int
+	// visualizações: chave timeline+"|"+dia+"|"+viewer.
+	timelineViews map[string]bool
+	comparisons   map[string]domain.SavedComparison
+	calendars     map[string]domain.Calendar
+	seq           int
 }
 
 // New devolve os repositories ligados a um mesmo banco em memória.
@@ -39,7 +41,7 @@ func New() *usecase.Deps {
 	d := &db{
 		users: map[string]domain.User{}, sessions: map[string]domain.Session{}, authTokens: map[string]domain.AuthToken{},
 		timelines: map[string]domain.Timeline{}, events: map[string]domain.Event{},
-		suggestions: map[string]domain.Suggestion{}, timelineFollows: map[string]int{}, timelineFavorites: map[string]int{},
+		suggestions: map[string]domain.Suggestion{}, timelineFollows: map[string]int{}, timelineFavorites: map[string]int{}, timelineViews: map[string]bool{},
 		userFollows: map[string]int{}, comparisons: map[string]domain.SavedComparison{},
 		calendars: map[string]domain.Calendar{},
 	}
@@ -262,6 +264,11 @@ func (r timelines) Delete(_ context.Context, id string) error {
 			delete(r.suggestions, k)
 		}
 	}
+	for k := range r.timelineViews {
+		if strings.HasPrefix(k, id+"|") {
+			delete(r.timelineViews, k)
+		}
+	}
 	for _, m := range []map[string]int{r.timelineFollows, r.timelineFavorites} {
 		for k := range m {
 			if strings.HasSuffix(k, "|"+id) {
@@ -439,9 +446,21 @@ func (r timelines) Stats(_ context.Context, ids []string, viewerID string) (map[
 			}
 		}
 		_, s.Favorited = r.timelineFavorites[viewerID+"|"+id]
+		for k := range r.timelineViews {
+			if strings.HasPrefix(k, id+"|") {
+				s.Views++
+			}
+		}
 		out[id] = s
 	}
 	return out, nil
+}
+
+func (r timelines) RecordView(_ context.Context, timelineID, viewer, day string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.timelineViews[timelineID+"|"+day+"|"+viewer] = true
+	return nil
 }
 
 func (r timelines) Tags(_ context.Context, limit int) ([]domain.TagCount, error) {

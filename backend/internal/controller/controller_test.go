@@ -289,6 +289,11 @@ func TestTimelineSuggestionCompareFlow(t *testing.T) {
 		t.Fatalf("favoritas = %s", favs.Raw)
 	}
 	a.want(a.do("DELETE", "/api/timelines/escandalos/favorite", beto, nil), 204)
+	a.want(a.do("POST", "/api/timelines/escandalos/view", "", nil), 204)
+	a.want(a.do("POST", "/api/timelines/escandalos/view", beto, nil), 204)
+	if v := a.want(a.do("GET", "/api/timelines/escandalos", "", nil), 200); v.Body["views"] != 2.0 {
+		t.Fatalf("views = %s", v.Raw)
+	}
 	if fav = a.want(a.do("GET", "/api/timelines/escandalos", beto, nil), 200); fav.Body["favorites"] != 0.0 || fav.Body["favorited"] != false {
 		t.Fatalf("sem estrela = %s", fav.Raw)
 	}

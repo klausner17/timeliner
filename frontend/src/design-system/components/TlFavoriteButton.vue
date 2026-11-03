@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed } from "vue";
-import TlIcon from "./TlIcon.vue";
+import { computed } from 'vue'
+import TlIcon from './TlIcon.vue'
 
 /**
  * Estrela com o total de favoritos. `on` é se quem está vendo já deu estrela. O clique só
@@ -8,25 +8,23 @@ import TlIcon from "./TlIcon.vue";
  */
 const props = withDefaults(
   defineProps<{
-    count: number;
-    on?: boolean;
+    count: number
+    on?: boolean
     /** `sm` nos cartões, `md` no topo da timeline. */
-    size?: "sm" | "md";
-    disabled?: boolean;
+    size?: 'sm' | 'md'
+    disabled?: boolean
     /** Nome da timeline, para o leitor de tela dizer o que está favoritando. */
-    subject?: string;
+    subject?: string
   }>(),
-  { size: "md" },
-);
-defineEmits<{ toggle: [] }>();
+  { size: 'md' },
+)
+defineEmits<{ toggle: [] }>()
 
 const label = computed(() => {
-  const what = props.subject ? ` ${props.subject}` : "";
-  const total = `${props.count} ${props.count === 1 ? "favorito" : "favoritos"}`;
-  return props.on
-    ? `Tirar${what} dos favoritos (${total})`
-    : `Favoritar${what} (${total})`;
-});
+  const what = props.subject ? ` ${props.subject}` : ''
+  const total = `${props.count} ${props.count === 1 ? 'favorito' : 'favoritos'}`
+  return props.on ? `Tirar${what} dos favoritos (${total})` : `Favoritar${what} (${total})`
+})
 </script>
 
 <template>
@@ -40,14 +38,8 @@ const label = computed(() => {
     :disabled="disabled"
     @click.stop.prevent="$emit('toggle')"
   >
-    <TlIcon
-      :name="on ? 'star-filled' : 'star'"
-      :size="size === 'sm' ? 15 : 17"
-      class="tl-fav__icon"
-    />
-    <span class="tl-fav__count" aria-hidden="true">{{
-      count.toLocaleString("pt-BR")
-    }}</span>
+    <TlIcon :name="on ? 'star-filled' : 'star'" :size="size === 'sm' ? 15 : 17" class="tl-fav__icon" />
+    <span class="tl-fav__count" aria-hidden="true">{{ count.toLocaleString('pt-BR') }}</span>
   </button>
 </template>
 

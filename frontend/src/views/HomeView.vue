@@ -136,6 +136,7 @@ const heroB = [17, 47, 62, 84]
             :events="t.eventCount"
             :contributors="t.contributorCount"
             :author="handleLabel(t.owner.handle)"
+            :views="t.views"
             :favorites="t.favorites"
             :favorited="t.favorited"
             :favorite-busy="favBusy.has(t.slug)"

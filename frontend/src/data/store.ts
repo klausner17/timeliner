@@ -241,6 +241,11 @@ export function favoriteTimeline(slug: string, on: boolean) {
   return on ? post<void>(`/timelines/${slug}/favorite`) : del(`/timelines/${slug}/favorite`)
 }
 
+/** Conta que a pessoa abriu a timeline. Falhar aqui não atrapalha a tela. */
+export function recordView(slug: string) {
+  return post<void>(`/timelines/${slug}/view`).catch(() => undefined)
+}
+
 export async function listTags(): Promise<{ tag: string; count: number }[]> {
   return (await get<{ items: { tag: string; count: number }[] }>('/tags')).items
 }

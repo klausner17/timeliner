@@ -39,6 +39,7 @@ type UseCases struct {
 	DeleteTimeline   usecase.UseCase[usecase.SlugInput, usecase.Empty]
 	FollowTimeline   usecase.UseCase[usecase.FollowTimelineInput, usecase.Empty]
 	FavoriteTimeline usecase.UseCase[usecase.FavoriteTimelineInput, usecase.Empty]
+	RecordView       usecase.UseCase[usecase.RecordViewInput, usecase.Empty]
 	ListTags         usecase.UseCase[usecase.Empty, []domain.TagCount]
 
 	ListCalendars  usecase.UseCase[usecase.ListCalendarsInput, usecase.Page[usecase.CalendarView]]
@@ -77,7 +78,7 @@ func UseCasesFrom(d *usecase.Deps) UseCases {
 		ListContributions: usecase.NewListContributions(d), FollowUser: usecase.NewFollowUser(d), ListFollowing: usecase.NewListFollowing(d),
 		ListTimelines: usecase.NewListTimelines(d), CreateTimeline: usecase.NewCreateTimeline(d), GetTimeline: usecase.NewGetTimeline(d),
 		UpdateTimeline: usecase.NewUpdateTimeline(d), DeleteTimeline: usecase.NewDeleteTimeline(d),
-		FollowTimeline: usecase.NewFollowTimeline(d), FavoriteTimeline: usecase.NewFavoriteTimeline(d), ListTags: usecase.NewListTags(d),
+		FollowTimeline: usecase.NewFollowTimeline(d), FavoriteTimeline: usecase.NewFavoriteTimeline(d), RecordView: usecase.NewRecordView(d), ListTags: usecase.NewListTags(d),
 		ListCalendars: usecase.NewListCalendars(d), CreateCalendar: usecase.NewCreateCalendar(d), GetCalendar: usecase.NewGetCalendar(d),
 		UpdateCalendar: usecase.NewUpdateCalendar(d), DeleteCalendar: usecase.NewDeleteCalendar(d),
 		ListEvents: usecase.NewListEvents(d), SummarizeEvents: usecase.NewSummarizeEvents(d), CreateEvent: usecase.NewCreateEvent(d), UpdateEvent: usecase.NewUpdateEvent(d),
@@ -156,6 +157,7 @@ func (c *Controller) routes(r chi.Router) {
 	r.Delete("/timelines/{slug}/follow", c.followTimeline(false))
 	r.Post("/timelines/{slug}/favorite", c.favoriteTimeline(true))
 	r.Delete("/timelines/{slug}/favorite", c.favoriteTimeline(false))
+	r.Post("/timelines/{slug}/view", c.recordView)
 	r.Get("/timelines/{slug}/events", c.listEvents)
 	r.Get("/timelines/{slug}/summary", c.summarizeEvents)
 	r.Post("/timelines/{slug}/events", c.createEvent)

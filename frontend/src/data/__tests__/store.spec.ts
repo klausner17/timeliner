@@ -50,6 +50,7 @@ const timeline = (over: Partial<Timeline> = {}): Timeline => ({
   following: false,
   favorites: 0,
   favorited: false,
+  views: 0,
   points: [],
   createdAt: '2026-10-01T00:00:00Z',
   updatedAt: '2026-10-01T00:00:00Z',

@@ -168,6 +168,15 @@ func (c *Controller) favoriteTimeline(on bool) http.HandlerFunc {
 	}
 }
 
+func (c *Controller) recordView(w http.ResponseWriter, r *http.Request) {
+	in := slugInput(r)
+	if _, err := c.uc.RecordView.Execute(r.Context(), usecase.RecordViewInput{ActorID: in.ActorID, ClientIP: c.clientIP(r), Slug: in.Slug}); err != nil {
+		c.fail(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (c *Controller) listTags(w http.ResponseWriter, r *http.Request) {
 	tags, err := c.uc.ListTags.Execute(r.Context(), usecase.Empty{})
 	if err != nil {

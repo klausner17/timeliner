@@ -173,6 +173,8 @@ type TimelineStats struct {
 	// Favorites é quantas pessoas deram estrela; Favorited diz se quem está vendo deu.
 	Favorites int
 	Favorited bool
+	// Views são as visualizações: uma por pessoa por dia.
+	Views int
 	// Positions são as posições distintas dos anos de início no eixo StartYear–EndYear,
 	// em milésimos (0 a 1000) e em ordem. Ficam no máximo 1001 valores, por maior que
 	// seja a timeline.

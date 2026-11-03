@@ -2,6 +2,9 @@ package usecase
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"time"
 
 	"github.com/klausner17/timeliner/backend/internal/domain"
 )
@@ -56,6 +59,39 @@ func (uc *FavoriteTimeline) Execute(ctx context.Context, in FavoriteTimelineInpu
 		return Empty{}, uc.d.Follows.FavoriteTimeline(ctx, in.ActorID, t.ID)
 	}
 	return Empty{}, uc.d.Follows.UnfavoriteTimeline(ctx, in.ActorID, t.ID)
+}
+
+type RecordViewInput struct {
+	ActorID string
+	// ClientIP identifica o visitante sem login. Não é guardado: vira um hash com o dia.
+	ClientIP string
+	Slug     string
+}
+
+// RecordView conta que alguém abriu a timeline: uma vez por pessoa por dia. O dono
+// vendo a própria não conta.
+type RecordView struct{ d *Deps }
+
+func NewRecordView(d *Deps) *RecordView { return &RecordView{d} }
+
+func (uc *RecordView) Execute(ctx context.Context, in RecordViewInput) (Empty, error) {
+	t, err := visibleTimeline(ctx, uc.d, in.Slug, in.ActorID)
+	if err != nil {
+		return Empty{}, err
+	}
+	if in.ActorID != "" && in.ActorID == t.OwnerID {
+		return Empty{}, nil
+	}
+	day := uc.d.Clock.Now().UTC().Format(time.DateOnly)
+	viewer := "u:" + in.ActorID
+	if in.ActorID == "" {
+		if in.ClientIP == "" {
+			return Empty{}, nil
+		}
+		sum := sha256.Sum256([]byte(day + "|" + in.ClientIP))
+		viewer = "ip:" + hex.EncodeToString(sum[:12])
+	}
+	return Empty{}, uc.d.Timelines.RecordView(ctx, t.ID, viewer, day)
 }
 
 type FollowUserInput struct {
