@@ -25,10 +25,12 @@ type userJSON struct {
 	Email       string    `json:"email"`
 	Bio         string    `json:"bio"`
 	MemberSince time.Time `json:"memberSince"`
+	// EmailVerified diz se a pessoa já abriu o link de confirmação.
+	EmailVerified bool `json:"emailVerified"`
 }
 
 func toUser(u domain.User) userJSON {
-	return userJSON{userSummaryJSON: toUserSummary(u), Email: u.Email, Bio: u.Bio, MemberSince: u.CreatedAt}
+	return userJSON{userSummaryJSON: toUserSummary(u), Email: u.Email, Bio: u.Bio, MemberSince: u.CreatedAt, EmailVerified: u.EmailVerifiedAt != nil}
 }
 
 type profileStatsJSON struct {

@@ -18,6 +18,8 @@ type User struct {
 	Bio          string
 	Tint         Tint
 	CreatedAt    time.Time
+	// EmailVerifiedAt é quando a pessoa abriu o link de confirmação; nil enquanto não confirmou.
+	EmailVerifiedAt *time.Time
 }
 
 // UserStats são os números do perfil.
@@ -36,4 +38,29 @@ type Session struct {
 	UserID    string
 	CreatedAt time.Time
 	ExpiresAt time.Time
+}
+
+// TokenPurpose diz para que serve um AuthToken.
+type TokenPurpose string
+
+const (
+	TokenVerifyEmail   TokenPurpose = "verificar_email"
+	TokenResetPassword TokenPurpose = "redefinir_senha"
+)
+
+// AuthToken é um link de uso único mandado por e-mail. Só o hash fica guardado.
+type AuthToken struct {
+	TokenHash string
+	UserID    string
+	Purpose   TokenPurpose
+	CreatedAt time.Time
+	ExpiresAt time.Time
+}
+
+// Email é uma mensagem para mandar a alguém.
+type Email struct {
+	To      string
+	Subject string
+	Text    string
+	HTML    string
 }

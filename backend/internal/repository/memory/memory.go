@@ -20,6 +20,7 @@ type db struct {
 	mu          sync.RWMutex
 	users       map[string]domain.User
 	sessions    map[string]domain.Session
+	authTokens  map[string]domain.AuthToken
 	timelines   map[string]domain.Timeline
 	events      map[string]domain.Event
 	suggestions map[string]domain.Suggestion
@@ -34,14 +35,14 @@ type db struct {
 // New devolve os repositories ligados a um mesmo banco em memória.
 func New() *usecase.Deps {
 	d := &db{
-		users: map[string]domain.User{}, sessions: map[string]domain.Session{},
+		users: map[string]domain.User{}, sessions: map[string]domain.Session{}, authTokens: map[string]domain.AuthToken{},
 		timelines: map[string]domain.Timeline{}, events: map[string]domain.Event{},
 		suggestions: map[string]domain.Suggestion{}, timelineFollows: map[string]int{},
 		userFollows: map[string]int{}, comparisons: map[string]domain.SavedComparison{},
 		calendars: map[string]domain.Calendar{},
 	}
 	return &usecase.Deps{
-		Users: users{d}, Sessions: sessions{d}, Timelines: timelines{d}, Calendars: calendars{d}, Events: events{d},
+		Users: users{d}, Sessions: sessions{d}, AuthTokens: authTokens{d}, Timelines: timelines{d}, Calendars: calendars{d}, Events: events{d},
 		Suggestions: suggestions{d}, Follows: follows{d}, Comparisons: comparisons{d}, Tx: tx{},
 	}
 }
@@ -160,6 +161,60 @@ func (r sessions) UserID(_ context.Context, hash string, now time.Time) (string,
 		return "", domain.ErrNotFound
 	}
 	return s.UserID, nil
+}
+
+func (r sessions) Delete(_ context.Context, hash string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.sessions, hash)
+	return nil
+}
+
+func (r sessions) DeleteByUser(_ context.Context, userID, exceptHash string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for h, s := range r.sessions {
+		if s.UserID == userID && h != exceptHash {
+			delete(r.sessions, h)
+		}
+	}
+	return nil
+}
+
+// AuthTokens
+
+type authTokens struct{ *db }
+
+func (r authTokens) Create(_ context.Context, t domain.AuthToken) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.authTokens[t.TokenHash] = t
+	return nil
+}
+
+func (r authTokens) Consume(_ context.Context, hash string, purpose domain.TokenPurpose, now time.Time) (string, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	t, ok := r.authTokens[hash]
+	if !ok || t.Purpose != purpose {
+		return "", domain.ErrNotFound
+	}
+	delete(r.authTokens, hash)
+	if !now.Before(t.ExpiresAt) {
+		return "", domain.ErrNotFound
+	}
+	return t.UserID, nil
+}
+
+func (r authTokens) DeleteByUser(_ context.Context, userID string, purpose domain.TokenPurpose) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for h, t := range r.authTokens {
+		if t.UserID == userID && t.Purpose == purpose {
+			delete(r.authTokens, h)
+		}
+	}
+	return nil
 }
 
 // Timelines

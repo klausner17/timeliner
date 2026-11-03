@@ -11,11 +11,11 @@ import (
 
 type users struct{ *db }
 
-const userCols = `id, handle, name, email, password_hash, bio, tint, created_at`
+const userCols = `id, handle, name, email, password_hash, bio, tint, created_at, email_verified_at`
 
 func scanUser(row pgx.Row) (*domain.User, error) {
 	var u domain.User
-	err := row.Scan(&u.ID, &u.Handle, &u.Name, &u.Email, &u.PasswordHash, &u.Bio, &u.Tint, &u.CreatedAt)
+	err := row.Scan(&u.ID, &u.Handle, &u.Name, &u.Email, &u.PasswordHash, &u.Bio, &u.Tint, &u.CreatedAt, &u.EmailVerifiedAt)
 	if err != nil {
 		return nil, translate(err)
 	}
@@ -23,14 +23,14 @@ func scanUser(row pgx.Row) (*domain.User, error) {
 }
 
 func (r users) Create(ctx context.Context, u *domain.User) error {
-	_, err := r.q(ctx).Exec(ctx, `INSERT INTO users (`+userCols+`) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-		u.ID, u.Handle, u.Name, u.Email, u.PasswordHash, u.Bio, u.Tint, u.CreatedAt)
+	_, err := r.q(ctx).Exec(ctx, `INSERT INTO users (`+userCols+`) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+		u.ID, u.Handle, u.Name, u.Email, u.PasswordHash, u.Bio, u.Tint, u.CreatedAt, u.EmailVerifiedAt)
 	return translate(err)
 }
 
 func (r users) Update(ctx context.Context, u *domain.User) error {
-	return mustAffect(r.q(ctx).Exec(ctx, `UPDATE users SET name=$2, bio=$3, tint=$4, password_hash=$5 WHERE id=$1`,
-		u.ID, u.Name, u.Bio, u.Tint, u.PasswordHash))
+	return mustAffect(r.q(ctx).Exec(ctx, `UPDATE users SET name=$2, bio=$3, tint=$4, password_hash=$5, email_verified_at=$6 WHERE id=$1`,
+		u.ID, u.Name, u.Bio, u.Tint, u.PasswordHash, u.EmailVerifiedAt))
 }
 
 func (r users) one(ctx context.Context, where string, arg any) (*domain.User, error) {
@@ -90,4 +90,41 @@ func (r sessions) UserID(ctx context.Context, hash string, now time.Time) (strin
 	var id string
 	err := r.q(ctx).QueryRow(ctx, `SELECT user_id FROM sessions WHERE token_hash=$1 AND expires_at > $2`, hash, now).Scan(&id)
 	return id, translate(err)
+}
+
+func (r sessions) Delete(ctx context.Context, hash string) error {
+	_, err := r.q(ctx).Exec(ctx, `DELETE FROM sessions WHERE token_hash=$1`, hash)
+	return translate(err)
+}
+
+func (r sessions) DeleteByUser(ctx context.Context, userID, exceptHash string) error {
+	_, err := r.q(ctx).Exec(ctx, `DELETE FROM sessions WHERE user_id=$1 AND token_hash<>$2`, userID, exceptHash)
+	return translate(err)
+}
+
+type authTokens struct{ *db }
+
+func (r authTokens) Create(ctx context.Context, t domain.AuthToken) error {
+	_, err := r.q(ctx).Exec(ctx, `INSERT INTO auth_tokens (token_hash, user_id, purpose, created_at, expires_at) VALUES ($1,$2,$3,$4,$5)`,
+		t.TokenHash, t.UserID, t.Purpose, t.CreatedAt, t.ExpiresAt)
+	return translate(err)
+}
+
+func (r authTokens) Consume(ctx context.Context, hash string, purpose domain.TokenPurpose, now time.Time) (string, error) {
+	var id string
+	var expires time.Time
+	err := r.q(ctx).QueryRow(ctx, `DELETE FROM auth_tokens WHERE token_hash=$1 AND purpose=$2 RETURNING user_id, expires_at`,
+		hash, purpose).Scan(&id, &expires)
+	if err != nil {
+		return "", translate(err)
+	}
+	if !now.Before(expires) {
+		return "", domain.ErrNotFound
+	}
+	return id, nil
+}
+
+func (r authTokens) DeleteByUser(ctx context.Context, userID string, purpose domain.TokenPurpose) error {
+	_, err := r.q(ctx).Exec(ctx, `DELETE FROM auth_tokens WHERE user_id=$1 AND purpose=$2`, userID, purpose)
+	return translate(err)
 }

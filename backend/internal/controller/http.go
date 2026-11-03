@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -33,6 +34,7 @@ var statusOf = map[domain.Kind]int{
 	domain.KindForbidden:    http.StatusForbidden,
 	domain.KindNotFound:     http.StatusNotFound,
 	domain.KindConflict:     http.StatusConflict,
+	domain.KindTooMany:      http.StatusTooManyRequests,
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {
@@ -137,6 +139,30 @@ func fieldsErr(fields map[string]string) error {
 
 type actorKey struct{}
 
+type tokenKey struct{}
+
+// bearer é o token da requisição, ou "" sem login.
+func bearer(r *http.Request) string {
+	t, _ := r.Context().Value(tokenKey{}).(string)
+	return t
+}
+
+// clientIP é o IP de quem chama, para os limites de cadastro e login.
+func (c *Controller) clientIP(r *http.Request) string {
+	if c.cfg.ClientIPHeader != "" {
+		if v := strings.TrimSpace(r.Header.Get(c.cfg.ClientIPHeader)); v != "" {
+			// X-Forwarded-For pode trazer uma lista: o primeiro é o cliente.
+			ip, _, _ := strings.Cut(v, ",")
+			return strings.TrimSpace(ip)
+		}
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
+}
+
 // actor é o ID do usuário logado, ou "" sem login.
 func actor(r *http.Request) string {
 	id, _ := r.Context().Value(actorKey{}).(string)
@@ -162,7 +188,8 @@ func (c *Controller) authenticate(next http.Handler) http.Handler {
 			c.fail(w, r, err)
 			return
 		}
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), actorKey{}, id)))
+		ctx := context.WithValue(r.Context(), actorKey{}, id)
+		next.ServeHTTP(w, r.WithContext(context.WithValue(ctx, tokenKey{}, token)))
 	})
 }
 

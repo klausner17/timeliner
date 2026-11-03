@@ -14,6 +14,8 @@ const (
 	KindForbidden    Kind = "forbidden"
 	KindNotFound     Kind = "not_found"
 	KindConflict     Kind = "conflict"
+	// KindTooMany é limite de tentativas: o cliente precisa esperar antes de tentar de novo.
+	KindTooMany Kind = "too_many_requests"
 )
 
 // Error é o erro que os usecases devolvem quando a culpa é da requisição, não do sistema.
@@ -33,6 +35,7 @@ func NotFound(what string) error {
 func Forbidden(msg string) error    { return &Error{Kind: KindForbidden, Message: msg} }
 func Conflict(msg string) error     { return &Error{Kind: KindConflict, Message: msg} }
 func Unauthorized(msg string) error { return &Error{Kind: KindUnauthorized, Message: msg} }
+func TooMany(msg string) error      { return &Error{Kind: KindTooMany, Message: msg} }
 
 // Invalid monta um erro de validação com os campos que falharam.
 func Invalid(fields map[string]string) error {
