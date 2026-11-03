@@ -13,9 +13,6 @@ import {
   TlOverviewBar,
   TlSegmented,
   clampWindow,
-  datePos,
-  innermostPeriod,
-  parentPeriod,
   periodColorOf,
   periodFrom,
   periodRange,
@@ -40,12 +37,13 @@ import {
   session,
   yearRange,
 } from '@/data/store'
-import type { Era, TimelineDetail, TimelineEvent, TimelinePage } from '@/data/types'
+import type { TimelineDetail, TimelineEvent, TimelinePage } from '@/data/types'
 import type { EventWindow } from '@/data/windowing'
 import { copyLink, dateLabel, detailedDateLabel, timeAgo, yearLabel } from '@/lib/format'
 import { useLatest } from '@/lib/useLatest'
 import { overviewTicksFor, yearFormatOf } from '@/lib/calendar'
 import { reckoningOf, scaleName } from '@/lib/scale'
+import { groupByPeriod } from '@/lib/presentation'
 import NotFoundView from './NotFoundView.vue'
 
 const route = useRoute()
@@ -161,37 +159,8 @@ async function loadPage(reset: boolean) {
 watch([() => timeline.value?.slug, eraRange, () => timeline.value?.eventCount], () => loadPage(true), { immediate: true })
 
 
-type Group = { name: string; range?: string; color?: PeriodColor; parent?: string; events: TimelineEvent[] }
-
-/**
- * Agrupa os eventos por período, na ordem do tempo. O evento marcado com um período vai
- * para ele; o sem marca vai para o período mais curto que contém o ano (1940 cai no
- * Estado Novo, não na Era Vargas). Eventos seguidos do mesmo período formam uma seção;
- * os que não cabem em nenhum ficam em "Fora dos períodos", no lugar deles no tempo.
- */
-const groups = computed<Group[]>(() => {
-  const events = loaded.value
-  const list = periods.value
-  if (!list.length) return [{ name: '', events }]
-  const openEnd = years.value.openEnd(range.value?.[1] ?? new Date().getFullYear())
-  const byName = new Map(list.map((p) => [p.name, p]))
-  const out: Group[] = []
-  for (const e of events) {
-    const p = (e.era ? byName.get(e.era) : undefined) ?? innermostPeriod(list, datePos(e.year, e.month, e.day), openEnd)
-    const name = p?.name ?? 'Fora dos períodos'
-    const last = out[out.length - 1]
-    if (last?.name === name) {
-      last.events.push(e)
-      continue
-    }
-    out.push(
-      p
-        ? { name, range: periodRange(p, years.value), color: p.color, parent: parentPeriod<Era>(list, p, openEnd)?.name, events: [e] }
-        : { name, events: [e] },
-    )
-  }
-  return out
-})
+/** Os eventos carregados, agrupados por período (ver groupByPeriod). */
+const groups = computed(() => groupByPeriod(loaded.value, periods.value, years.value, range.value?.[1] ?? new Date().getFullYear()))
 
 // ---------- Minimapa ----------
 
@@ -261,6 +230,16 @@ const windowEvents = computed(() => {
 })
 const selectedEvent = computed(() => windowEvents.value.find((e) => e.id === selected.value) ?? windowEvents.value[0])
 const grouped = computed(() => (windowData.value?.mode === 'faixas' ? windowData.value : undefined))
+
+/** O modo apresentação começa no período escolhido e, no horizontal, no evento marcado. */
+const presentLink = computed(() => ({
+  name: 'present',
+  params: { slug: timeline.value?.slug },
+  query: {
+    periodo: era.value === ALL ? undefined : era.value,
+    evento: mode.value === 'horizontal' ? selected.value : undefined,
+  },
+}))
 
 const pending = computed(() => timeline.value?.pendingSuggestions ?? 0)
 const owner = computed(() => timeline.value?.owner)
@@ -376,6 +355,7 @@ async function share() {
               Sugerir evento
             </TlButton>
             <TlButton :to="{ path: '/comparar', query: { a: timeline.slug } }" icon="compare">Comparar com…</TlButton>
+            <TlButton v-if="timeline.eventCount" :to="presentLink" icon="play">Apresentar</TlButton>
             <TlButton v-if="!mine" :aria-pressed="following" :disabled="followBusy" @click="toggleFollow">
               {{ following ? 'Seguindo' : 'Seguir' }}
             </TlButton>
