@@ -16,6 +16,9 @@ const (
 	KindConflict     Kind = "conflict"
 	// KindTooMany é limite de tentativas: o cliente precisa esperar antes de tentar de novo.
 	KindTooMany Kind = "too_many_requests"
+	// KindEmailUnverified é a conta que ainda não confirmou o e-mail tentando criar
+	// conteúdo. O site mostra o aviso de confirmar com o botão de mandar o link de novo.
+	KindEmailUnverified Kind = "email_unverified"
 )
 
 // Error é o erro que os usecases devolvem quando a culpa é da requisição, não do sistema.

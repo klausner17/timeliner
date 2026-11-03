@@ -29,7 +29,7 @@ async function resend() {
       <p class="email-banner__text">
         <strong>Confirme seu e-mail.</strong>
         <template v-if="state === 'sent'"> Mandamos um link novo para {{ email }}.</template>
-        <template v-else> Mandamos um link para {{ email }}. Sem ele, você não consegue recuperar a senha.</template>
+        <template v-else> Mandamos um link para {{ email }}. Sem ele, você não cria timelines nem sugere eventos, e não consegue recuperar a senha.</template>
         <span v-if="error" class="email-banner__error"> {{ error }}</span>
       </p>
       <TlButton v-if="state !== 'sent'" size="sm" :disabled="state === 'sending'" @click="resend">{{ state === 'sending' ? 'Enviando…' : 'Mandar de novo' }}</TlButton>

@@ -93,7 +93,9 @@ Toda resposta de erro tem o formato `{"error": {"code", "message", "fields?"}}`:
 
 Qualquer pessoa cria conta pelo site (`/cadastrar`). Contra abuso: no máximo 10 contas por hora
 por IP, 50 senhas erradas por IP e 10 por e-mail a cada 15 minutos (respostas 429/401) e um
-campo-isca que só robô preenche. Os limites ficam na memória do processo. Como o IP vem de
+campo-isca que só robô preenche. Até confirmar o e-mail, a conta só lê, segue e salva
+comparações: criar timeline, sugestão ou calendário e mudar nome ou bio respondem 403
+`email_unverified`. Os limites ficam na memória do processo. Como o IP vem de
 `CLIENT_IP_HEADER`, a API só deve ser alcançável pelo proxy; quem chegasse direto poderia
 inventar o cabeçalho.
 

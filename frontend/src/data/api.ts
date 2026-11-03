@@ -6,7 +6,7 @@
 const BASE = `${import.meta.env.BASE_URL}api`
 const TOKEN_KEY = 'timeliner:token'
 
-export type ApiErrorCode = 'invalid' | 'unauthorized' | 'forbidden' | 'not_found' | 'conflict' | 'too_many_requests' | 'method_not_allowed' | 'internal' | 'unavailable' | 'network'
+export type ApiErrorCode = 'invalid' | 'unauthorized' | 'forbidden' | 'not_found' | 'conflict' | 'too_many_requests' | 'email_unverified' | 'method_not_allowed' | 'internal' | 'unavailable' | 'network'
 
 /** Erro da API, com a frase pronta para a tela e os erros por campo. */
 export class ApiError extends Error {

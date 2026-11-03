@@ -24,17 +24,44 @@ type api struct {
 	t   *testing.T
 	h   http.Handler
 	log *bytes.Buffer
+	box *inbox
 }
 
 func newAPI(t *testing.T) *api {
 	d := memory.New()
 	d.Hasher, d.Clock, d.IDs = cheapHasher{}, platform.SystemClock{}, platform.RandomIDs{}
-	return newAPIWith(t, controller.UseCasesFrom(d))
+	box := &inbox{}
+	d.Mailer, d.AppURL = box, "https://timeliner.test"
+	a := newAPIWith(t, controller.UseCasesFrom(d))
+	a.box = box
+	return a
 }
 
 func newAPIWith(t *testing.T, uc controller.UseCases) *api {
 	buf := &bytes.Buffer{}
-	return &api{t, controller.New(uc, slog.New(slog.NewTextHandler(buf, nil)), nil), buf}
+	return &api{t: t, h: controller.New(uc, slog.New(slog.NewTextHandler(buf, nil)), nil), log: buf}
+}
+
+// inbox guarda os e-mails que a API mandaria.
+type inbox struct{ sent []domain.Email }
+
+func (b *inbox) Send(_ context.Context, e domain.Email) error {
+	b.sent = append(b.sent, e)
+	return nil
+}
+
+// verifyLink é o token do último link de confirmação mandado para email.
+func (b *inbox) verifyToken(t *testing.T, email string) string {
+	t.Helper()
+	for i := len(b.sent) - 1; i >= 0; i-- {
+		if b.sent[i].To == email {
+			if _, tok, ok := strings.Cut(b.sent[i].Text, "/confirmar-email?token="); ok {
+				return strings.Fields(tok)[0]
+			}
+		}
+	}
+	t.Fatalf("nenhum link de confirmação para %s", email)
+	return ""
 }
 
 type cheapHasher struct{}
@@ -76,7 +103,16 @@ func (a *api) want(r resp, code int) resp {
 	return r
 }
 
+// register cadastra pelo site e confirma o e-mail pelo link, como uma pessoa faria.
 func (a *api) register(handle string) string {
+	a.t.Helper()
+	token := a.registerUnverified(handle)
+	a.want(a.do("POST", "/api/auth/verify-email", "", map[string]any{"token": a.box.verifyToken(a.t, handle+"@exemplo.com")}), 200)
+	return token
+}
+
+// registerUnverified cadastra sem abrir o link de confirmação.
+func (a *api) registerUnverified(handle string) string {
 	a.t.Helper()
 	r := a.want(a.do("POST", "/api/auth/register", "", map[string]any{
 		"handle": handle, "name": handle, "email": handle + "@exemplo.com", "password": "senha-forte",
@@ -336,7 +372,7 @@ func TestPublicSignupEndpoints(t *testing.T) {
 		"handle": "robo", "name": "Robô", "email": "robo@exemplo.com", "password": "senha-forte", "website": "http://spam",
 	}), 400)
 
-	token := a.register("ana")
+	token := a.registerUnverified("ana")
 	me := a.want(a.do("GET", "/api/me", token, nil), 200)
 	if me.Body["emailVerified"] != false {
 		t.Fatalf("me = %s", me.Raw)
@@ -377,4 +413,32 @@ func TestSignupLimitUsesClientIP(t *testing.T) {
 		t.Fatalf("corpo = %s", r.Raw)
 	}
 	a.want(reg("user_y", "10.0.0.2"), 201)
+}
+
+// Conta sem e-mail confirmado entra, segue e salva comparações, mas não publica nada.
+func TestUnverifiedCannotCreateContent(t *testing.T) {
+	a := newAPI(t)
+	owner := a.register("ana")
+	a.want(a.do("POST", "/api/timelines", owner, map[string]any{"title": "Escândalos", "category": "Política"}), 201)
+
+	token := a.registerUnverified("robo")
+	for _, c := range []struct {
+		method, path string
+		body         map[string]any
+	}{
+		{"POST", "/api/timelines", map[string]any{"title": "Spam", "category": "Política"}},
+		{"POST", "/api/timelines/escandalos/suggestions", map[string]any{"kind": "new_event", "event": map[string]any{"year": 2000, "title": "Spam"}}},
+		{"POST", "/api/calendars", map[string]any{"name": "Spam"}},
+		{"PATCH", "/api/me", map[string]any{"bio": "compre em golpe.example"}},
+	} {
+		r := a.want(a.do(c.method, c.path, token, c.body), 403)
+		if errOf(r)["code"] != "email_unverified" {
+			t.Fatalf("%s %s: %s", c.method, c.path, r.Raw)
+		}
+	}
+	a.want(a.do("PATCH", "/api/me", token, map[string]any{"tint": "neutral"}), 200)
+	a.want(a.do("POST", "/api/timelines/escandalos/follow", token, nil), 204)
+
+	a.want(a.do("POST", "/api/auth/verify-email", "", map[string]any{"token": a.box.verifyToken(t, "robo@exemplo.com")}), 200)
+	a.want(a.do("POST", "/api/timelines", token, map[string]any{"title": "Agora vai", "category": "Política"}), 201)
 }

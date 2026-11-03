@@ -3,13 +3,15 @@ import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { TlButton, TlCard, TlCheckbox, TlField, TlInput, TlSegmented, TlSelect } from '@/design-system'
 import { ApiError, errorMessage } from '@/data/api'
-import { createCalendar, createTimeline, listCalendars } from '@/data/store'
+import { createCalendar, createTimeline, currentUser, listCalendars } from '@/data/store'
 import { categories, type Calendar, type Category, type Scale } from '@/data/types'
 import { scaleOptions } from '@/lib/scale'
 import CalendarErasEditor, { eraRow, readEraRows, type EraRow } from '@/components/CalendarErasEditor.vue'
 
 // O endereço (slug) sai do título e não muda depois, por isso o título vem antes.
 const router = useRouter()
+// Só conta com e-mail confirmado cria conteúdo (o servidor também confere).
+const unverified = computed(() => currentUser.value != null && !currentUser.value.emailVerified)
 const form = reactive({ title: '', category: 'História' as Category, world: 'real', calendar: '', scale: 'dias' as Scale, cyclic: false })
 const fields = ref<Record<string, string>>({})
 const error = ref('')
@@ -109,7 +111,17 @@ async function submit() {
 
 <template>
   <main class="tl-container page">
-    <TlCard as="form" padding="lg" class="page__card" novalidate @submit.prevent="submit">
+    <TlCard v-if="unverified" padding="lg" class="page__card">
+      <h1 class="page__title">Confirme seu e-mail</h1>
+      <p>
+        Para criar timelines e sugerir eventos, abra o link que mandamos para <strong>{{ currentUser?.email }}</strong>.
+        Se ele não chegou, confira o spam ou use "Mandar de novo" no aviso do topo da página.
+      </p>
+      <div class="page__actions">
+        <TlButton to="/" variant="ghost">Voltar ao início</TlButton>
+      </div>
+    </TlCard>
+    <TlCard v-else as="form" padding="lg" class="page__card" novalidate @submit.prevent="submit">
       <h1 class="page__title">Nova timeline</h1>
       <TlField v-slot="{ id, describedby, invalid }" label="Título" :error="fields.title" hint="Também vira o endereço da timeline.">
         <TlInput :id="id" v-model="form.title" :aria-describedby="describedby" :invalid="invalid" />

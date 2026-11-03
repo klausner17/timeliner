@@ -52,7 +52,8 @@ func run(n int, slug string, from, to int) error {
 	owner, err := d.Users.ByHandle(ctx, "seed")
 	if errors.Is(err, domain.ErrNotFound) {
 		hash, _ := platform.Bcrypt{}.Hash("senha-forte")
-		owner = &domain.User{ID: ids.NewID("us"), Handle: "seed", Name: "Seed", Email: "seed@exemplo.com", PasswordHash: hash, Tint: domain.TintNeutral, CreatedAt: clock.Now()}
+		now := clock.Now()
+		owner = &domain.User{ID: ids.NewID("us"), Handle: "seed", Name: "Seed", Email: "seed@exemplo.com", PasswordHash: hash, Tint: domain.TintNeutral, CreatedAt: now, EmailVerifiedAt: &now}
 		err = d.Users.Create(ctx, owner)
 	}
 	if err != nil {

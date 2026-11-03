@@ -913,7 +913,7 @@ components:
             code:
               type: string
               description: Estável, para a lógica do front
-              enum: [invalid, unauthorized, forbidden, not_found, conflict, too_many_requests, method_not_allowed, internal, unavailable]
+              enum: [invalid, unauthorized, forbidden, not_found, conflict, too_many_requests, email_unverified, method_not_allowed, internal, unavailable]
             message:
               type: string
               description: Frase em português pronta para mostrar ao usuário. Nunca traz detalhes internos.
