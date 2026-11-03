@@ -84,7 +84,7 @@ Toda resposta de erro tem o formato `{"error": {"code", "message", "fields?"}}`:
 | `DATABASE_URL` | `postgres://timeliner:timeliner@localhost:5432/timeliner?sslmode=disable` |
 | `MIGRATE` | as migrations rodam na subida; `false` pula essa etapa |
 | `SIGNUP` | aberto; `closed` faz o `POST /auth/register` responder 403 |
-| `APP_URL` | `http://localhost:8000`; endereço público do site, base dos links mandados por e-mail |
+| `APP_URL` | endereço público do site, base dos links mandados por e-mail (ex.: `https://klausner.site/app/timeliner`). Obrigatório com `RESEND_API_KEY`: sem ele a API não sobe. Sem Resend, o padrão é `http://localhost:8000` |
 | `RESEND_API_KEY` | vazio: os e-mails não saem, o texto (com o link) vai para o log. Com a chave, manda pelo [Resend](https://resend.com) |
 | `EMAIL_FROM` | `Timeliner <onboarding@resend.dev>`; remetente, num domínio verificado no Resend |
 | `CLIENT_IP_HEADER` | `X-Real-IP` (posto pelo nginx do frontend); cabeçalho com o IP do cliente, usado nos limites de cadastro e login. `none` usa o endereço da conexão. Atrás de Cloudflare, use `CF-Connecting-IP` |
