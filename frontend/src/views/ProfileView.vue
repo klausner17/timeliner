@@ -494,7 +494,7 @@ async function share() {
 .stats {
   margin: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(130px, calc(50% - var(--tl-space-3))), 1fr));
   gap: var(--tl-space-3);
 }
 .body {

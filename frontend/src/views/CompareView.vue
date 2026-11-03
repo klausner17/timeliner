@@ -442,6 +442,7 @@ async function share() {
 }
 .page__title {
   font-size: var(--tl-text-4xl);
+  line-height: var(--tl-leading-tight);
   letter-spacing: var(--tl-tracking-tight);
 }
 .page__lead {

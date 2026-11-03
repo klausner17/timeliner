@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { TlButton, TlCard, TlChip, TlInput, TlSegmented, TlTimelineCard } from '@/design-system'
+import { TlButton, TlCard, TlChip, TlIcon, TlInput, TlSegmented, TlTimelineCard } from '@/design-system'
 import { handleLabel, listTimelines, rangeLabel, type TimelineQuery } from '@/data/store'
 import { categories } from '@/data/types'
 import { usePaged } from '@/lib/usePaged'
@@ -71,6 +71,7 @@ const heroB = [17, 47, 62, 84]
         </p>
         <form role="search" class="hero__search" @submit.prevent="submit">
           <label for="busca" class="tl-visually-hidden">Buscar timelines</label>
+          <TlIcon name="search" :size="20" class="hero__search-icon" />
           <TlInput
             id="busca"
             v-model="search"
@@ -78,9 +79,9 @@ const heroB = [17, 47, 62, 84]
             size="lg"
             shape="pill"
             class="hero__input"
-            placeholder="Buscar: Brasil Império, Copa do Mundo, internet…"
+            placeholder="Brasil Império, Copa do Mundo, internet…"
           />
-          <TlButton type="submit" variant="primary" size="lg">Buscar</TlButton>
+          <TlButton type="submit" variant="primary" class="hero__submit">Buscar</TlButton>
         </form>
         <div class="hero__chips" role="group" aria-label="Categorias">
           <TlChip v-for="c in categories" :key="c" kind="tag" :to="categoryLink(c)" :class="{ 'hero__chip--on': category === c }" :aria-current="category === c ? 'true' : undefined">
@@ -108,7 +109,9 @@ const heroB = [17, 47, 62, 84]
             </template>
             <template v-else>Em destaque</template>
           </h2>
-          <TlSegmented v-model="order" label="Ordenar timelines" :options="orders" />
+          <div class="home__order">
+            <TlSegmented v-model="order" label="Ordenar timelines" :options="orders" />
+          </div>
         </div>
         <p v-if="error" class="home__error" role="alert">{{ error }}</p>
         <div v-if="!page" class="home__grid" aria-busy="true"></div>
@@ -131,7 +134,7 @@ const heroB = [17, 47, 62, 84]
           <p class="home__count" aria-live="polite">Mostrando {{ results.length }} de {{ total }}</p>
           <TlButton v-if="hasMore" :disabled="loading" @click="loadMore">{{ loading ? 'Carregando…' : 'Carregar mais' }}</TlButton>
         </div>
-        <TlCard v-else tone="muted" class="home__empty">
+        <TlCard v-else-if="page && !results.length" tone="muted" class="home__empty">
           <p v-if="filtering">Nenhuma timeline encontrada. Tente outra busca ou crie a sua.</p>
           <p v-else>Ainda não há timelines públicas. Que tal criar a primeira?</p>
           <div class="home__empty-actions">
@@ -140,14 +143,6 @@ const heroB = [17, 47, 62, 84]
           </div>
         </TlCard>
       </section>
-
-      <TlCard tone="inverse" padding="lg" class="cta">
-        <div class="cta__text">
-          <h2 class="home__h2">Tem uma história para contar?</h2>
-          <p>Comece com poucos eventos. Você decide se a timeline aceita contribuições e quem aprova.</p>
-        </div>
-        <TlButton to="/nova" variant="inverse" size="lg">Criar minha timeline</TlButton>
-      </TlCard>
     </div>
   </main>
 </template>
@@ -188,16 +183,43 @@ const heroB = [17, 47, 62, 84]
   font-size: 19px;
   color: var(--tl-color-text-muted);
 }
+/* Campo e botão formam um controle só: o botão fica dentro da pílula, à direita. */
 .hero__search {
   width: 100%;
   max-width: 640px;
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--tl-space-2);
+  align-items: center;
+  gap: var(--tl-space-1);
   margin-top: var(--tl-space-2);
+  padding: 5px 5px 5px 18px;
+  border: 1px solid var(--tl-color-border-strong);
+  border-radius: var(--tl-radius-pill);
+  background: var(--tl-color-surface);
+}
+.hero__search:hover {
+  border-color: var(--tl-color-text-subtle);
+}
+.hero__search:focus-within {
+  outline: 2px solid var(--tl-color-focus);
+  border-color: var(--tl-color-primary);
+}
+.hero__search-icon {
+  flex: none;
+  color: var(--tl-color-text-muted);
 }
 .hero__input {
-  flex: 1 1 320px;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: var(--tl-control-md);
+  padding: 0 var(--tl-space-2);
+  border: 0;
+  background: transparent;
+}
+.hero__input:focus-visible {
+  outline: none;
+}
+.hero__submit {
+  flex: none;
 }
 .hero__chips {
   display: flex;
@@ -261,11 +283,13 @@ const heroB = [17, 47, 62, 84]
   gap: var(--tl-space-14);
 }
 .home__section {
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: var(--tl-space-5);
 }
 .home__head {
+  min-width: 0;
   display: flex;
   flex-wrap: wrap;
   align-items: end;
@@ -301,23 +325,6 @@ const heroB = [17, 47, 62, 84]
   flex-wrap: wrap;
   gap: var(--tl-space-2);
 }
-.cta {
-  display: flex;
-  flex-direction: row;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--tl-space-6);
-}
-.cta__text {
-  flex: 1 1 420px;
-  display: flex;
-  flex-direction: column;
-  gap: var(--tl-space-2);
-}
-.cta__text p {
-  color: var(--tl-color-text-inverse-muted);
-}
 
 @media (max-width: 640px) {
   .hero__inner {
@@ -325,6 +332,49 @@ const heroB = [17, 47, 62, 84]
   }
   .hero__title {
     font-size: var(--tl-text-4xl);
+  }
+  .hero__search {
+    padding-left: 14px;
+  }
+  .hero__input {
+    padding: 0 6px;
+  }
+  /* Categorias numa linha só, rolando de lado, encostando nas bordas da tela. */
+  .hero__chips {
+    align-self: stretch;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    overflow-x: auto;
+    margin: 0 calc(var(--tl-gutter) * -1);
+    padding: 2px var(--tl-gutter);
+    scrollbar-width: none;
+  }
+  .hero__chips::-webkit-scrollbar {
+    display: none;
+  }
+  .hero__chips > * {
+    flex: none;
+  }
+  /* A ordem vai para baixo do título e rola de lado até a borda, como as categorias. */
+  .home__head {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: stretch;
+  }
+  .home__order {
+    min-width: 0;
+    display: flex;
+    overflow-x: auto;
+    margin: 0 calc(var(--tl-gutter) * -1);
+    padding: 0 var(--tl-gutter);
+    scrollbar-width: none;
+  }
+  .home__order::-webkit-scrollbar {
+    display: none;
+  }
+  .home__order > * {
+    flex: none;
+    max-width: none;
   }
 }
 </style>

@@ -23,15 +23,24 @@ const model = defineModel<string>()
 </template>
 
 <style scoped>
+/* Nunca quebra em duas linhas: se não couber, rola de lado dentro da pílula. */
 .tl-segmented {
   display: inline-flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
   gap: var(--tl-space-1);
   padding: var(--tl-space-1);
   background: var(--tl-color-surface-sunken);
   border-radius: var(--tl-radius-pill);
 }
+.tl-segmented::-webkit-scrollbar {
+  display: none;
+}
 .tl-segmented__item {
+  flex: none;
+  white-space: nowrap;
   min-height: 40px;
   padding: 0 16px;
   border: 0;

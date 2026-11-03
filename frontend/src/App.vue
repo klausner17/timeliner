@@ -23,7 +23,7 @@ const isAuthPage = computed(() => route.meta.guest === true)
   <div v-else class="app">
     <TlAppHeader
       :nav="nav"
-      create-to="/nova"
+      :create-to="currentUser ? '/nova' : undefined"
       profile-to="/perfil"
       :user-name="currentUser?.name"
       :login-to="session.ready && route.name !== 'login' ? { name: 'login', query: { next: route.fullPath } } : undefined"
