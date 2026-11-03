@@ -203,16 +203,6 @@ export async function loadEvents(slug: string, opts: { from?: number; to?: numbe
 }
 
 /** Todos os eventos, página a página (editor). */
-export async function loadAllEvents(slug: string): Promise<TimelineEvent[]> {
-  const out: TimelineEvent[] = []
-  let cursor: string | null = null
-  do {
-    const page: EventPage = await loadEvents(slug, { cursor, limit: 500 })
-    out.push(...page.items)
-    cursor = page.nextCursor
-  } while (cursor)
-  return out
-}
 
 /** GET /timelines/{slug}/summary: os eventos do trecho, ou faixas de anos se forem muitos. */
 export async function loadSummary(slug: string, opts: WindowOptions & { from?: number; to?: number } = {}): Promise<EventWindow> {

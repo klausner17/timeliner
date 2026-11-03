@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError, getToken, setToken } from '../api'
-import { canEdit, getTimeline, initSession, listTimelines, loadAllEvents, login, logout, rangeLabel, relatedTo, session } from '../store'
+import { canEdit, getTimeline, initSession, listContributions, listTimelines, loadEvents, login, logout, rangeLabel, relatedTo, session } from '../store'
 import type { Timeline } from '../types'
 
 type Call = { url: string; init: RequestInit }
@@ -117,13 +117,19 @@ describe('leituras', () => {
     expect(rangeLabel(t!)).toBe('Sem datas')
   })
 
-  it('loadAllEvents segue o cursor até o fim', async () => {
+  it('loadEvents pede uma página pelo cursor', async () => {
     const ev = (id: string) => ({ id, year: 1, title: id, description: '', by: 'k' })
-    replies.push(json(200, { items: [ev('1'), ev('2')], nextCursor: 'c2' }))
     replies.push(json(200, { items: [ev('3')], nextCursor: null }))
-    const all = await loadAllEvents('a')
-    expect(all.map((e) => e.id)).toEqual(['1', '2', '3'])
-    expect(calls[1].url).toBe('/api/timelines/a/events?cursor=c2&limit=500')
+    const page = await loadEvents('a', { cursor: 'c2', limit: 200 })
+    expect(page.items.map((e) => e.id)).toEqual(['3'])
+    expect(calls[0].url).toBe('/api/timelines/a/events?cursor=c2&limit=200')
+  })
+
+  it('listContributions filtra pela timeline e pagina', async () => {
+    replies.push(json(200, { items: [], page: 2, pageSize: 20, total: 21 }))
+    const page = await listContributions('ana', { timeline: 'brasil', page: 2, pageSize: 20 })
+    expect(page.total).toBe(21)
+    expect(calls[0].url).toBe('/api/users/ana/contributions?timeline=brasil&page=2&pageSize=20')
   })
 })
 

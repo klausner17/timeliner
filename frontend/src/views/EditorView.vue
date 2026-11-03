@@ -20,7 +20,7 @@ import {
 } from '@/design-system'
 import LinksEditor, { type LinkRow } from '@/components/LinksEditor.vue'
 import { errorMessage } from '@/data/api'
-import { canEdit, createEvent, deleteEvent, deleteTimeline, getTimeline, loadAllEvents, updateEvent, updateTimeline } from '@/data/store'
+import { canEdit, createEvent, deleteEvent, deleteTimeline, getTimeline, loadEvents, updateEvent, updateTimeline } from '@/data/store'
 import { categories, type Era, type EraInput, type EventInput, type Timeline, type TimelineEvent, type TimelinePatch } from '@/data/types'
 import { chronological } from '@/data/windowing'
 import { momentFields, monthOptions, readMoment, yearLabel } from '@/lib/format'
@@ -38,7 +38,32 @@ const isNew = computed(() => route.query.nova === '1')
 const status = ref<'loading' | 'ok' | 'missing' | 'error'>('loading')
 const statusError = ref('')
 const timeline = ref<Timeline>()
+// Eventos em ordem cronológica, uma página por vez: timelines grandes (milhares de
+// eventos) não descem inteiras para o editor.
 const events = ref<TimelineEvent[]>([])
+const eventsCursor = ref<string | null>(null)
+const eventsTotal = ref(0)
+const loadingEvents = ref(false)
+const eventsError = ref('')
+const allEventsLoaded = computed(() => !eventsCursor.value)
+const EVENTS_PAGE = 200
+
+async function loadMoreEvents() {
+  const t = timeline.value
+  if (!t || !eventsCursor.value || loadingEvents.value) return
+  loadingEvents.value = true
+  eventsError.value = ''
+  try {
+    const page = await loadEvents(t.slug, { cursor: eventsCursor.value, limit: EVENTS_PAGE })
+    const seen = new Set(events.value.map((e) => e.id))
+    events.value = chronological([...events.value, ...page.items.filter((e) => !seen.has(e.id))])
+    eventsCursor.value = page.nextCursor
+  } catch (e) {
+    eventsError.value = errorMessage(e, 'Não deu para carregar mais eventos.')
+  } finally {
+    loadingEvents.value = false
+  }
+}
 
 // Cópia editável dos dados da timeline; cada mudança vai para a API depois de uma pausa.
 type Meta = Pick<Timeline, 'title' | 'description' | 'category' | 'color' | 'visibility' | 'contributions' | 'tags' | 'cyclic'>
@@ -59,7 +84,9 @@ watch(
         status.value = 'missing'
         return
       }
-      events.value = t.eventsNextCursor ? await loadAllEvents(s) : t.events
+      events.value = t.events
+      eventsCursor.value = t.eventsNextCursor
+      eventsTotal.value = t.eventCount
       timeline.value = t
       Object.assign(meta, pickMeta(t))
       saved = pickMeta(t)
@@ -364,6 +391,7 @@ function closeForm() {
 }
 
 function place(e: TimelineEvent) {
+  if (!events.value.some((x) => x.id === e.id)) eventsTotal.value++
   events.value = chronological([...events.value.filter((x) => x.id !== e.id), e])
 }
 
@@ -421,6 +449,7 @@ async function remove(e: TimelineEvent) {
   try {
     await deleteEvent(timeline.value.slug, e.id)
     events.value = events.value.filter((x) => x.id !== e.id)
+    eventsTotal.value = Math.max(0, eventsTotal.value - 1)
   } catch (err) {
     window.alert(errorMessage(err, 'Não deu para remover o evento.'))
   }
@@ -521,7 +550,7 @@ async function destroy() {
       </div>
       <div class="bar__actions">
         <TlButton v-if="!timeline.draft" :to="`/t/${timeline.slug}`">Ver timeline</TlButton>
-        <TlButton v-else variant="primary" :disabled="publishing || !events.length || !meta.title.trim()" @click="publish">{{ publishing ? 'Publicando…' : 'Publicar' }}</TlButton>
+        <TlButton v-else variant="primary" :disabled="publishing || !eventsTotal || !meta.title.trim()" @click="publish">{{ publishing ? 'Publicando…' : 'Publicar' }}</TlButton>
       </div>
     </div>
 
@@ -640,7 +669,7 @@ async function destroy() {
               <span class="row__range">{{ periodRange(p, years) }}</span>
               <div class="row__text">
                 <span class="row__title">{{ p.name }}</span>
-                <span class="row__desc">{{ eventsIn(p) ? `${eventsIn(p)} ${eventsIn(p) === 1 ? 'evento marcado' : 'eventos marcados'}` : 'Agrupa os eventos pela data' }}</span>
+                <span class="row__desc">{{ allEventsLoaded && eventsIn(p) ? `${eventsIn(p)} ${eventsIn(p) === 1 ? 'evento marcado' : 'eventos marcados'}` : 'Agrupa os eventos pela data' }}</span>
               </div>
               <TlButton icon-only icon="edit" variant="ghost" shape="rounded" :label="`Editar ${p.name}`" @click="openPeriod(p)" />
               <TlButton icon-only icon="trash" variant="ghost" shape="rounded" :label="`Remover ${p.name}`" @click="removePeriod(p)" />
@@ -649,7 +678,7 @@ async function destroy() {
         </section>
 
         <div class="main__head">
-          <h2 class="main__title">Eventos <span class="main__count">({{ events.length }})</span></h2>
+          <h2 class="main__title">Eventos <span class="main__count">({{ eventsTotal.toLocaleString('pt-BR') }})</span></h2>
           <div class="main__actions">
             <TlButton :disabled="importing" @click="importInput?.click()">Importar planilha</TlButton>
             <input ref="importInput" type="file" accept=".csv,.tsv,.txt" class="tl-visually-hidden" tabindex="-1" aria-hidden="true" @change="importFile" />
@@ -720,6 +749,11 @@ async function destroy() {
             <TlButton icon-only icon="edit" variant="ghost" shape="rounded" :label="`Editar ${e.title}`" @click="openEdit(e)" />
             <TlButton icon-only icon="trash" variant="ghost" shape="rounded" :label="`Remover ${e.title}`" @click="remove(e)" />
           </div>
+          <div v-if="!allEventsLoaded" class="more">
+            <span>Mostrando {{ events.length.toLocaleString('pt-BR') }} de {{ eventsTotal.toLocaleString('pt-BR') }}</span>
+            <TlButton :disabled="loadingEvents" @click="loadMoreEvents">{{ loadingEvents ? 'Carregando…' : 'Carregar mais eventos' }}</TlButton>
+            <p v-if="eventsError" class="form__error" role="alert">{{ eventsError }}</p>
+          </div>
         </TlCard>
         <TlCard v-else-if="!formOpen" tone="dashed" class="empty">
           <p v-if="scale">
@@ -735,6 +769,15 @@ async function destroy() {
 </template>
 
 <style scoped>
+.more {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--tl-space-3);
+  padding: var(--tl-space-4) 0 var(--tl-space-2);
+  font-size: var(--tl-text-md);
+  color: var(--tl-color-text-muted);
+}
 .page {
   padding-top: var(--tl-space-7);
   padding-bottom: calc(var(--tl-space-8) * 2);
