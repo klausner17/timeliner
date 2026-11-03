@@ -149,9 +149,20 @@ export type TimelineQuery = {
   owner?: string
   openToContributions?: boolean
   sort?: 'popular' | 'recent'
+  /** Soma às públicas as do usuário logado (rascunhos, privadas, de link). */
+  includeMine?: boolean
+  /** Slugs separados por vírgula (até 20): traz essas, se o usuário pode abrir. */
+  slugs?: string
+  /** Só um calendário (ver calendarKey). */
+  calendar?: string
+  /** Só as que têm eventos. */
+  withEvents?: boolean
   page?: number
   pageSize?: number
 }
+
+/** Chave do calendário, como o filtro calendar da API: timelines com a mesma chave se comparam. */
+export const calendarKey = (t: Pick<Timeline, 'calendar' | 'scale'>) => (t.scale ? `escala:${t.scale}` : (t.calendar?.id ?? 'gregoriano'))
 
 export async function listTimelines(query: TimelineQuery = {}): Promise<TimelinePage> {
   const page = await get<TimelinePage>('/timelines', query)

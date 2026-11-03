@@ -34,6 +34,12 @@ const (
 	SortRecent  TimelineSort = "recent"
 )
 
+// CalendarGregorian é o valor de TimelineFilter.Calendar para o calendário gregoriano.
+const CalendarGregorian = "gregoriano"
+
+// MaxListSlugs limita quantos slugs dá para pedir de uma vez na listagem.
+const MaxListSlugs = 20
+
 type TimelineFilter struct {
 	Query    string
 	Category string
@@ -43,9 +49,20 @@ type TimelineFilter struct {
 	OnlyOpen bool
 	// IncludeUnlisted inclui rascunhos, privadas e "link" (só quando o dono está vendo as suas).
 	IncludeUnlisted bool
-	Sort            TimelineSort
-	Limit           int
-	Offset          int
+	// ViewerID é quem está vendo. Com IncludeMine, as timelines dele entram junto com as
+	// públicas; com Slugs, entram todas as que ele pode abrir (as de link também).
+	ViewerID    string
+	IncludeMine bool
+	// Slugs restringe às timelines com esses slugs (ex.: as já escolhidas no comparar).
+	Slugs []string
+	// Calendar restringe a um calendário: CalendarGregorian, "escala:<escala>" para as fixas
+	// ou o ID de um calendário ficcional. Vazio não filtra.
+	Calendar string
+	// WithEvents deixa só as que têm pelo menos um evento.
+	WithEvents bool
+	Sort       TimelineSort
+	Limit      int
+	Offset     int
 }
 
 type TimelineRepository interface {

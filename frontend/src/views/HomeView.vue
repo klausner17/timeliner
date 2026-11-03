@@ -3,8 +3,8 @@ import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { TlButton, TlCard, TlChip, TlInput, TlSegmented, TlTimelineCard } from '@/design-system'
 import { handleLabel, listTimelines, rangeLabel, type TimelineQuery } from '@/data/store'
-import { categories, type TimelinePage } from '@/data/types'
-import { useLatest } from '@/lib/useLatest'
+import { categories } from '@/data/types'
+import { usePaged } from '@/lib/usePaged'
 
 const route = useRoute()
 const router = useRouter()
@@ -27,11 +27,22 @@ const params = computed<TimelineQuery>(() => ({
   cat: category.value || undefined,
   sort: order.value === 'recentes' ? 'recent' : 'popular',
   openToContributions: order.value === 'abertas' || undefined,
-  pageSize: 48,
+  pageSize: 24,
 }))
-const { data: page, error } = useLatest(() => listTimelines(params.value), undefined as TimelinePage | undefined)
-const results = computed(() => page.value?.items ?? [])
-const total = computed(() => page.value?.total ?? 0)
+// Uma página por vez: "Carregar mais" busca a seguinte e junta às de cima.
+const {
+  items: page,
+  total,
+  error,
+  loading,
+  hasMore,
+  loadMore,
+} = usePaged(
+  () => params.value,
+  (q, n) => listTimelines({ ...q, page: n }),
+  (t) => t.slug,
+)
+const results = computed(() => page.value ?? [])
 
 const filtering = computed(() => !!(query.value || category.value))
 
@@ -115,6 +126,10 @@ const heroB = [17, 47, 62, 84]
             :contributors="t.contributorCount"
             :author="handleLabel(t.owner.handle)"
           />
+        </div>
+        <div v-if="hasMore" class="home__more">
+          <p class="home__count" aria-live="polite">Mostrando {{ results.length }} de {{ total }}</p>
+          <TlButton v-if="hasMore" :disabled="loading" @click="loadMore">{{ loading ? 'Carregando…' : 'Carregar mais' }}</TlButton>
         </div>
         <TlCard v-else tone="muted" class="home__empty">
           <p v-if="filtering">Nenhuma timeline encontrada. Tente outra busca ou crie a sua.</p>
@@ -264,6 +279,16 @@ const heroB = [17, 47, 62, 84]
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr));
   gap: var(--tl-space-5);
+}
+.home__more {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--tl-space-3);
+}
+.home__count {
+  font-size: var(--tl-text-md);
+  color: var(--tl-color-text-muted);
 }
 .home__empty {
   display: flex;

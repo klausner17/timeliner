@@ -29,6 +29,7 @@ import {
   followTimeline,
   getTimeline,
   handleLabel,
+  calendarKey,
   listTimelines,
   loadEvents,
   loadSummary,
@@ -246,8 +247,11 @@ const owner = computed(() => timeline.value?.owner)
 const mine = computed(() => !!timeline.value && canEdit(timeline.value))
 const following = computed(() => !!timeline.value?.following)
 
-// "Compare com": entre as públicas mais populares, as que têm mais anos em comum.
-const { data: popular } = useLatest(() => (timeline.value ? listTimelines({ pageSize: 50 }) : undefined), undefined as TimelinePage | undefined)
+// "Compare com": entre as públicas mais populares do mesmo calendário, as que têm mais anos em comum.
+const { data: popular } = useLatest(
+  () => (timeline.value ? listTimelines({ pageSize: 50, calendar: calendarKey(timeline.value), withEvents: true }) : undefined),
+  undefined as TimelinePage | undefined,
+)
 const related = computed(() => (timeline.value && popular.value ? relatedTo(timeline.value, popular.value.items) : []))
 
 const followBusy = ref(false)

@@ -61,6 +61,10 @@ func (c *Controller) listTimelines(w http.ResponseWriter, r *http.Request) {
 	in := usecase.ListTimelinesInput{
 		ActorID: actor(r), Query: q.Get("q"), Category: q.Get("cat"), Tag: q.Get("tag"), OwnerHandle: q.Get("owner"),
 		OnlyOpen: queryBool(r, "openToContributions", fields), Sort: usecase.TimelineSort(q.Get("sort")),
+		IncludeMine: queryBool(r, "includeMine", fields), Calendar: q.Get("calendar"), WithEvents: queryBool(r, "withEvents", fields),
+	}
+	if s := q.Get("slugs"); s != "" {
+		in.Slugs = strings.Split(s, ",")
 	}
 	if p := queryInt(r, "page", fields); p != nil {
 		in.Page = *p

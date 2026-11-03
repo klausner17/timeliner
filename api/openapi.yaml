@@ -119,6 +119,16 @@ paths:
         - { name: tag, in: query, schema: { type: string } }
         - { name: owner, in: query, schema: { type: string }, description: Handle do dono }
         - { name: openToContributions, in: query, schema: { type: boolean }, description: 'true = só contributions=sugestoes' }
+        - { name: includeMine, in: query, schema: { type: boolean }, description: 'true = soma às públicas as do usuário logado (rascunhos, privadas, de link)' }
+        - name: slugs
+          in: query
+          schema: { type: string }
+          description: 'Slugs separados por vírgula (até 20). Traz as que o usuário pode abrir, inclusive as de link.'
+        - name: calendar
+          in: query
+          schema: { type: string }
+          description: 'Só um calendário: gregoriano, escala:<dias|semanas|meses|anos> para as fixas, ou o ID de um calendário ficcional'
+        - { name: withEvents, in: query, schema: { type: boolean }, description: 'true = só as que têm pelo menos um evento' }
         - name: sort
           in: query
           schema: { type: string, enum: [popular, recent], default: popular }
