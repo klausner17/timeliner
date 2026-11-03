@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
 import { TlAppHeader, type NavItem } from '@/design-system'
-import { currentUser, session } from '@/data/store'
+import EmailBanner from '@/components/EmailBanner.vue'
+import { currentUser, session, signupOpen } from '@/data/store'
 
 const route = useRoute()
 
@@ -11,6 +12,10 @@ const nav = computed<NavItem[]>(() => [
   { label: 'Comparar', to: '/comparar', current: route.meta.nav === 'comparar' },
   { label: 'Minhas timelines', to: '/perfil', current: route.meta.nav === 'minhas' },
 ])
+
+const canSignUp = ref(false)
+onMounted(async () => (canSignUp.value = await signupOpen()))
+const isAuthPage = computed(() => route.meta.guest === true)
 </script>
 
 <template>
@@ -22,7 +27,9 @@ const nav = computed<NavItem[]>(() => [
       profile-to="/perfil"
       :user-name="currentUser?.name"
       :login-to="session.ready && route.name !== 'login' ? { name: 'login', query: { next: route.fullPath } } : undefined"
+      :signup-to="session.ready && canSignUp && !isAuthPage ? { name: 'signup' } : undefined"
     />
+    <EmailBanner v-if="currentUser && !currentUser.emailVerified && route.name !== 'verify-email'" :email="currentUser.email" />
     <div class="app__main"><RouterView /></div>
     <footer class="app-footer">
       <div class="tl-container app-footer__inner">

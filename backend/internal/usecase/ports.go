@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"log/slog"
 	"time"
 
 	"github.com/klausner17/timeliner/backend/internal/domain"
@@ -25,6 +26,24 @@ type SessionRepository interface {
 	Create(ctx context.Context, s domain.Session) error
 	// UserID devolve o dono de uma sessão que ainda não expirou em now.
 	UserID(ctx context.Context, tokenHash string, now time.Time) (string, error)
+	// Delete apaga uma sessão (sair). Apagar uma que não existe não é erro.
+	Delete(ctx context.Context, tokenHash string) error
+	// DeleteByUser apaga todas as sessões do usuário, menos a de exceptHash (pode ser "").
+	DeleteByUser(ctx context.Context, userID, exceptHash string) error
+}
+
+type AuthTokenRepository interface {
+	Create(ctx context.Context, t domain.AuthToken) error
+	// Consume apaga o token e devolve o dono, se ele existir, for desse tipo e não
+	// tiver vencido em now; senão devolve domain.ErrNotFound.
+	Consume(ctx context.Context, tokenHash string, purpose domain.TokenPurpose, now time.Time) (string, error)
+	// DeleteByUser apaga os tokens do usuário desse tipo (ex.: links antigos de senha).
+	DeleteByUser(ctx context.Context, userID string, purpose domain.TokenPurpose) error
+}
+
+// Mailer manda e-mails.
+type Mailer interface {
+	Send(ctx context.Context, e domain.Email) error
 }
 
 // Paging é a página pedida a um repository.
@@ -222,6 +241,7 @@ type LinkPreviewer interface {
 type Deps struct {
 	Users       UserRepository
 	Sessions    SessionRepository
+	AuthTokens  AuthTokenRepository
 	Timelines   TimelineRepository
 	Calendars   CalendarRepository
 	Events      EventRepository
@@ -236,4 +256,10 @@ type Deps struct {
 	Previews LinkPreviewer
 	// SignupClosed fecha o POST /auth/register; contas novas so pelo comando create-user.
 	SignupClosed bool
+	// Mailer manda os e-mails de confirmação e de senha; nil não manda nada.
+	Mailer Mailer
+	// AppURL é o endereço do site (ex.: https://timeliner.com.br), base dos links nos e-mails.
+	AppURL string
+	// Log recebe erros que não devem chegar a quem pediu (ex.: e-mail que falhou); nil descarta.
+	Log *slog.Logger
 }

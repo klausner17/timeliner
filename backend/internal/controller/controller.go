@@ -16,6 +16,14 @@ type UseCases struct {
 	Register     usecase.UseCase[usecase.RegisterInput, usecase.AuthOutput]
 	Login        usecase.UseCase[usecase.LoginInput, usecase.AuthOutput]
 	Authenticate usecase.UseCase[string, string]
+	Logout       usecase.UseCase[string, usecase.Empty]
+	SignupStatus usecase.UseCase[usecase.Empty, usecase.SignupStatus]
+
+	ChangePassword       usecase.UseCase[usecase.ChangePasswordInput, usecase.Empty]
+	VerifyEmail          usecase.UseCase[string, domain.User]
+	ResendVerification   usecase.UseCase[usecase.ActorInput, usecase.Empty]
+	RequestPasswordReset usecase.UseCase[usecase.RequestPasswordResetInput, usecase.Empty]
+	ConfirmPasswordReset usecase.UseCase[usecase.ConfirmPasswordResetInput, usecase.AuthOutput]
 
 	GetMe             usecase.UseCase[usecase.ActorInput, domain.User]
 	UpdateProfile     usecase.UseCase[usecase.UpdateProfileInput, domain.User]
@@ -61,6 +69,9 @@ type UseCases struct {
 func UseCasesFrom(d *usecase.Deps) UseCases {
 	return UseCases{
 		Register: usecase.NewRegister(d), Login: usecase.NewLogin(d), Authenticate: usecase.NewAuthenticate(d),
+		Logout: usecase.NewLogout(d), SignupStatus: usecase.NewGetSignupStatus(d), ChangePassword: usecase.NewChangePassword(d),
+		VerifyEmail: usecase.NewVerifyEmail(d), ResendVerification: usecase.NewResendVerification(d),
+		RequestPasswordReset: usecase.NewRequestPasswordReset(d), ConfirmPasswordReset: usecase.NewConfirmPasswordReset(d),
 		GetMe: usecase.NewGetMe(d), UpdateProfile: usecase.NewUpdateProfile(d), GetProfile: usecase.NewGetProfile(d),
 		ListContributions: usecase.NewListContributions(d), FollowUser: usecase.NewFollowUser(d), ListFollowing: usecase.NewListFollowing(d),
 		ListTimelines: usecase.NewListTimelines(d), CreateTimeline: usecase.NewCreateTimeline(d), GetTimeline: usecase.NewGetTimeline(d),
@@ -82,12 +93,25 @@ type Controller struct {
 	uc     UseCases
 	log    *slog.Logger
 	health func(context.Context) error
+	cfg    Config
+}
+
+// Config ajusta o controller ao jeito que ele está publicado.
+type Config struct {
+	// ClientIPHeader é o cabeçalho com o IP de quem chama, posto pelo proxy da
+	// frente (o nginx do frontend põe X-Real-IP). Vazio usa o endereço da conexão.
+	// Só confie num cabeçalho se a API não for alcançável sem passar pelo proxy.
+	ClientIPHeader string
 }
 
 // New devolve o handler com todas as rotas sob /api. health confere as dependências
-// (ex.: ping no banco) e pode ser nil.
+// (ex.: ping no banco) e pode ser nil. O IP vem de X-Real-IP; veja NewWithConfig.
 func New(uc UseCases, log *slog.Logger, health func(context.Context) error) http.Handler {
-	c := &Controller{uc: uc, log: log, health: health}
+	return NewWithConfig(uc, log, health, Config{ClientIPHeader: "X-Real-IP"})
+}
+
+func NewWithConfig(uc UseCases, log *slog.Logger, health func(context.Context) error, cfg Config) http.Handler {
+	c := &Controller{uc: uc, log: log, health: health, cfg: cfg}
 	r := chi.NewRouter()
 	r.Use(c.recoverer)
 	r.NotFound(func(w http.ResponseWriter, _ *http.Request) {
@@ -109,6 +133,13 @@ func New(uc UseCases, log *slog.Logger, health func(context.Context) error) http
 func (c *Controller) routes(r chi.Router) {
 	r.Post("/auth/register", c.register)
 	r.Post("/auth/login", c.login)
+	r.Post("/auth/logout", c.logout)
+	r.Get("/auth/signup", c.signupStatus)
+	r.Post("/auth/verify-email", c.verifyEmail)
+	r.Post("/auth/password-reset", c.requestPasswordReset)
+	r.Post("/auth/password-reset/confirm", c.confirmPasswordReset)
+	r.Post("/me/password", c.changePassword)
+	r.Post("/me/verification", c.resendVerification)
 	r.Get("/me", c.getMe)
 	r.Patch("/me", c.updateMe)
 	r.Get("/me/comparisons", c.listSavedComparisons)

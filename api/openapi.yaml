@@ -45,7 +45,10 @@ paths:
       tags: [auth]
       security: []
       summary: Cria conta e devolve token
-      description: Com SIGNUP=closed no servidor, responde 403; contas novas só pelo comando `api create-user`.
+      description: |
+        Com SIGNUP=closed no servidor, responde 403; contas novas só pelo comando `api create-user`.
+        Manda o link de confirmação para o e-mail. Limite de 10 contas por hora por IP (429).
+        `website` é um campo-isca: deve ir vazio; preenchido, responde 400.
       requestBody:
         required: true
         content:
@@ -60,13 +63,139 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '409': { $ref: '#/components/responses/Conflict' }
+        '429': { $ref: '#/components/responses/TooMany' }
+
+  /auth/signup:
+    get:
+      tags: [auth]
+      security: []
+      summary: Diz se o cadastro está aberto
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [open]
+                properties:
+                  open: { type: boolean }
+
+  /auth/logout:
+    post:
+      tags: [auth]
+      summary: Sai da conta, apagando a sessão do token no servidor
+      description: Sem token, não faz nada e responde 204 do mesmo jeito.
+      responses:
+        '204': { description: Sessão encerrada }
+
+  /auth/verify-email:
+    post:
+      tags: [auth]
+      security: []
+      summary: Confirma o e-mail pelo token do link mandado no cadastro
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string }
+      responses:
+        '200':
+          description: E-mail confirmado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /auth/password-reset:
+    post:
+      tags: [auth]
+      security: []
+      summary: Manda o link de "esqueci minha senha"
+      description: |
+        Responde 204 exista a conta ou não. O link vale 1 hora. No máximo 3 e-mails por hora
+        por endereço (os outros são ignorados em silêncio) e 20 pedidos por hora por IP (429).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email }
+      responses:
+        '204': { description: Pedido recebido }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '429': { $ref: '#/components/responses/TooMany' }
+
+  /auth/password-reset/confirm:
+    post:
+      tags: [auth]
+      security: []
+      summary: Define a senha nova pelo token do link e já entra na conta
+      description: Encerra todas as outras sessões da conta e marca o e-mail como confirmado.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, password]
+              properties:
+                token: { type: string }
+                password: { type: string, minLength: 8, description: No máximo 72 bytes }
+      responses:
+        '200':
+          description: Senha trocada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /me/password:
+    post:
+      tags: [users]
+      summary: Troca a senha conferindo a atual
+      description: A sessão atual continua; as outras são encerradas.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [currentPassword, newPassword]
+              properties:
+                currentPassword: { type: string }
+                newPassword: { type: string, minLength: 8 }
+      responses:
+        '204': { description: Senha trocada }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/TooMany' }
+
+  /me/verification:
+    post:
+      tags: [users]
+      summary: Manda de novo o link de confirmação do e-mail
+      description: Já confirmado, não manda nada. No máximo 3 por hora.
+      responses:
+        '204': { description: Link mandado }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/TooMany' }
 
   /auth/login:
     post:
       tags: [auth]
       security: []
       summary: Entra com e-mail e senha
-      description: Depois de 10 senhas erradas no mesmo e-mail em 15 minutos, recusa com 401 até a janela passar.
+      description: |
+        Depois de 10 senhas erradas no mesmo e-mail em 15 minutos, recusa com 401 até a janela passar.
+        Depois de 50 senhas erradas do mesmo IP em 15 minutos, recusa com 429.
       requestBody:
         required: true
         content:
@@ -79,6 +208,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/AuthResponse' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/TooMany' }
 
   /me:
     get:
@@ -767,6 +897,9 @@ components:
     Conflict:
       description: Conflito
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    TooMany:
+      description: Tentativas demais; espere antes de tentar de novo
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
 
   schemas:
     Error:
@@ -780,7 +913,7 @@ components:
             code:
               type: string
               description: Estável, para a lógica do front
-              enum: [invalid, unauthorized, forbidden, not_found, conflict, method_not_allowed, internal, unavailable]
+              enum: [invalid, unauthorized, forbidden, not_found, conflict, too_many_requests, method_not_allowed, internal, unavailable]
             message:
               type: string
               description: Frase em português pronta para mostrar ao usuário. Nunca traz detalhes internos.
@@ -821,11 +954,12 @@ components:
       allOf:
         - $ref: '#/components/schemas/UserSummary'
         - type: object
-          required: [email, bio, memberSince]
+          required: [email, bio, memberSince, emailVerified]
           properties:
             email: { type: string, format: email }
             bio: { type: string }
             memberSince: { type: string, format: date-time }
+            emailVerified: { type: boolean, description: Já abriu o link de confirmação }
 
     Profile:
       allOf:
@@ -852,7 +986,8 @@ components:
         handle: { type: string, pattern: '^[a-z0-9_]{3,30}$' }
         name: { type: string, minLength: 1, maxLength: 80 }
         email: { type: string, format: email }
-        password: { type: string, minLength: 8 }
+        password: { type: string, minLength: 8, description: No máximo 72 bytes; diferente do e-mail e do handle }
+        website: { type: string, description: Campo-isca contra robôs; deve ir vazio }
 
     LoginInput:
       type: object

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError, getToken, setToken } from '../api'
-import { canEdit, getTimeline, initSession, listContributions, listTimelines, loadEvents, login, logout, rangeLabel, relatedTo, session } from '../store'
+import { canEdit, getTimeline, initSession, listContributions, listTimelines, loadEvents, login, logout, register, confirmPasswordReset, rangeLabel, relatedTo, session } from '../store'
 import type { Timeline } from '../types'
 
 type Call = { url: string; init: RequestInit }
@@ -9,7 +9,7 @@ let replies: (() => Response)[]
 
 const json = (status: number, body: unknown) => () => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 
-beforeEach(() => {
+beforeEach(async () => {
   calls = []
   replies = []
   vi.stubGlobal(
@@ -21,7 +21,9 @@ beforeEach(() => {
       return next()
     }),
   )
-  logout()
+  await logout()
+  calls = []
+  replies = []
 })
 
 afterEach(() => vi.unstubAllGlobals())
@@ -136,7 +138,7 @@ describe('leituras', () => {
 describe('ajudas', () => {
   it('canEdit só para o dono logado', () => {
     expect(canEdit(timeline())).toBe(false)
-    session.user = { handle: 'klausner', name: 'K', tint: 'a', email: '', bio: '', memberSince: '' }
+    session.user = { handle: 'klausner', name: 'K', tint: 'a', email: '', bio: '', memberSince: '', emailVerified: true }
     expect(canEdit(timeline())).toBe(true)
     expect(canEdit(timeline({ owner: { handle: 'outra', name: 'O', tint: 'neutral' } }))).toBe(false)
   })
@@ -150,5 +152,35 @@ describe('ajudas', () => {
       timeline({ slug: 'semdata', startYear: undefined, endYear: undefined }),
     ]
     expect(relatedTo(base, others).map((t) => t.slug)).toEqual(['muito', 'pouco'])
+  })
+})
+
+describe('conta', () => {
+  const user = { handle: 'ana', name: 'Ana', tint: 'neutral', email: 'ana@x.com', bio: '', memberSince: '2026-11-01T00:00:00Z', emailVerified: false }
+
+  it('cadastra e já entra', async () => {
+    replies.push(json(201, { token: 'novo', user }))
+    await register({ handle: 'ana', name: 'Ana', email: 'ana@x.com', password: 'senha-forte', website: '' })
+    expect(calls[0].url).toBe('/api/auth/register')
+    expect(getToken()).toBe('novo')
+    expect(session.user?.handle).toBe('ana')
+  })
+
+  it('sair apaga a sessão no servidor e localmente, mesmo se a API falhar', async () => {
+    setToken('t1')
+    session.user = user as never
+    await logout()
+    expect(calls[0].url).toBe('/api/auth/logout')
+    expect(calls[0].init.method).toBe('POST')
+    expect(getToken()).toBeNull()
+    expect(session.user).toBeNull()
+  })
+
+  it('redefinir a senha pelo link entra na conta', async () => {
+    replies.push(json(200, { token: 't2', user: { ...user, emailVerified: true } }))
+    await confirmPasswordReset('abc', 'nova-senha-1')
+    expect(JSON.parse(String(calls[0].init.body))).toEqual({ token: 'abc', password: 'nova-senha-1' })
+    expect(getToken()).toBe('t2')
+    expect(session.user?.emailVerified).toBe(true)
   })
 })

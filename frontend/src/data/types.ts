@@ -18,6 +18,8 @@ export type User = UserSummary & {
   email: string
   bio: string
   memberSince: string
+  /** Já abriu o link de confirmação mandado no cadastro. */
+  emailVerified: boolean
 }
 
 /** Perfil público (GET /users/{handle}). */

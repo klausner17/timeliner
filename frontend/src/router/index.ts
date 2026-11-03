@@ -9,6 +9,8 @@ declare module 'vue-router' {
     bare?: boolean
     /** Só com login: sem sessão, vai para /entrar e volta depois. */
     auth?: boolean
+    /** Só sem login (entrar, criar conta): com sessão, vai para o perfil. */
+    guest?: boolean
   }
 }
 
@@ -24,7 +26,11 @@ export const router = createRouter({
     { path: '/calendarios/:id', name: 'calendar', component: () => import('@/views/CalendarView.vue'), meta: { nav: 'minhas' } },
     { path: '/comparar', name: 'compare', component: () => import('@/views/CompareView.vue'), meta: { nav: 'comparar' } },
     { path: '/perfil', name: 'profile', component: () => import('@/views/ProfileView.vue'), meta: { nav: 'minhas', auth: true } },
-    { path: '/entrar', name: 'login', component: () => import('@/views/LoginView.vue') },
+    { path: '/entrar', name: 'login', component: () => import('@/views/LoginView.vue'), meta: { guest: true } },
+    { path: '/cadastrar', name: 'signup', component: () => import('@/views/SignupView.vue'), meta: { guest: true } },
+    { path: '/esqueci-senha', name: 'forgot-password', component: () => import('@/views/ForgotPasswordView.vue'), meta: { guest: true } },
+    { path: '/redefinir-senha', name: 'reset-password', component: () => import('@/views/ResetPasswordView.vue') },
+    { path: '/confirmar-email', name: 'verify-email', component: () => import('@/views/VerifyEmailView.vue') },
     { path: '/design-system', name: 'design-system', component: () => import('@/views/DesignSystemView.vue'), meta: { bare: true } },
     { path: '/:rest(.*)*', name: 'not-found', component: () => import('@/views/NotFoundView.vue') },
   ],
@@ -40,4 +46,5 @@ export const router = createRouter({
 router.beforeEach(async (to) => {
   await initSession()
   if (to.meta.auth && !session.user) return { name: 'login', query: { next: to.fullPath } }
+  if (to.meta.guest && session.user) return { name: 'profile' }
 })

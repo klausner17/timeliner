@@ -15,6 +15,8 @@ withDefaults(
     userName?: string
     /** Sem usuário (userName vazio), mostra "Entrar" apontando para cá. */
     loginTo?: RouteLocationRaw
+    /** Sem usuário, mostra também "Criar conta" (some em telas estreitas). */
+    signupTo?: RouteLocationRaw
   }>(),
   { home: '/' },
 )
@@ -41,7 +43,10 @@ withDefaults(
       <RouterLink v-if="profileTo && userName" :to="profileTo" class="tl-header__profile" aria-label="Seu perfil">
         <TlAvatar :name="userName" tint="a" decorative />
       </RouterLink>
-      <TlButton v-else-if="loginTo" :to="loginTo">Entrar</TlButton>
+      <template v-else>
+        <TlButton v-if="signupTo" :to="signupTo" variant="ghost" class="tl-header__signup">Criar conta</TlButton>
+        <TlButton v-if="loginTo" :to="loginTo">Entrar</TlButton>
+      </template>
     </div>
   </header>
 </template>
@@ -116,6 +121,11 @@ withDefaults(
   .tl-header__link {
     flex: none;
     white-space: nowrap;
+  }
+}
+@media (max-width: 600px) {
+  .tl-header__signup {
+    display: none;
   }
 }
 @media (max-width: 400px) {

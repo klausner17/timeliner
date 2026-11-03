@@ -323,3 +323,58 @@ func TestPeriodsRenameKeepsEvents(t *testing.T) {
 		t.Fatalf("erro = %s", bad.Raw)
 	}
 }
+
+func TestPublicSignupEndpoints(t *testing.T) {
+	a := newAPI(t)
+	r := a.want(a.do("GET", "/api/auth/signup", "", nil), 200)
+	if r.Body["open"] != true {
+		t.Fatalf("signup = %s", r.Raw)
+	}
+
+	// Campo-isca preenchido: robô.
+	a.want(a.do("POST", "/api/auth/register", "", map[string]any{
+		"handle": "robo", "name": "Robô", "email": "robo@exemplo.com", "password": "senha-forte", "website": "http://spam",
+	}), 400)
+
+	token := a.register("ana")
+	me := a.want(a.do("GET", "/api/me", token, nil), 200)
+	if me.Body["emailVerified"] != false {
+		t.Fatalf("me = %s", me.Raw)
+	}
+	a.want(a.do("POST", "/api/me/verification", token, nil), 204)
+	a.want(a.do("POST", "/api/auth/verify-email", "", map[string]any{"token": "falso"}), 400)
+
+	a.want(a.do("POST", "/api/me/password", token, map[string]any{"currentPassword": "errada", "newPassword": "nova-senha-1"}), 400)
+	a.want(a.do("POST", "/api/me/password", token, map[string]any{"currentPassword": "senha-forte", "newPassword": "nova-senha-1"}), 204)
+	a.want(a.do("GET", "/api/me", token, nil), 200)
+
+	a.want(a.do("POST", "/api/auth/password-reset", "", map[string]any{"email": "ninguem@exemplo.com"}), 204)
+	a.want(a.do("POST", "/api/auth/password-reset/confirm", "", map[string]any{"token": "falso", "password": "nova-senha-2"}), 400)
+
+	a.want(a.do("POST", "/api/auth/logout", token, nil), 204)
+	a.want(a.do("GET", "/api/me", token, nil), 401)
+	// Sair sem sessão não é erro.
+	a.want(a.do("POST", "/api/auth/logout", "", nil), 204)
+}
+
+func TestSignupLimitUsesClientIP(t *testing.T) {
+	a := newAPI(t)
+	reg := func(handle, ip string) resp {
+		req := httptest.NewRequest("POST", "/api/auth/register", strings.NewReader(fmt.Sprintf(
+			`{"handle":%q,"name":"x","email":"%s@exemplo.com","password":"senha-forte"}`, handle, handle)))
+		req.Header.Set("X-Real-IP", ip)
+		rec := httptest.NewRecorder()
+		a.h.ServeHTTP(rec, req)
+		out := resp{Code: rec.Code, Raw: rec.Body.String()}
+		_ = json.Unmarshal(rec.Body.Bytes(), &out.Body)
+		return out
+	}
+	for i := 0; i < 10; i++ {
+		a.want(reg(fmt.Sprintf("user%d", i), "10.0.0.1"), 201)
+	}
+	r := a.want(reg("user_x", "10.0.0.1"), 429)
+	if errOf(r)["code"] != "too_many_requests" {
+		t.Fatalf("corpo = %s", r.Raw)
+	}
+	a.want(reg("user_y", "10.0.0.2"), 201)
+}
