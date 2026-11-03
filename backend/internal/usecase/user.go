@@ -111,7 +111,7 @@ func (uc *ListContributions) Execute(ctx context.Context, in ListContributionsIn
 	if err != nil {
 		return Page[SuggestionView]{}, notFound(err, "Usuário não encontrado.")
 	}
-	filter := SuggestionFilter{AuthorID: u.ID, ViewerID: in.ActorID, Paging: in.paging()}
+	filter := SuggestionFilter{AuthorID: u.ID, ViewerID: in.ActorID, OnlyVisible: true, Paging: in.paging()}
 	if in.Slug != "" {
 		t, err := visibleTimeline(ctx, uc.d, in.Slug, in.ActorID)
 		if err != nil {

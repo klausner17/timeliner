@@ -89,7 +89,7 @@ func (r suggestions) List(ctx context.Context, f usecase.SuggestionFilter) ([]do
 	if f.Status != "" {
 		where = append(where, "status="+arg(string(f.Status)))
 	}
-	if f.ViewerID != "" {
+	if f.ViewerID != "" || f.OnlyVisible {
 		v := arg(f.ViewerID)
 		where = append(where, `EXISTS (SELECT 1 FROM timelines t WHERE t.id=suggestions.timeline_id
 			AND ((NOT t.draft AND t.visibility<>'privada') OR t.owner_id=`+v+`))`)

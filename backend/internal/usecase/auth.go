@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -185,6 +186,11 @@ type Login struct {
 	d       *Deps
 	byEmail *limiter
 	byIP    *limiter
+
+	// dummyHash é conferido quando o e-mail não tem conta, para a resposta levar o
+	// mesmo tempo (o bcrypt é lento) e não revelar pelo relógio quem tem conta.
+	dummyOnce sync.Once
+	dummyHash string
 }
 
 func NewLogin(d *Deps) *Login {
@@ -201,6 +207,10 @@ func (uc *Login) Execute(ctx context.Context, in LoginInput) (AuthOutput, error)
 		return AuthOutput{}, domain.Unauthorized("Muitas tentativas com este e-mail. Espere alguns minutos e tente de novo.")
 	}
 	u, err := uc.d.Users.ByEmail(ctx, email)
+	if errors.Is(err, domain.ErrNotFound) {
+		uc.dummyOnce.Do(func() { uc.dummyHash, _ = uc.d.Hasher.Hash("senha-que-ninguem-tem") })
+		uc.d.Hasher.Compare(uc.dummyHash, in.Password)
+	}
 	if errors.Is(err, domain.ErrNotFound) || (err == nil && !uc.d.Hasher.Compare(u.PasswordHash, in.Password)) {
 		uc.byEmail.Hit(email, now)
 		uc.byIP.Hit(in.ClientIP, now)

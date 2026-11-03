@@ -188,3 +188,23 @@ func TestApproveFixWithoutLinksKeepsThem(t *testing.T) {
 		t.Fatalf("evento corrigido = %+v", evs[0].Event)
 	}
 }
+
+// As contribuições num perfil não contam as feitas em timelines privadas, nem para
+// quem não entrou: o total não pode revelar que elas existem.
+func TestContributionsHidePrivateTimelines(t *testing.T) {
+	w := newSuggestionWorld(t)
+	w.suggest(t, usecase.CreateSuggestionInput{Kind: domain.SuggestionNewEvent, Event: ev(1989, "Eleição")})
+	must[usecase.TimelineDetailView](t)(usecase.NewUpdateTimeline(w.d).Execute(ctx, usecase.UpdateTimelineInput{
+		ActorID: w.owner.ID, Slug: "escandalos", TimelineFields: usecase.TimelineFields{Visibility: ptr(domain.VisibilityPrivate)},
+	}))
+	for _, viewer := range []string{"", w.bob.ID} {
+		page := must[usecase.Page[usecase.SuggestionView]](t)(usecase.NewListContributions(w.d).Execute(ctx, usecase.ListContributionsInput{ActorID: viewer, Handle: "beto"}))
+		if len(page.Items) != 0 || page.Total != 0 {
+			t.Fatalf("viewer %q: contribuições = %d, total = %d", viewer, len(page.Items), page.Total)
+		}
+	}
+	mine := must[usecase.Page[usecase.SuggestionView]](t)(usecase.NewListContributions(w.d).Execute(ctx, usecase.ListContributionsInput{ActorID: w.owner.ID, Handle: "beto"}))
+	if mine.Total != 1 {
+		t.Fatalf("dono: total = %d", mine.Total)
+	}
+}

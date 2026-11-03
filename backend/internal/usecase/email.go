@@ -66,7 +66,8 @@ func sendMail(ctx context.Context, d *Deps, e domain.Email) error {
 }
 
 // sendVerification manda o link de confirmação. Falhar aqui não desfaz o cadastro:
-// a pessoa pode pedir outro link depois.
+// a pessoa pode pedir outro link depois. Os e-mails não levam o nome digitado no
+// cadastro: quem usa o e-mail de outra pessoa não consegue pôr texto seu na caixa dela.
 func sendVerification(ctx context.Context, d *Deps, u domain.User) error {
 	if err := d.AuthTokens.DeleteByUser(ctx, u.ID, domain.TokenVerifyEmail); err != nil {
 		return err
@@ -76,7 +77,7 @@ func sendVerification(ctx context.Context, d *Deps, u domain.User) error {
 		return err
 	}
 	return sendMail(ctx, d, mailLink(u.Email, "Confirme seu e-mail no Timeliner",
-		"Olá, "+u.Name+"!",
+		"Olá!",
 		"Falta só confirmar que este e-mail é seu. É por ele que você recupera a senha se esquecer.",
 		"Confirmar e-mail", appLink(d, "/confirmar-email", token),
 		"O link vale por 7 dias. Se não foi você que criou a conta, pode ignorar este e-mail."))
@@ -190,7 +191,7 @@ func (uc *RequestPasswordReset) Execute(ctx context.Context, in RequestPasswordR
 		return Empty{}, err
 	}
 	err = sendMail(ctx, uc.d, mailLink(u.Email, "Redefinir sua senha no Timeliner",
-		"Olá, "+u.Name+"!",
+		"Olá!",
 		"Recebemos um pedido para redefinir a senha da sua conta (@"+u.Handle+").",
 		"Criar senha nova", appLink(uc.d, "/redefinir-senha", token),
 		"O link vale por 1 hora e só funciona uma vez. Se não foi você que pediu, ignore este e-mail: sua senha continua a mesma."))

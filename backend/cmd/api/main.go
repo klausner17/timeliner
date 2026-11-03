@@ -71,7 +71,12 @@ func run(log *slog.Logger) error {
 		Handler: controller.NewWithConfig(controller.UseCasesFrom(deps), log, pool.Ping, controller.Config{
 			ClientIPHeader: clientIPHeader(),
 		}),
+		// Prazos contra conexões lentas de propósito, que prendem o servidor.
 		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		MaxHeaderBytes:    64 << 10,
 	}
 	go func() {
 		<-ctx.Done()

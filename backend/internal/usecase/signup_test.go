@@ -222,3 +222,19 @@ func TestResetPasswordCommand(t *testing.T) {
 	_, err = usecase.NewResetPassword(d).Execute(ctx, usecase.ResetPasswordInput{Email: "ninguem@x.com", Password: "nova-senha-1"})
 	wantKind(t, err, domain.KindNotFound)
 }
+
+// Quem cadastra com o e-mail de outra pessoa não põe texto seu na caixa dela.
+func TestMailsDoNotCarryTypedName(t *testing.T) {
+	d, box := withInbox()
+	spam := "Ganhe um premio em golpe.example"
+	must[usecase.AuthOutput](t)(usecase.NewRegister(d).Execute(ctx, usecase.RegisterInput{Handle: "ana", Name: spam, Email: "ana@x.com", Password: "senha-forte"}))
+	must[usecase.Empty](t)(usecase.NewRequestPasswordReset(d).Execute(ctx, usecase.RequestPasswordResetInput{Email: "ana@x.com"}))
+	if len(box.sent) != 2 {
+		t.Fatalf("e-mails = %d", len(box.sent))
+	}
+	for _, m := range box.sent {
+		if strings.Contains(m.Text, spam) || strings.Contains(m.HTML, spam) || strings.Contains(m.Subject, spam) {
+			t.Fatalf("e-mail com o nome digitado: %+v", m)
+		}
+	}
+}
