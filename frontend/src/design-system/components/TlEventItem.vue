@@ -14,6 +14,8 @@ withDefaults(
     /** Sugestão ainda não aprovada: ponto e borda tracejados. */
     suggestion?: boolean
     compact?: boolean
+    /** Corta a descrição em 4 linhas (o resto fica no detalhe do evento). */
+    clamp?: boolean
   }>(),
   { color: 'a' },
 )
@@ -32,7 +34,7 @@ withDefaults(
         {{ date }}<template v-if="suggestion">{{ date ? ' · ' : '' }}sugestão</template>
       </div>
       <h3 class="tl-event__title">{{ title }}</h3>
-      <p v-if="description" class="tl-event__desc">{{ description }}</p>
+      <p v-if="description" class="tl-event__desc" :class="{ 'tl-event__desc--clamp': clamp }">{{ description }}</p>
       <div v-if="sourceUrl || by || $slots.actions" class="tl-event__meta">
         <a v-if="sourceUrl" :href="sourceUrl" target="_blank" rel="noopener">Fonte</a>
         <span v-if="by">adicionado por {{ by }}</span>
@@ -121,6 +123,12 @@ withDefaults(
   font-size: var(--tl-text-base);
   line-height: var(--tl-leading-normal);
   color: var(--tl-color-text-body);
+}
+.tl-event__desc--clamp {
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 .tl-event__meta {
   display: flex;

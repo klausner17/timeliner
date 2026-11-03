@@ -2,7 +2,9 @@ package postgres
 
 import (
 	"context"
+	"database/sql/driver"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
@@ -14,18 +16,18 @@ import (
 
 type events struct{ *db }
 
-const eventCols = `id, timeline_id, year, month, day, time_of_day, end_year, title, description, source_url, era, author_id, created_at`
+const eventCols = `id, timeline_id, year, month, day, time_of_day, end_year, title, description, source_url, era, links, author_id, created_at`
 
 // eventFields são os destinos do Scan na ordem de eventCols.
 func eventFields(e *domain.Event) []any {
 	return []any{&e.ID, &e.TimelineID, &e.Year, &e.Month, &e.Day, &e.Time, &e.EndYear, &e.Title, &e.Description,
-		&e.SourceURL, &e.Era, &e.AuthorID, &e.CreatedAt}
+		&e.SourceURL, &e.Era, (*linksColumn)(&e.Links), &e.AuthorID, &e.CreatedAt}
 }
 
 // eventValues são os valores do evento na ordem de eventCols.
 func eventValues(e *domain.Event) []any {
 	return []any{e.ID, e.TimelineID, e.Year, e.Month, e.Day, e.Time, e.EndYear, e.Title, e.Description,
-		e.SourceURL, e.Era, e.AuthorID, e.CreatedAt}
+		e.SourceURL, e.Era, linksColumn(e.Links), e.AuthorID, e.CreatedAt}
 }
 
 func scanEvent(row pgx.Row) (*domain.Event, error) {
@@ -37,15 +39,15 @@ func scanEvent(row pgx.Row) (*domain.Event, error) {
 }
 
 func (r events) Create(ctx context.Context, e *domain.Event) error {
-	_, err := r.q(ctx).Exec(ctx, `INSERT INTO events (`+eventCols+`) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+	_, err := r.q(ctx).Exec(ctx, `INSERT INTO events (`+eventCols+`) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
 		eventValues(e)...)
 	return translate(err)
 }
 
 func (r events) Update(ctx context.Context, e *domain.Event) error {
 	return mustAffect(r.q(ctx).Exec(ctx, `UPDATE events SET year=$2, month=$3, day=$4, time_of_day=$5, end_year=$6,
-		title=$7, description=$8, source_url=$9, era=$10 WHERE id=$1`,
-		e.ID, e.Year, e.Month, e.Day, e.Time, e.EndYear, e.Title, e.Description, e.SourceURL, e.Era))
+		title=$7, description=$8, source_url=$9, era=$10, links=$11 WHERE id=$1`,
+		e.ID, e.Year, e.Month, e.Day, e.Time, e.EndYear, e.Title, e.Description, e.SourceURL, e.Era, linksColumn(e.Links)))
 }
 
 func (r events) Delete(ctx context.Context, id string) error {
@@ -203,14 +205,68 @@ type eventJSON struct {
 	Description string     `json:"description"`
 	SourceURL   *string    `json:"sourceUrl,omitempty"`
 	Era         *string    `json:"era,omitempty"`
+	Links       []linkJSON `json:"links,omitempty"`
+}
+
+type linkJSON struct {
+	URL   string `json:"url"`
+	Label string `json:"label,omitempty"`
+}
+
+func linksToJSON(ls []domain.EventLink) []linkJSON {
+	out := make([]linkJSON, len(ls))
+	for i, l := range ls {
+		out[i] = linkJSON{URL: l.URL, Label: l.Label}
+	}
+	return out
+}
+
+// linksFromJSON devolve nil quando os links não vieram (correção que não mexe neles).
+func linksFromJSON(ls []linkJSON) []domain.EventLink {
+	if ls == nil {
+		return nil
+	}
+	out := make([]domain.EventLink, len(ls))
+	for i, l := range ls {
+		out[i] = domain.EventLink{URL: l.URL, Label: l.Label}
+	}
+	return out
+}
+
+// linksColumn guarda os links do evento na coluna jsonb links.
+type linksColumn []domain.EventLink
+
+func (l linksColumn) Value() (driver.Value, error) {
+	return json.Marshal(linksToJSON(l))
+}
+
+func (l *linksColumn) Scan(src any) error {
+	var b []byte
+	switch v := src.(type) {
+	case nil:
+		*l = nil
+		return nil
+	case []byte:
+		b = v
+	case string:
+		b = []byte(v)
+	default:
+		return fmt.Errorf("links: tipo %T inesperado", src)
+	}
+	var js []linkJSON
+	if err := json.Unmarshal(b, &js); err != nil {
+		return err
+	}
+	*l = linksColumn(linksFromJSON(js))
+	return nil
 }
 
 func dataToJSON(d domain.EventData) eventJSON {
-	return eventJSON{Year: d.Year, Month: d.Month, Day: d.Day, Time: d.Time, EndYear: d.EndYear, Title: d.Title, Description: d.Description, SourceURL: d.SourceURL, Era: d.Era}
+	return eventJSON{Year: d.Year, Month: d.Month, Day: d.Day, Time: d.Time, EndYear: d.EndYear, Title: d.Title, Description: d.Description, SourceURL: d.SourceURL, Era: d.Era, Links: linksToJSON(d.Links)}
 }
 
 func (j eventJSON) data() domain.EventData {
-	return domain.EventData{Year: j.Year, Month: j.Month, Day: j.Day, Time: j.Time, EndYear: j.EndYear, Title: j.Title, Description: j.Description, SourceURL: j.SourceURL, Era: j.Era}
+	return domain.EventData{Year: j.Year, Month: j.Month, Day: j.Day, Time: j.Time, EndYear: j.EndYear, Title: j.Title, Description: j.Description, SourceURL: j.SourceURL, Era: j.Era, Links: linksFromJSON(j.Links)}
 }
 
 func marshalEvent(e *domain.Event) ([]byte, error) {

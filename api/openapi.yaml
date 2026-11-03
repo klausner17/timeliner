@@ -307,6 +307,35 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /timelines/{slug}/events/{eventId}/link-previews:
+    parameters:
+      - { $ref: '#/components/parameters/Slug' }
+      - { $ref: '#/components/parameters/EventId' }
+    get:
+      tags: [events]
+      security: []
+      summary: Prévia dos links do evento (título, resumo e miniatura da página)
+      description: |
+        A fonte primeiro, depois os links a mais. O servidor lê as metatags Open Graph de
+        cada página (com cache de algumas horas); a miniatura é o endereço da imagem no site
+        de origem, nada é guardado. Página fora do ar ou que não é HTML vem só com a url.
+        Só endereços que já estão no evento são buscados, e só de sites conhecidos
+        (Wikipédia, gov.br, grandes jornais...; lista em backend/internal/platform/previewdomains.go,
+        ampliável com LINK_PREVIEW_EXTRA_DOMAINS). Os outros vêm só com a url.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/LinkPreview' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /timelines/{slug}/suggestions:
     parameters:
       - { $ref: '#/components/parameters/Slug' }
@@ -1138,6 +1167,10 @@ components:
         title: { type: string }
         description: { type: string }
         sourceUrl: { type: [string, 'null'], format: uri }
+        links:
+          type: array
+          description: Links a mais, além da fonte
+          items: { $ref: '#/components/schemas/EventLink' }
         by: { type: string, description: Handle de quem adicionou }
         era: { type: [string, 'null'], description: Nome de um dos períodos (eras) da timeline }
         createdAt: { type: string, format: date-time }
@@ -1152,9 +1185,31 @@ components:
         time: { type: [string, 'null'], pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$' }
         endYear: { type: [integer, 'null'] }
         title: { type: string, minLength: 1, maxLength: 160 }
-        description: { type: string, maxLength: 4000, default: '' }
+        description: { type: string, maxLength: 10000, default: '' }
         sourceUrl: { type: [string, 'null'], format: uri }
         era: { type: [string, 'null'] }
+        links:
+          type: array
+          maxItems: 10
+          description: Links a mais, além da fonte. Na edição, a lista mandada substitui a anterior.
+          items: { $ref: '#/components/schemas/EventLink' }
+
+    EventLink:
+      type: object
+      required: [url]
+      properties:
+        url: { type: string, format: uri }
+        label: { type: string, maxLength: 120, default: '', description: Texto do link; vazio mostra a prévia ou o endereço }
+
+    LinkPreview:
+      type: object
+      required: [url, title, description, image, siteName]
+      properties:
+        url: { type: string, format: uri }
+        title: { type: string, description: Vazio quando a página não respondeu }
+        description: { type: string }
+        image: { type: string, description: 'Endereço da miniatura no site de origem, ou vazio' }
+        siteName: { type: string }
 
     EventPatch:
       type: object
@@ -1166,9 +1221,14 @@ components:
         time: { type: [string, 'null'], pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$' }
         endYear: { type: [integer, 'null'] }
         title: { type: string, minLength: 1, maxLength: 160 }
-        description: { type: string, maxLength: 4000 }
+        description: { type: string, maxLength: 10000 }
         sourceUrl: { type: [string, 'null'], format: uri }
         era: { type: [string, 'null'] }
+        links:
+          type: array
+          maxItems: 10
+          description: Links a mais, além da fonte. Na edição, a lista mandada substitui a anterior.
+          items: { $ref: '#/components/schemas/EventLink' }
 
     SuggestionStatus:
       type: string

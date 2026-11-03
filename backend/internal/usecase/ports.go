@@ -176,6 +176,12 @@ type IDGenerator interface {
 }
 
 // Deps junta tudo que os casos de uso podem precisar. Cada caso de uso usa só uma parte.
+// LinkPreviewer lê a prévia de uma página (título, resumo, miniatura). Falha quando a
+// página não responde ou não é HTML; quem chama mostra só o endereço nesse caso.
+type LinkPreviewer interface {
+	Preview(ctx context.Context, url string) (domain.LinkPreview, error)
+}
+
 type Deps struct {
 	Users       UserRepository
 	Sessions    SessionRepository
@@ -189,6 +195,8 @@ type Deps struct {
 	Hasher      PasswordHasher
 	Clock       Clock
 	IDs         IDGenerator
+	// Previews monta a prévia dos links dos eventos; nil mostra só os endereços.
+	Previews LinkPreviewer
 	// SignupClosed fecha o POST /auth/register; contas novas so pelo comando create-user.
 	SignupClosed bool
 }

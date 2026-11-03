@@ -42,12 +42,23 @@ export type TimelineEvent = {
   title: string
   description: string
   sourceUrl?: string
+  /** Links a mais, além da fonte. */
+  links?: EventLink[]
   /** Handle de quem adicionou. */
   by: string
   /** Nome do período da timeline em que o evento entra. */
   era?: string
   createdAt?: string
 }
+
+/** Link a mais de um evento; sem `label`, a tela mostra o título da página ou o endereço. */
+export type EventLink = { url: string; label?: string }
+
+/**
+ * Prévia de um link, lida das metatags da página pelo servidor. `image` é o endereço da
+ * miniatura no próprio site; campos que a página não tem vêm vazios.
+ */
+export type LinkPreview = { url: string; title: string; description: string; image: string; siteName: string }
 
 /** O que se manda para criar ou corrigir um evento. */
 export type EventInput = Omit<TimelineEvent, 'id' | 'by' | 'createdAt'>

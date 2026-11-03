@@ -167,3 +167,20 @@ func TestSuggestionRules(t *testing.T) {
 	_, err = usecase.NewReopenSuggestion(w.d).Execute(ctx, usecase.SuggestionRefInput{ActorID: w.owner.ID, SuggestionID: s.Suggestion.ID})
 	wantKind(t, err, domain.KindConflict)
 }
+
+func TestApproveFixWithoutLinksKeepsThem(t *testing.T) {
+	w := newSuggestionWorld(t)
+	original := w.timeline.Events.Items[0].Event
+	must[usecase.EventView](t)(usecase.NewUpdateEvent(w.d).Execute(ctx, usecase.UpdateEventInput{
+		ActorID: w.owner.ID, Slug: w.timeline.Timeline.Slug, EventID: original.ID,
+		Patch: usecase.EventPatch{Links: &[]domain.EventLink{{URL: "https://exemplo.com/impeachment"}}},
+	}))
+	s := w.suggest(t, usecase.CreateSuggestionInput{
+		Kind: domain.SuggestionDescriptionFix, EventID: &original.ID,
+		Event: domain.EventData{Year: 1992, Title: "Impeachment", Description: "Collor sai."},
+	})
+	must[usecase.SuggestionView](t)(w.review(t, s.Suggestion.ID, usecase.DecisionApprove, nil))
+	if evs := w.events(t); evs[0].Event.Description != "Collor sai." || len(evs[0].Event.Links) != 1 {
+		t.Fatalf("evento corrigido = %+v", evs[0].Event)
+	}
+}

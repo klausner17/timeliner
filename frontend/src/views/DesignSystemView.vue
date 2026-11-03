@@ -23,6 +23,7 @@ import {
   TlField,
   TlIcon,
   TlInput,
+  TlLinkPreview,
   TlLogo,
   TlOverviewBar,
   TlRadioGroup,
@@ -519,6 +520,16 @@ const usage = {
               </template>
             </TlEventItem>
           </div>
+          <div class="ds-links">
+            <TlLinkPreview
+              url="https://pt.wikipedia.org/wiki/Lei_%C3%81urea"
+              site-name="Wikipédia"
+              title="Lei Áurea"
+              description="A Lei Imperial n.º 3.353, mais conhecida como Lei Áurea, foi a lei que extinguiu a escravidão no Brasil."
+            />
+            <TlLinkPreview url="https://www.exemplo.com.br/acervo/lei-aurea" label="Acervo do Arquivo Nacional" />
+            <TlLinkPreview url="https://exemplo.com/carregando" loading />
+          </div>
         </DsSection>
 
         <!-- Comparação -->
@@ -809,5 +820,11 @@ code {
   .ds-hero__title {
     font-size: var(--tl-text-4xl);
   }
+}
+.ds-links {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tl-space-2);
+  max-width: 520px;
 }
 </style>
